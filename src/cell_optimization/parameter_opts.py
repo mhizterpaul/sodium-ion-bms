@@ -324,7 +324,10 @@ class SingleObjectiveProblem:
         # g1: thickness constraint (tp <= tn)
         g1 = (x_full[0] - x_full[1]) / max(DESIGN_BOUNDS[0][1], DESIGN_BOUNDS[1][1])
 
-        pt = ParamTransform(pybamm.ParameterValues(get_parameter_values()))
+        pt = ParamTransform(
+            base_values=self.optimizer.base_values,
+            derived=self.optimizer.derived
+        )
         pt.apply_physics_deltas(self.deltas)
         pt.apply_design_vector(x_full, DESIGN_SPACE)
         pv = pt.get_parameter_values()
@@ -572,7 +575,10 @@ def run_workflow(engine: Optional[Any] = None):
         x_base = np.array([np.mean(b) for b in DESIGN_BOUNDS])
         cand_name = f"{cat.name if cat else 'None'} + {salt.name if salt else 'None'}"
         print(f"INFO: Evaluating candidate: {cand_name}")
-        pt_test = ParamTransform(pybamm.ParameterValues(get_parameter_values()))
+        pt_test = ParamTransform(
+            base_values=optimizer.base_values,
+            derived=optimizer.derived
+        )
         pt_test.apply_physics_deltas(deltas); pt_test.apply_design_vector(x_base, DESIGN_SPACE)
         if not validate_params(pt_test.get_parameter_values(), verbose=True):
              print(f"[FAILED] {cand_name}: validate_params")
@@ -582,7 +588,10 @@ def run_workflow(engine: Optional[Any] = None):
              print(f"[FAILED] {cand_name}: Jacobian computation failed")
              continue
         opt_designs = []
-        pt_base = ParamTransform(pybamm.ParameterValues(get_parameter_values()))
+        pt_base = ParamTransform(
+            base_values=optimizer.base_values,
+            derived=optimizer.derived
+        )
         pt_base.apply_physics_deltas(deltas); pt_base.apply_design_vector(x_base, DESIGN_SPACE)
         base_metrics = optimizer.simulate(pt_base.get_parameter_values())
         for i, mode in enumerate(["energy", "power", "stability"]):
@@ -606,7 +615,10 @@ def run_workflow(engine: Optional[Any] = None):
             opt_designs.append(x_opt)
         valid_candidates, stability_scores = [], []
         for x, mode in zip(opt_designs, ["energy", "power", "stability"]):
-            pt = ParamTransform(pybamm.ParameterValues(get_parameter_values()))
+            pt = ParamTransform(
+                base_values=optimizer.base_values,
+                derived=optimizer.derived
+            )
             pt.apply_physics_deltas(deltas); pt.apply_design_vector(x, DESIGN_SPACE)
             ok, score = optimizer.evaluate_stability_pde(pt.get_parameter_values(), mode)
             if ok:
@@ -616,7 +628,10 @@ def run_workflow(engine: Optional[Any] = None):
              continue
         x_star = valid_candidates[np.argmax(stability_scores)]
         final_x = 0.8 * x_star + 0.2 * np.mean(valid_candidates, axis=0)
-        pt = ParamTransform(pybamm.ParameterValues(get_parameter_values()))
+        pt = ParamTransform(
+            base_values=optimizer.base_values,
+            derived=optimizer.derived
+        )
         pt.apply_physics_deltas(deltas); pt.apply_design_vector(final_x, DESIGN_SPACE)
         final_pv = pt.get_parameter_values()
         final_metrics = optimizer.simulate(final_pv, return_sol=True)
