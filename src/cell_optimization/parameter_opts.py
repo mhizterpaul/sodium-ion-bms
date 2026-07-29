@@ -116,9 +116,48 @@ def validate_params(pv: Dict[str, Any], verbose: bool = False):
 
     return True
 
+class OCPWrapper:
+    def __init__(self, orig_ocp, boost):
+        self.orig_ocp = orig_ocp
+        self.boost = boost
+        try:
+            self.__signature__ = inspect.signature(orig_ocp)
+            self.__name__ = getattr(orig_ocp, "__name__", "ocp_wrapper")
+            self.__doc__ = getattr(orig_ocp, "__doc__", "")
+        except Exception:
+            pass
+    def __call__(self, *args, **kwargs):
+        return self.orig_ocp(*args, **kwargs) + self.boost
+
+class MultiplicativeWrapper:
+    def __init__(self, orig_func, factor):
+        self.orig_func = orig_func
+        self.factor = factor
+        try:
+            self.__signature__ = inspect.signature(orig_func)
+            self.__name__ = getattr(orig_func, "__name__", "wrapper")
+            self.__doc__ = getattr(orig_func, "__doc__", "")
+        except Exception:
+            pass
+    def __call__(self, *args, **kwargs):
+        return self.orig_func(*args, **kwargs) * self.factor
+
+class VolumeChangeModel:
+    def __init__(self, factor=0.1):
+        self.factor = factor
+    def __call__(self, sto):
+        return self.factor * sto
+
 class ParamTransform:
-    def __init__(self, base_values: pybamm.ParameterValues):
-        self.values_dict = dict(base_values)
+    def __init__(
+        self,
+        base_values: Optional[Dict[str, Any]] = None,
+        derived: Optional[Dict[str, Any]] = None,
+    ):
+        self.values_dict = copy.deepcopy(
+            dict(base_values) if base_values is not None else dict(get_parameter_values())
+        )
+        self.derived = derived if derived is not None else get_derived_parameters()
         self.scaling_factors = {}
 
     def _apply_scaling(self, key: str, factor: float):
@@ -131,13 +170,7 @@ class ParamTransform:
                 ocp = self.values_dict.get("Positive electrode OCP [V]")
                 boost = d["voltage_boost"]
                 if callable(ocp):
-                    from functools import wraps
-                    def make_ocp_wrapper(orig, b):
-                        @wraps(orig)
-                        def ocp_wrapper(*args, **kwargs):
-                            return orig(*args, **kwargs) + b
-                        return ocp_wrapper
-                    self.values_dict["Positive electrode OCP [V]"] = make_ocp_wrapper(ocp, boost)
+                    self.values_dict["Positive electrode OCP [V]"] = OCPWrapper(ocp, boost)
                 else:
                     self.values_dict["Positive electrode OCP [V]"] += boost
                 for cut_off in ["Lower voltage cut-off [V]", "Upper voltage cut-off [V]"]:
@@ -189,11 +222,11 @@ class ParamTransform:
                 self.values_dict[name] = val
 
     def get_parameter_values(self) -> pybamm.ParameterValues:
-        derived = get_derived_parameters()
+        derived = self.derived
 
         # 1. Mandatory Mechanical & Topology
-        self.values_dict.setdefault("Negative electrode volume change", lambda sto: 0.1 * sto)
-        self.values_dict.setdefault("Positive electrode volume change", lambda sto: 0.1 * sto)
+        self.values_dict.setdefault("Negative electrode volume change", VolumeChangeModel(0.1))
+        self.values_dict.setdefault("Positive electrode volume change", VolumeChangeModel(0.1))
         self.values_dict.setdefault("Cell thermal expansion coefficient [m.K-1]", 1e-6)
         self.values_dict.setdefault("Number of cells connected in series to make a battery", 1)
         self.values_dict.setdefault("Number of strings connected in parallel to make a battery", 1)
@@ -211,13 +244,7 @@ class ParamTransform:
             original = self.values_dict.get(key)
             if original is None: continue
             if callable(original):
-                from functools import wraps
-                def make_wrapper(orig, f):
-                    @wraps(orig)
-                    def wrapper(*args, **kwargs):
-                        return orig(*args, **kwargs) * f
-                    return wrapper
-                self.values_dict[key] = make_wrapper(original, factor)
+                self.values_dict[key] = MultiplicativeWrapper(original, factor)
             else:
                 self.values_dict[key] *= factor
 
@@ -238,6 +265,51 @@ class ParamTransform:
 
         return pybamm.ParameterValues(self.values_dict)
 
+def _transform_candidate_worker(job):
+    x, deltas, base_values, derived = job
+
+    pt = ParamTransform(
+        base_values=base_values,
+        derived=derived,
+    )
+
+    pt.apply_physics_deltas(deltas)
+    pt.apply_design_vector(x, DESIGN_SPACE)
+
+    pv = pt.get_parameter_values()
+    return dict(pv)
+
+def transform_candidates_parallel(
+    candidates: List[Tuple[np.ndarray, Dict[str, Any]]],
+    base_values: Dict[str, Any],
+    derived: Dict[str, Any],
+    max_workers: Optional[int] = None,
+) -> List[pybamm.ParameterValues]:
+
+    if not candidates:
+        return []
+
+    max_workers = max_workers or max(1, os.cpu_count() - 1)
+
+    jobs = [
+        (x, deltas, base_values, derived)
+        for x, deltas in candidates
+    ]
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        transformed_dicts = list(
+            executor.map(
+                _transform_candidate_worker,
+                jobs,
+            )
+        )
+
+    return [
+        pybamm.ParameterValues(values)
+        for values in transformed_dicts
+    ]
+
 class SingleObjectiveProblem:
     def __init__(self, optimizer, x_full, active_indices, deltas, mode, ref_scale=1.0):
         self.optimizer = optimizer
@@ -252,7 +324,10 @@ class SingleObjectiveProblem:
         # g1: thickness constraint (tp <= tn)
         g1 = (x_full[0] - x_full[1]) / max(DESIGN_BOUNDS[0][1], DESIGN_BOUNDS[1][1])
 
-        pt = ParamTransform(pybamm.ParameterValues(get_parameter_values()))
+        pt = ParamTransform(
+            base_values=self.optimizer.base_values,
+            derived=self.optimizer.derived
+        )
         pt.apply_physics_deltas(self.deltas)
         pt.apply_design_vector(x_full, DESIGN_SPACE)
         pv = pt.get_parameter_values()
@@ -285,35 +360,14 @@ class SingleObjectiveProblem:
         feasible = (g1 <= 0.0) and (g2 <= 0.0)
         return score_unpenalized, g_list, feasible
 
-class GeometryCache:
-    def __init__(self, max_size: int = 32):
-        self.cache = OrderedDict()
-        self.max_size = max_size
-    def get(self, key: tuple):
-        if key in self.cache:
-            self.cache.move_to_end(key)
-            return self.cache[key]
-        return None
-    def set(self, key: tuple, value: dict):
-        if key in self.cache:
-            self.cache.move_to_end(key)
-        self.cache[key] = value
-        if len(self.cache) > self.max_size:
-            self.cache.popitem(last=False)
-
 class SimulationRunner:
     def __init__(self, model: pybamm.BaseModel, solver_class, solver_kwargs: dict):
         self.model = model
         self.solver_class = solver_class
         self.solver_kwargs = solver_kwargs
-        self.geometry_cache = GeometryCache()
         self.var_pts = model.default_var_pts
         self.submesh_types = model.default_submesh_types
         self.spatial_methods = model.default_spatial_methods
-
-    def _get_geometry_key(self, params: pybamm.ParameterValues) -> tuple:
-        keys = ["Positive electrode thickness [m]", "Negative electrode thickness [m]", "Separator thickness [m]", "Positive particle radius [m]", "Negative particle radius [m]", "Typical electrolyte concentration [mol.m-3]"]
-        return tuple(float(params.get(k, 0.0)) for k in keys)
 
     def run_simulation(self, params: pybamm.ParameterValues, c_rate: float = 1.0) -> Dict[str, Any]:
         params = params.copy()
@@ -346,6 +400,28 @@ class SimulationRunner:
             err_msg = f"ERROR: DFN Simulation failed: {e}\n{traceback.format_exc()}"
             return {"success": False, "reason": err_msg}
 
+def post_process_sol(res: Dict[str, Any], return_sol: bool = False) -> Dict[str, Any]:
+    if not res["success"]:
+        return res
+    try:
+        sol = res["sol"]
+        v, curr, t = sol["Terminal voltage [V]"].entries, sol["Current [A]"].entries, sol["Time [s]"].entries
+        trapz_func = getattr(np, "trapezoid", getattr(np, "trapz", None))
+        energy_wh = abs(trapz_func(v * curr, t)) / 3600
+        power_vals = np.abs(v * curr)
+        energy = float(energy_wh)
+        power = np.max(power_vals)
+        T_max = np.max(sol["Cell temperature [K]"].entries)
+        stresses = []
+        for sv in ["Positive particle surface tangential stress [Pa]", "Negative particle surface tangential stress [Pa]"]:
+             try: stresses.append(np.max(np.abs(sol[sv].entries)))
+             except (KeyError, pybamm.ModelError, AttributeError): pass
+        final_res = {"energy": float(energy), "power": float(power), "T_max": float(T_max), "stresses": stresses, "success": True}
+        if return_sol: final_res["sol"] = sol
+        return final_res
+    except Exception as e:
+        return {"success": False, "reason": f"Post-simulation processing failed: {e}"}
+
 class HierarchicalOptimizer:
     def __init__(self, engine: Optional[Any] = None, base_params: Optional[pybamm.ParameterValues] = None):
         if engine is None:
@@ -353,35 +429,19 @@ class HierarchicalOptimizer:
             engine = MaterialMappingEngine()
         self.engine = engine
         self.base_params = base_params or pybamm.ParameterValues(get_parameter_values())
+        self.base_values = dict(self.base_params)
+        self.derived = get_derived_parameters()
         options = {"SEI": "solvent-diffusion limited", "loss of active material": "stress-driven", "thermal": "lumped"}
         self.model = pybamm.lithium_ion.DFN(options)
-        solver_kwargs = {"rtol": 1e-7, "atol": 1e-9, "options": {"dt_max": 5.0}}
-        self.runner = SimulationRunner(self.model, pybamm.IDAKLUSolver, solver_kwargs)
+        self.solver_kwargs = {"rtol": 1e-7, "atol": 1e-9, "options": {"dt_max": 5.0}}
+        self.runner = SimulationRunner(self.model, pybamm.IDAKLUSolver, self.solver_kwargs)
         self.mech_model = ThermoelasticStrainModel()
 
     def simulate(self, params: pybamm.ParameterValues, c_rate: float = 1.0, return_sol: bool = False) -> Dict[str, Any]:
         res = self.runner.run_simulation(params, c_rate)
         if not res["success"]:
             print(res["reason"])
-            return res
-        try:
-            sol = res["sol"]
-            v, curr, t = sol["Terminal voltage [V]"].entries, sol["Current [A]"].entries, sol["Time [s]"].entries
-            trapz_func = getattr(np, "trapezoid", getattr(np, "trapz", None))
-            energy_wh = abs(trapz_func(v * curr, t)) / 3600
-            power_vals = np.abs(v * curr)
-            energy = float(energy_wh)
-            power = np.max(power_vals)
-            T_max = np.max(sol["Cell temperature [K]"].entries)
-            stresses = []
-            for sv in ["Positive particle surface tangential stress [Pa]", "Negative particle surface tangential stress [Pa]"]:
-                 try: stresses.append(np.max(np.abs(sol[sv].entries)))
-                 except (KeyError, pybamm.ModelError, AttributeError): pass
-            final_res = {"energy": float(energy), "power": float(power), "T_max": float(T_max), "stresses": stresses, "success": True}
-            if return_sol: final_res["sol"] = sol
-            return final_res
-        except Exception as e:
-            return {"success": False, "reason": f"Post-simulation processing failed: {e}"}
+        return post_process_sol(res, return_sol=return_sol)
 
     def evaluate_stability_pde(self, params: pybamm.ParameterValues, mode: str, c_rate: float = 1.0) -> Tuple[bool, float]:
         res = self.simulate(params, c_rate=c_rate, return_sol=True)
@@ -402,27 +462,50 @@ class HierarchicalOptimizer:
 
     def compute_jacobian(self, x: np.ndarray, deltas: Dict[str, Any]) -> Optional[np.ndarray]:
         eps = 1e-4
-        pt = ParamTransform(pybamm.ParameterValues(get_parameter_values()))
-        pt.apply_physics_deltas(deltas); pt.apply_design_vector(x, DESIGN_SPACE)
-        base_res = self.simulate(pt.get_parameter_values())
-        if not base_res["success"]:
-            print(f"WARNING: Baseline DFN simulation failed: {base_res.get('reason')}. Skipping candidate.")
-            return None
-        from src.cell_optimization.chem_regularization import mechanical_stability_metric
-        j_base = np.array([base_res["energy"], base_res["power"], mechanical_stability_metric(stresses=base_res["stresses"])])
-        G = np.zeros((3, len(DESIGN_SPACE)))
+
+        # 1. Build candidates list
+        candidates = []
+        candidates.append((x.copy(), deltas))
         for j in range(len(DESIGN_SPACE)):
             x_pert = x.copy()
             lower, upper = DESIGN_BOUNDS[j]
             x_pert[j] += eps * (upper - lower)
-            pt_p = ParamTransform(pybamm.ParameterValues(get_parameter_values()))
-            pt_p.apply_physics_deltas(deltas); pt_p.apply_design_vector(x_pert, DESIGN_SPACE)
-            res = self.simulate(pt_p.get_parameter_values())
+            candidates.append((x_pert, deltas))
+
+        # 2. Parallel Transform candidates
+        candidate_params = transform_candidates_parallel(
+            candidates,
+            base_values=self.base_values,
+            derived=self.derived,
+        )
+
+        # 3. Parallel simulate candidates using ThreadPoolExecutor
+        max_workers = max(1, os.cpu_count() - 1)
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            jobs = [(params, 1.0) for params in candidate_params]
+            raw_results = list(executor.map(lambda job: self.runner.run_simulation(job[0], job[1]), jobs))
+
+        sim_results = [post_process_sol(res) for res in raw_results]
+
+        # Baseline DFN simulation
+        base_res = sim_results[0]
+        if not base_res["success"]:
+            print(f"WARNING: Baseline DFN simulation failed: {base_res.get('reason')}. Skipping candidate.")
+            return None
+
+        from src.cell_optimization.chem_regularization import mechanical_stability_metric
+        j_base = np.array([base_res["energy"], base_res["power"], mechanical_stability_metric(stresses=base_res["stresses"])])
+        G = np.zeros((3, len(DESIGN_SPACE)))
+
+        for j in range(len(DESIGN_SPACE)):
+            res = sim_results[j + 1]
             if res["success"]:
                 j_pert = np.array([res["energy"], res["power"], mechanical_stability_metric(stresses=res["stresses"])])
                 G[:, j] = (np.log(np.abs(j_pert) + 1e-12) - np.log(np.abs(j_base) + 1e-12)) / eps
             else:
                 print(f"WARNING: Perturbation for {DESIGN_SPACE[j]} failed: {res.get('reason')}")
+
         G = np.nan_to_num(G, nan=0.0, posinf=0.0, neginf=0.0)
         if not np.isfinite(G).all(): raise RuntimeError("Degenerate Jacobian detected.")
         U, S, Vt = np.linalg.svd(G, full_matrices=False)
@@ -492,7 +575,10 @@ def run_workflow(engine: Optional[Any] = None):
         x_base = np.array([np.mean(b) for b in DESIGN_BOUNDS])
         cand_name = f"{cat.name if cat else 'None'} + {salt.name if salt else 'None'}"
         print(f"INFO: Evaluating candidate: {cand_name}")
-        pt_test = ParamTransform(pybamm.ParameterValues(get_parameter_values()))
+        pt_test = ParamTransform(
+            base_values=optimizer.base_values,
+            derived=optimizer.derived
+        )
         pt_test.apply_physics_deltas(deltas); pt_test.apply_design_vector(x_base, DESIGN_SPACE)
         if not validate_params(pt_test.get_parameter_values(), verbose=True):
              print(f"[FAILED] {cand_name}: validate_params")
@@ -502,7 +588,10 @@ def run_workflow(engine: Optional[Any] = None):
              print(f"[FAILED] {cand_name}: Jacobian computation failed")
              continue
         opt_designs = []
-        pt_base = ParamTransform(pybamm.ParameterValues(get_parameter_values()))
+        pt_base = ParamTransform(
+            base_values=optimizer.base_values,
+            derived=optimizer.derived
+        )
         pt_base.apply_physics_deltas(deltas); pt_base.apply_design_vector(x_base, DESIGN_SPACE)
         base_metrics = optimizer.simulate(pt_base.get_parameter_values())
         for i, mode in enumerate(["energy", "power", "stability"]):
@@ -526,7 +615,10 @@ def run_workflow(engine: Optional[Any] = None):
             opt_designs.append(x_opt)
         valid_candidates, stability_scores = [], []
         for x, mode in zip(opt_designs, ["energy", "power", "stability"]):
-            pt = ParamTransform(pybamm.ParameterValues(get_parameter_values()))
+            pt = ParamTransform(
+                base_values=optimizer.base_values,
+                derived=optimizer.derived
+            )
             pt.apply_physics_deltas(deltas); pt.apply_design_vector(x, DESIGN_SPACE)
             ok, score = optimizer.evaluate_stability_pde(pt.get_parameter_values(), mode)
             if ok:
@@ -536,7 +628,10 @@ def run_workflow(engine: Optional[Any] = None):
              continue
         x_star = valid_candidates[np.argmax(stability_scores)]
         final_x = 0.8 * x_star + 0.2 * np.mean(valid_candidates, axis=0)
-        pt = ParamTransform(pybamm.ParameterValues(get_parameter_values()))
+        pt = ParamTransform(
+            base_values=optimizer.base_values,
+            derived=optimizer.derived
+        )
         pt.apply_physics_deltas(deltas); pt.apply_design_vector(final_x, DESIGN_SPACE)
         final_pv = pt.get_parameter_values()
         final_metrics = optimizer.simulate(final_pv, return_sol=True)
