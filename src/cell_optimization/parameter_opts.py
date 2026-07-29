@@ -357,35 +357,14 @@ class SingleObjectiveProblem:
         feasible = (g1 <= 0.0) and (g2 <= 0.0)
         return score_unpenalized, g_list, feasible
 
-class GeometryCache:
-    def __init__(self, max_size: int = 32):
-        self.cache = OrderedDict()
-        self.max_size = max_size
-    def get(self, key: tuple):
-        if key in self.cache:
-            self.cache.move_to_end(key)
-            return self.cache[key]
-        return None
-    def set(self, key: tuple, value: dict):
-        if key in self.cache:
-            self.cache.move_to_end(key)
-        self.cache[key] = value
-        if len(self.cache) > self.max_size:
-            self.cache.popitem(last=False)
-
 class SimulationRunner:
     def __init__(self, model: pybamm.BaseModel, solver_class, solver_kwargs: dict):
         self.model = model
         self.solver_class = solver_class
         self.solver_kwargs = solver_kwargs
-        self.geometry_cache = GeometryCache()
         self.var_pts = model.default_var_pts
         self.submesh_types = model.default_submesh_types
         self.spatial_methods = model.default_spatial_methods
-
-    def _get_geometry_key(self, params: pybamm.ParameterValues) -> tuple:
-        keys = ["Positive electrode thickness [m]", "Negative electrode thickness [m]", "Separator thickness [m]", "Positive particle radius [m]", "Negative particle radius [m]", "Typical electrolyte concentration [mol.m-3]"]
-        return tuple(float(params.get(k, 0.0)) for k in keys)
 
     def run_simulation(self, params: pybamm.ParameterValues, c_rate: float = 1.0) -> Dict[str, Any]:
         params = params.copy()
