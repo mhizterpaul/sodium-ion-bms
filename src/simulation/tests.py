@@ -272,12 +272,6 @@ class StabilityValidator:
             json.dump(results, f, indent=2)
         print(f"Validated Model (JSON) exported to {output_path}")
 
-    def export_to_matlab(self, results, output_path="src/power_plant/optimized_params.mat"):
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        sio.savemat(output_path, {"optimized_params": results})
-        print(f"Validated Model exported to {output_path}")
-
 if __name__ == "__main__":
     validator = StabilityValidator()
     results = validator.validate_optimized_design()
-    validator.export_to_matlab(results)
