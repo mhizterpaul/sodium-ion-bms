@@ -347,6 +347,8 @@ class SingleObjectiveProblem:
             f_val = -res["energy"]
         elif self.mode == "power":
             f_val = -res["power"]
+        elif self.mode == "thermal_stability":
+            f_val = res["T_max"]
         elif self.mode == "stability":
             f_val = -mechanical_stability_metric(stresses=res["stresses"])
         else:
@@ -453,7 +455,7 @@ class HierarchicalOptimizer:
             critical_strain = self.mech_model.critical_thresholds.get(mat_key, 2e-3)
             eta = max_strain / critical_strain
             print(f"DEBUG[{mode}]: max_strain={max_strain:.4e}, critical={critical_strain:.4e}, eta={eta:.3f}")
-            eta_threshold = float(os.environ.get("CEM_ETA_THRESHOLD", 1.5))
+            eta_threshold = float(os.environ.get("CEM_ETA_THRESHOLD", 1.8))
             if eta > eta_threshold: return False, -float(eta)
             return True, -float(eta)
         except Exception as e:
@@ -495,13 +497,23 @@ class HierarchicalOptimizer:
             return None
 
         from src.cell_optimization.chem_regularization import mechanical_stability_metric
-        j_base = np.array([base_res["energy"], base_res["power"], mechanical_stability_metric(stresses=base_res["stresses"])])
-        G = np.zeros((3, len(DESIGN_SPACE)))
+        j_base = np.array([
+            base_res["energy"],
+            base_res["power"],
+            base_res["T_max"],
+            mechanical_stability_metric(stresses=base_res["stresses"])
+        ])
+        G = np.zeros((4, len(DESIGN_SPACE)))
 
         for j in range(len(DESIGN_SPACE)):
             res = sim_results[j + 1]
             if res["success"]:
-                j_pert = np.array([res["energy"], res["power"], mechanical_stability_metric(stresses=res["stresses"])])
+                j_pert = np.array([
+                    res["energy"],
+                    res["power"],
+                    res["T_max"],
+                    mechanical_stability_metric(stresses=res["stresses"])
+                ])
                 G[:, j] = (np.log(np.abs(j_pert) + 1e-12) - np.log(np.abs(j_base) + 1e-12)) / eps
             else:
                 print(f"WARNING: Perturbation for {DESIGN_SPACE[j]} failed: {res.get('reason')}")
@@ -558,12 +570,16 @@ def run_workflow(engine: Optional[Any] = None):
     print("="*120 + "\n")
 
     optimizer = HierarchicalOptimizer(engine=engine)
-    print("Executing Sensitivity-Driven DFN Hierarchical Optimization (Layer 3)...")
 
-    material_results = []
     pairs = [(c, s) for c in db[MaterialCategory.CATHODE_DOPANT] for s in db[MaterialCategory.SALT]]
     if os.environ.get("CEM_FAST_RUN") == "True":
         pairs = pairs[:1]
+
+    # Evaluate material candidates on 3 optimization functions (Energy, Power, Thermal Stability) at base parameters
+    print("Evaluating all material candidates on 3 optimization functions (Energy, Power, Thermal Stability) at base parameters concurrently...")
+
+    baseline_jobs = []
+    x_base = np.array([np.mean(b) for b in DESIGN_BOUNDS])
     for cat, salt in pairs:
         deltas = {}
         if cat and cat.deltas:
@@ -572,104 +588,175 @@ def run_workflow(engine: Optional[Any] = None):
         if salt and salt.deltas:
             for g_name, props in salt.deltas.items():
                 deltas.setdefault(g_name, {}).update(props)
-        x_base = np.array([np.mean(b) for b in DESIGN_BOUNDS])
-        cand_name = f"{cat.name if cat else 'None'} + {salt.name if salt else 'None'}"
-        print(f"INFO: Evaluating candidate: {cand_name}")
-        pt_test = ParamTransform(
-            base_values=optimizer.base_values,
-            derived=optimizer.derived
-        )
-        pt_test.apply_physics_deltas(deltas); pt_test.apply_design_vector(x_base, DESIGN_SPACE)
-        if not validate_params(pt_test.get_parameter_values(), verbose=True):
-             print(f"[FAILED] {cand_name}: validate_params")
-             continue
-        G = optimizer.compute_jacobian(x_base, deltas)
-        if G is None:
-             print(f"[FAILED] {cand_name}: Jacobian computation failed")
-             continue
-        opt_designs = []
-        pt_base = ParamTransform(
-            base_values=optimizer.base_values,
-            derived=optimizer.derived
-        )
-        pt_base.apply_physics_deltas(deltas); pt_base.apply_design_vector(x_base, DESIGN_SPACE)
-        base_metrics = optimizer.simulate(pt_base.get_parameter_values())
-        for i, mode in enumerate(["energy", "power", "stability"]):
-            max_s = np.max(np.abs(G[i, :])) + 1e-12
-            active_indices = [j for j in range(len(DESIGN_SPACE)) if np.abs(G[i, j]) / max_s > 0.5]
-            if not active_indices: active_indices = [int(np.argmax(np.abs(G[i, :])))]
-            ref_val = 1.0
-            if base_metrics["success"]:
-                if mode == "energy": ref_val = base_metrics["energy"]
-                elif mode == "power": ref_val = base_metrics["power"]
-                elif mode == "stability":
-                    from src.cell_optimization.chem_regularization import mechanical_stability_metric
-                    ref_val = mechanical_stability_metric(stresses=base_metrics["stresses"])
-            problem = SingleObjectiveProblem(optimizer, x_base, active_indices, deltas, mode, ref_scale=ref_val)
-            pop_size = int(os.environ.get("CEM_POP_SIZE", 8))
-            iters = int(os.environ.get("CEM_ITERATIONS", 3))
-            cem = CrossEntropyOptimizer(population_size=pop_size, iterations=iters)
-            best_active = cem.optimize(problem.evaluate_single, x_base, DESIGN_BOUNDS, active_indices, G[i, :], verbose=False)
-            x_opt = x_base.copy()
-            x_opt[active_indices] = best_active
-            opt_designs.append(x_opt)
-        valid_candidates, stability_scores = [], []
-        for x, mode in zip(opt_designs, ["energy", "power", "stability"]):
-            pt = ParamTransform(
-                base_values=optimizer.base_values,
-                derived=optimizer.derived
-            )
-            pt.apply_physics_deltas(deltas); pt.apply_design_vector(x, DESIGN_SPACE)
-            ok, score = optimizer.evaluate_stability_pde(pt.get_parameter_values(), mode)
-            if ok:
-                valid_candidates.append(x); stability_scores.append(score)
-        if not valid_candidates:
-             print(f"[FAILED] {cand_name}: Stage 2 structural filtering")
-             continue
-        x_star = valid_candidates[np.argmax(stability_scores)]
-        final_x = 0.8 * x_star + 0.2 * np.mean(valid_candidates, axis=0)
+
         pt = ParamTransform(
             base_values=optimizer.base_values,
             derived=optimizer.derived
         )
-        pt.apply_physics_deltas(deltas); pt.apply_design_vector(final_x, DESIGN_SPACE)
-        final_pv = pt.get_parameter_values()
-        final_metrics = optimizer.simulate(final_pv, return_sol=True)
-        if final_metrics["success"]:
-            from src.cell_optimization.chem_regularization import mechanical_stability_metric
-            mech_opt = optimizer.mech_model.solve_strain(final_metrics["sol"], final_pv)
-            final_metrics.update({
-                "stability_metric": mechanical_stability_metric(stresses=final_metrics["stresses"]),
-                "max_strain": mech_opt["max_strain"]
-            })
-            # Remove sol to keep result.json small
-            final_metrics.pop("sol", None)
+        pt.apply_physics_deltas(deltas)
+        pt.apply_design_vector(x_base, DESIGN_SPACE)
+        pv = pt.get_parameter_values()
+        baseline_jobs.append((cat, salt, deltas, pv))
 
-            material_results.append({
-                "cat": cat,
-                "salt": salt,
-                "x": final_x,
-                "metrics": final_metrics,
-                "deltas": deltas,
-                "jacobian": G,
-                "opt_designs": opt_designs
-            })
+    def baseline_worker(job):
+        cat, salt, deltas, pv = job
+        cand_name = f"{cat.name if cat else 'None'} + {salt.name if salt else 'None'}"
+        if not validate_params(pv):
+            return {"success": False, "reason": "validate_params failed", "cand_name": cand_name, "cat": cat, "salt": salt}
+
+        res = optimizer.runner.run_simulation(pv)
+        metrics = post_process_sol(res)
+        return {
+            "success": metrics["success"],
+            "cand_name": cand_name,
+            "cat": cat,
+            "salt": salt,
+            "deltas": deltas,
+            "metrics": metrics
+        }
+
+    # Execute baseline simulations concurrently using ThreadPoolExecutor
+    max_workers = max(1, os.cpu_count() - 1)
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        baseline_results = list(executor.map(baseline_worker, baseline_jobs))
+
+    print("\n" + "="*120)
+    print(f"{'BASELINE MATERIAL CANDIDATE EVALUATION (ON 3 FUNCTIONS)':^120s}")
+    print("="*120)
+    print(f"{'Candidate Pair':45s} | {'Baseline Energy (Wh)':22s} | {'Baseline Power (W)':20s} | {'Thermal Stability T_max (K)':28s}")
+    print("-" * 120)
+
+    successful_baselines = []
+    for r in baseline_results:
+        cand_name = r["cand_name"]
+        if r["success"]:
+            m = r["metrics"]
+            print(f"{cand_name:45s} | {m['energy']:22.4f} | {m['power']:20.4f} | {m['T_max']:28.2f}")
+            successful_baselines.append(r)
+        else:
+            print(f"{cand_name:45s} | {'FAILED':22s} | {'FAILED':20s} | {'FAILED':28s}")
+
+    print("="*120 + "\n")
+
+    if not successful_baselines:
+        print("ERROR: Hierarchical optimization aborted: No valid material candidates successfully simulated baseline.")
+        raise RuntimeError("No valid material candidates successfully simulated baseline.")
+
+    # Select optimal material pair based on highest baseline energy satisfying thermal constraints
+    safe_baselines = [r for r in successful_baselines if r["metrics"]["T_max"] <= 333.15]
+    if safe_baselines:
+        best_baseline = max(safe_baselines, key=lambda r: r["metrics"]["energy"])
+    else:
+        best_baseline = max(successful_baselines, key=lambda r: r["metrics"]["energy"])
+
+    print(f"--> SELECTED OPTIMAL CANDIDATE FOR PARAMETER OPTIMIZATION: {best_baseline['cand_name']}")
+
+    cat = best_baseline["cat"]
+    salt = best_baseline["salt"]
+    deltas = best_baseline["deltas"]
+    cand_name = best_baseline["cand_name"]
+
+    print(f"\nExecuting Sensitivity-Driven DFN Parameter Optimization (4 Functions) for optimal pair...")
+
+    G = optimizer.compute_jacobian(x_base, deltas)
+    if G is None:
+         print(f"ERROR: Jacobian computation failed for selected optimal candidate: {cand_name}")
+         raise RuntimeError("Jacobian computation failed for selected optimal candidate.")
+
+    opt_designs = []
+    pt_base = ParamTransform(
+        base_values=optimizer.base_values,
+        derived=optimizer.derived
+    )
+    pt_base.apply_physics_deltas(deltas); pt_base.apply_design_vector(x_base, DESIGN_SPACE)
+    base_metrics = optimizer.simulate(pt_base.get_parameter_values())
+
+    modes = ["energy", "power", "thermal_stability", "stability"]
+    for i, mode in enumerate(modes):
+        max_s = np.max(np.abs(G[i, :])) + 1e-12
+        active_indices = [j for j in range(len(DESIGN_SPACE)) if np.abs(G[i, j]) / max_s > 0.5]
+        if not active_indices: active_indices = [int(np.argmax(np.abs(G[i, :])))]
+        ref_val = 1.0
+        if base_metrics["success"]:
+            if mode == "energy": ref_val = base_metrics["energy"]
+            elif mode == "power": ref_val = base_metrics["power"]
+            elif mode == "thermal_stability": ref_val = base_metrics["T_max"]
+            elif mode == "stability":
+                from src.cell_optimization.chem_regularization import mechanical_stability_metric
+                ref_val = mechanical_stability_metric(stresses=base_metrics["stresses"])
+        problem = SingleObjectiveProblem(optimizer, x_base, active_indices, deltas, mode, ref_scale=ref_val)
+        pop_size = int(os.environ.get("CEM_POP_SIZE", 8))
+        iters = int(os.environ.get("CEM_ITERATIONS", 3))
+        cem = CrossEntropyOptimizer(population_size=pop_size, iterations=iters)
+        best_active = cem.optimize(problem.evaluate_single, x_base, DESIGN_BOUNDS, active_indices, G[i, :], verbose=False)
+        x_opt = x_base.copy()
+        x_opt[active_indices] = best_active
+        opt_designs.append(x_opt)
+
+    valid_candidates, stability_scores = [], []
+    for x, mode in zip(opt_designs, modes):
+        pt = ParamTransform(
+            base_values=optimizer.base_values,
+            derived=optimizer.derived
+        )
+        pt.apply_physics_deltas(deltas); pt.apply_design_vector(x, DESIGN_SPACE)
+        ok, score = optimizer.evaluate_stability_pde(pt.get_parameter_values(), mode)
+        if ok:
+            valid_candidates.append(x); stability_scores.append(score)
+
+    if not valid_candidates:
+         print(f"ERROR: Stage 2 structural filtering failed for selected candidate: {cand_name}")
+         raise RuntimeError("Stage 2 structural filtering failed for selected candidate.")
+
+    x_star = valid_candidates[np.argmax(stability_scores)]
+    final_x = 0.8 * x_star + 0.2 * np.mean(valid_candidates, axis=0)
+    pt = ParamTransform(
+        base_values=optimizer.base_values,
+        derived=optimizer.derived
+    )
+    pt.apply_physics_deltas(deltas); pt.apply_design_vector(final_x, DESIGN_SPACE)
+    final_pv = pt.get_parameter_values()
+    final_metrics = optimizer.simulate(final_pv, return_sol=True)
+
+    if not final_metrics["success"]:
+         print(f"ERROR: Final simulation failed for selected candidate: {cand_name}")
+         raise RuntimeError("Final simulation failed for selected candidate.")
+
+    from src.cell_optimization.chem_regularization import mechanical_stability_metric
+    mech_opt = optimizer.mech_model.solve_strain(final_metrics["sol"], final_pv)
+    final_metrics.update({
+        "stability_metric": mechanical_stability_metric(stresses=final_metrics["stresses"]),
+        "max_strain": mech_opt["max_strain"]
+    })
+    # Remove sol to keep result.json small
+    final_metrics.pop("sol", None)
+
+    material_results = [{
+        "cat": cat,
+        "salt": salt,
+        "x": final_x,
+        "metrics": final_metrics,
+        "deltas": deltas,
+        "jacobian": G,
+        "opt_designs": opt_designs
+    }]
+
     print("="*80)
     print(f"Candidates processed: {len(db[MaterialCategory.CATHODE_DOPANT]) * len(db[MaterialCategory.SALT])}")
     print(f"Successful candidates: {len(material_results)}")
     print("="*80)
-    if not material_results:
-        print("ERROR: Hierarchical optimization failed: No valid material candidates successfully optimized.")
-        raise RuntimeError("No valid material candidates successfully optimized.")
-    best = max(material_results, key=lambda r: r["metrics"]["energy"])
+
+    best = material_results[0]
     G_avg = best["jacobian"]
     S = np.abs(G_avg) / (np.max(np.abs(G_avg), axis=1).reshape(-1, 1) + 1e-12)
-    groups = {"Energy": [], "Power": [], "Stability": [], "Coupled": []}
+    groups = {"Energy": [], "Power": [], "Thermal Stability": [], "Stability": [], "Coupled": []}
     for j, name in enumerate(DESIGN_SPACE):
         member_of = []
-        for i, obj in enumerate(["Energy", "Power", "Stability"]):
+        for i, obj in enumerate(["Energy", "Power", "Thermal Stability", "Stability"]):
             if S[i, j] > 0.5: groups[obj].append(name); member_of.append(obj)
         if len(member_of) > 1: groups["Coupled"].append(name)
+
     output = {
         "materials": {
             "cathode": {"name": best["cat"].name, "formula": best["cat"].composition, "properties": best["cat"].properties},
@@ -679,7 +766,7 @@ def run_workflow(engine: Optional[Any] = None):
         "design_specs_representative": dict(zip(DESIGN_SPACE, best["x"].tolist())),
         "opt_designs_per_objective": {
             mode: dict(zip(DESIGN_SPACE, design.tolist()))
-            for mode, design in zip(["energy", "power", "stability"], best["opt_designs"])
+            for mode, design in zip(modes, best["opt_designs"])
         },
         "combined_deltas_representative": best["deltas"],
         "sensitivity_matrix": best["jacobian"].tolist(),

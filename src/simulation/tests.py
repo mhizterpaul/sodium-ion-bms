@@ -22,7 +22,12 @@ class BESSScenarioGenerator:
         return f"Discharge at {rate} until {limit}V" if limit else f"Discharge at {rate}"
 
     @staticmethod
-    def get_blackout_scenario(v_max):
+    def get_blackout_scenario(v_max, fast=False):
+        if fast:
+            return pybamm.Experiment([
+                "Charge at 1C for 2 minutes",
+                "Rest for 2 minutes"
+            ])
         # Issue 13: Realistic grid loss during charging
         return pybamm.Experiment([
             BESSScenarioGenerator.charge_step("1C", limit=v_max),
@@ -30,7 +35,14 @@ class BESSScenarioGenerator:
         ])
 
     @staticmethod
-    def get_dispatch_scenario(v_min, v_max):
+    def get_dispatch_scenario(v_min, v_max, fast=False):
+        if fast:
+            return pybamm.Experiment([
+                "Discharge at 0.5C for 2 minutes",
+                "Rest for 2 minutes",
+                "Charge at 0.5C for 2 minutes",
+                "Rest for 2 minutes"
+            ])
         # Issue 3, 10: Multi-stage realistic BESS dispatch
         return pybamm.Experiment([
             BESSScenarioGenerator.discharge_step("0.5C", limit=v_min),
@@ -101,6 +113,7 @@ class StabilityValidator:
         model_dict = self.electro_model.build_model(parameter_updates=updates)
 
         try:
+            fast_run = (os.environ.get("CEM_FAST_RUN") == "True")
             if experiment:
                 results = self.electro_model.simulate(model_dict, experiment=experiment)
                 # Extract effective C-rate for mechanical scaling (Issue 2)
@@ -120,7 +133,9 @@ class StabilityValidator:
                     current = c_rate * cap_ah
 
                 # Time for 1C is 3600s
-                times = np.linspace(0, 3600 / eff_c_rate, 50)
+                duration = 120 if fast_run else (3600 / eff_c_rate)
+                n_pts = 10 if fast_run else 50
+                times = np.linspace(0, duration, n_pts)
                 results = self.electro_model.simulate(model_dict, times, current_function=current)
 
             # 3. Mechanical Strain Solve
@@ -149,8 +164,10 @@ class StabilityValidator:
         v_min = self.optimized_params["Lower voltage cut-off [V]"]
         v_max = self.optimized_params["Upper voltage cut-off [V]"]
 
+        fast_run = (os.environ.get("CEM_FAST_RUN") == "True")
+
         # 1. Base Validation: BESS Dispatch (Issue 3, 11)
-        dispatch_experiment = BESSScenarioGenerator.get_dispatch_scenario(v_min, v_max)
+        dispatch_experiment = BESSScenarioGenerator.get_dispatch_scenario(v_min, v_max, fast=fast_run)
         res_dispatch = self.run_full_simulation(self.optimized_params, experiment=dispatch_experiment)
 
         # 2. Robustness Check: Grid Outage during Charge (Issue 11, 13)
@@ -158,12 +175,16 @@ class StabilityValidator:
         robust_updates = self.optimized_params.copy()
         robust_updates["Positive electrode thickness [m]"] *= 1.1
 
-        blackout_experiment = BESSScenarioGenerator.get_blackout_scenario(v_max)
+        blackout_experiment = BESSScenarioGenerator.get_blackout_scenario(v_max, fast=fast_run)
         res_robust = self.run_full_simulation(robust_updates, experiment=blackout_experiment)
 
         # 3. Varying C-rate Stress Test (Requested by user)
-        print("  Running Varying C-rate Stress Test (Oscillating profile)...")
-        profile = self.electro_model.get_varying_c_rate_profile(base_c_rate=1.0, duration=1800, n_points=50)
+        if fast_run:
+            print("  Running Varying C-rate Stress Test (Fast profile)...")
+            profile = self.electro_model.get_varying_c_rate_profile(base_c_rate=1.0, duration=120, n_points=10)
+        else:
+            print("  Running Varying C-rate Stress Test (Oscillating profile)...")
+            profile = self.electro_model.get_varying_c_rate_profile(base_c_rate=1.0, duration=1800, n_points=50)
         res_varying = self.run_full_simulation(self.optimized_params, c_rate=profile)
 
         # 4. Physically Meaningful Efficiency Metrics (Issue 4, 5, 12)
