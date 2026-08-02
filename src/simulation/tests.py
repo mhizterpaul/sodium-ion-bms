@@ -5,6 +5,7 @@ import json
 import copy
 import traceback
 from nfpp_sodium_ion.src.cell_parameters.parameter_builder import get_parameter_values
+from nfpp_sodium_ion.src.calibration.derivation import get_derived_parameters
 from src.cell_optimization.parameter_opts import ParamTransform, DESIGN_SPACE
 from src.simulation.utilities.tests_driver import ElectrochemicalThermalDriverModel
 
@@ -90,11 +91,12 @@ class StabilityValidator:
         )
 
         self.optimized_params = pt.get_parameter_values()
-        # Ensure DFN stability parameters from validate.py
+        # Ensure DFN stability parameters from validate.py using derived parameters (no hardcoded cell values)
+        derived = get_derived_parameters()
         if "SEI solvent diffusivity [m2.s-1]" not in self.optimized_params:
-             self.optimized_params["SEI solvent diffusivity [m2.s-1]"] = 2.5e-22
+             self.optimized_params["SEI solvent diffusivity [m2.s-1]"] = derived["sei_solvent_diffusivity"]
         if "Bulk solvent concentration [mol.m-3]" not in self.optimized_params:
-             self.optimized_params["Bulk solvent concentration [mol.m-3]"] = 2636.0
+             self.optimized_params["Bulk solvent concentration [mol.m-3]"] = derived["bulk_solvent_concentration"]
         self.electro_model = ElectrochemicalThermalDriverModel()
 
     def run_full_simulation(self, updates, c_rate=1.0, experiment=None):
