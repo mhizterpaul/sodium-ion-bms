@@ -604,8 +604,9 @@ def run_workflow(engine: Optional[Any] = None):
         if not validate_params(pv):
             return {"success": False, "reason": "validate_params failed", "cand_name": cand_name, "cat": cat, "salt": salt}
 
-        res = optimizer.runner.run_simulation(pv)
-        metrics = post_process_sol(res)
+        # Create a fresh thread-local HierarchicalOptimizer instance inside baseline_worker to be completely thread-safe
+        local_optimizer = HierarchicalOptimizer(engine=engine)
+        metrics = local_optimizer.simulate(pv)
         return {
             "success": metrics["success"],
             "cand_name": cand_name,

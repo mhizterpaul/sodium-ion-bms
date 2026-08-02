@@ -238,13 +238,6 @@ class StabilityValidator:
 
         return results
 
-    def export_to_json(self, results, output_path="src/power_plant/cell_params.json"):
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        with open(output_path, "w") as f:
-            json.dump(results, f, indent=2)
-        print(f"Validated Model (JSON) exported to {output_path}")
-
 if __name__ == "__main__":
     validator = StabilityValidator()
     results = validator.validate_optimized_design()
-    validator.export_to_json(results)
