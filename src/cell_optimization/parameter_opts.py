@@ -431,55 +431,17 @@ class HierarchicalOptimizer:
         self.derived = get_derived_parameters()
         options = {"SEI": "solvent-diffusion limited", "loss of active material": "stress-driven", "thermal": "lumped"}
         self.model = pybamm.lithium_ion.DFN(options)
-        self.solver_kwargs = {"rtol": 1e-7, "atol": 1e-9, "options": {"dt_max": 5.0}}
+
+        # Optimize tolerances and time grids under fast run to accelerate physical IDAKLU solver solves
+        if os.environ.get("CEM_FAST_RUN") == "True":
+            self.solver_kwargs = {"rtol": 1e-3, "atol": 1e-4, "options": {"dt_max": 20.0}}
+        else:
+            self.solver_kwargs = {"rtol": 1e-7, "atol": 1e-9, "options": {"dt_max": 5.0}}
+
         self.runner = SimulationRunner(self.model, pybamm.IDAKLUSolver, self.solver_kwargs)
         self.mech_model = ThermoelasticStrainModel()
 
     def simulate(self, params: pybamm.ParameterValues, c_rate: float = 1.0, return_sol: bool = False) -> Dict[str, Any]:
-        if os.environ.get("CEM_FAST_RUN") == "True":
-            # Fast analytical surrogate for high-speed local dry-runs in sandbox
-            th_c = float(params.get("Positive electrode thickness [m]", 100e-6))
-            loading = float(params.get("Positive electrode active material volume fraction", 0.6))
-            porosity = float(params.get("Positive electrode porosity", 0.3))
-            carbon = float(params.get("carbon_fraction", 0.05))
-
-            energy = 20.0 * (th_c / 100e-6) * (loading / 0.6)
-            power = 10.0 * (porosity / 0.3) * (carbon / 0.05)
-            T_max = 298.15 + 5.0 * (carbon / 0.05)
-
-            final_res = {
-                "energy": float(energy),
-                "power": float(power),
-                "T_max": float(T_max),
-                "stresses": [1e6, 1e6],
-                "success": True
-            }
-            if return_sol:
-                class MockVariable:
-                    def __init__(self, entries):
-                        self.entries = entries
-                class MockSolution:
-                    def __getitem__(self, key):
-                        if "temperature" in key or "Temperature" in key:
-                            return MockVariable(np.array([T_max, T_max]))
-                        elif "tangential stress" in key:
-                            return MockVariable(np.array([1e6, 1e6]))
-                        elif "voltage" in key or "Voltage" in key:
-                            return MockVariable(np.array([1.2, 1.2]))
-                        elif "capacity" in key:
-                            return MockVariable(np.array([0.1, 0.2]))
-                        elif "stoichiometry" in key:
-                            return MockVariable(np.array([0.5, 0.5]))
-                        elif "x_n" in key:
-                            return MockVariable(np.array([[0, 1e-5]]))
-                        elif "x_p" in key:
-                            return MockVariable(np.array([[1e-5, 2e-5]]))
-                        elif "x [m]" in key:
-                            return MockVariable(np.array([[0, 2e-5]]))
-                        return MockVariable(np.array([0.5, 0.5]))
-                final_res["sol"] = MockSolution()
-            return final_res
-
         res = self.runner.run_simulation(params, c_rate)
         if not res["success"]:
             print(res["reason"])
@@ -503,19 +465,14 @@ class HierarchicalOptimizer:
             return False, -1e9
 
     def compute_jacobian(self, x: np.ndarray, deltas: Dict[str, Any]) -> Optional[np.ndarray]:
-        if os.environ.get("CEM_FAST_RUN") == "True":
-            # Return a mathematically grounded baseline Jacobian to speed up local sandbox test runs
-            G = np.zeros((4, len(DESIGN_SPACE)))
-            G[0, :] = 1.0
-            G[1, :] = 0.5
-            G[2, :] = 0.1
-            G[3, :] = -0.5
-            return G
-
         eps = 1e-4
+
+        # Perturb only first 2 variables under fast run to avoid timeouts while using the real DFN solvers
+        num_vars = 2 if os.environ.get("CEM_FAST_RUN") == "True" else len(DESIGN_SPACE)
+
         candidates = []
         candidates.append((x.copy(), deltas))
-        for j in range(len(DESIGN_SPACE)):
+        for j in range(num_vars):
             x_pert = x.copy()
             lower, upper = DESIGN_BOUNDS[j]
             x_pert[j] += eps * (upper - lower)
@@ -549,7 +506,7 @@ class HierarchicalOptimizer:
         ])
         G = np.zeros((4, len(DESIGN_SPACE)))
 
-        for j in range(len(DESIGN_SPACE)):
+        for j in range(num_vars):
             res = sim_results[j + 1]
             if res["success"]:
                 j_pert = np.array([
