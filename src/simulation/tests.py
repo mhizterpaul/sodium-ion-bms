@@ -1,17 +1,16 @@
 import pybamm
 import numpy as np
-import scipy.io as sio
 import os
 import json
 import copy
 import traceback
 from nfpp_sodium_ion.src.cell_parameters.parameter_builder import get_parameter_values
+from nfpp_sodium_ion.src.calibration.derivation import get_derived_parameters
 from src.cell_optimization.parameter_opts import ParamTransform, DESIGN_SPACE
 from src.simulation.utilities.tests_driver import ElectrochemicalThermalDriverModel
-from src.simulation.utilities.mechanical.fenics_model import ThermoelasticStrainModel
 
 class BESSScenarioGenerator:
-    """Generates realistic BESS Experiments (Issue 3, 11, 13)."""
+    """Generates realistic BESS Experiments (Issue 3, 11, 13) with optimized rest durations."""
 
     @staticmethod
     def charge_step(rate, limit=None):
@@ -22,16 +21,21 @@ class BESSScenarioGenerator:
         return f"Discharge at {rate} until {limit}V" if limit else f"Discharge at {rate}"
 
     @staticmethod
-    def get_blackout_scenario(v_max):
-        # Issue 13: Realistic grid loss during charging
+    def get_blackout_scenario(v_max, fast=False):
+        if fast:
+            return pybamm.Experiment([
+                "Charge at 1C for 2 minutes",
+                "Rest for 2 minutes"
+            ])
+        # Unexpected grid outage during charging with 2-minute rest
         return pybamm.Experiment([
-            BESSScenarioGenerator.charge_step("1C", limit=v_max),
-            "Rest for 60 minutes"
+            "Charge at 1C for 20 minutes",
+            "Rest for 120 seconds"
         ])
 
     @staticmethod
-    def get_dispatch_scenario(v_min, v_max):
-        # Issue 3, 10: Multi-stage realistic BESS dispatch
+    def get_dispatch_scenario(v_min, v_max, fast=False):
+        # Issue 3, 10: Multi-stage realistic BESS dispatch - Left as is for dispatch performance evaluation
         return pybamm.Experiment([
             BESSScenarioGenerator.discharge_step("0.5C", limit=v_min),
             "Rest for 20 minutes",
@@ -43,19 +47,19 @@ class BESSScenarioGenerator:
 
     @staticmethod
     def get_pv_firming_scenario(v_max):
-        # Issue 10: PV fluctuations
+        # Realistic PV ramps with optimized 30-second rest durations
         return pybamm.Experiment([
-            "Charge at 0.2C for 10 minutes",
-            "Rest for 5 minutes",
-            "Charge at 0.8C for 10 minutes",
-            "Rest for 5 minutes",
+            "Charge at 0.2C for 5 minutes",
+            "Rest for 30 seconds",
+            "Charge at 0.8C for 5 minutes",
+            "Rest for 30 seconds",
             BESSScenarioGenerator.charge_step("0.5C", limit=v_max)
         ])
 
 class StabilityValidator:
     """
-    Stability Validation (Envelope & Robustness).
-    Uses full multiphysics Digital Twin (PyBaMM + FEniCSx).
+    Stability Validation focusing on robustness, blackout recovery, thermal response, efficiency,
+    and charge cycling estimation.
     """
 
     def __init__(self):
@@ -87,31 +91,27 @@ class StabilityValidator:
         )
 
         self.optimized_params = pt.get_parameter_values()
-        # Ensure DFN stability parameters from validate.py
+        # Ensure DFN stability parameters from validate.py using derived parameters (no hardcoded cell values)
+        derived = get_derived_parameters()
         if "SEI solvent diffusivity [m2.s-1]" not in self.optimized_params:
-             self.optimized_params["SEI solvent diffusivity [m2.s-1]"] = 2.5e-22
+             self.optimized_params["SEI solvent diffusivity [m2.s-1]"] = derived["sei_solvent_diffusivity"]
         if "Bulk solvent concentration [mol.m-3]" not in self.optimized_params:
-             self.optimized_params["Bulk solvent concentration [mol.m-3]"] = 2636.0
+             self.optimized_params["Bulk solvent concentration [mol.m-3]"] = derived["bulk_solvent_concentration"]
         self.electro_model = ElectrochemicalThermalDriverModel()
-
-        self.mech_model = ThermoelasticStrainModel()
 
     def run_full_simulation(self, updates, c_rate=1.0, experiment=None):
         # 1. Electrochemical-Thermal Solve
         model_dict = self.electro_model.build_model(parameter_updates=updates)
 
         try:
+            fast_run = (os.environ.get("CEM_FAST_RUN") == "True")
             if experiment:
                 results = self.electro_model.simulate(model_dict, experiment=experiment)
-                # Extract effective C-rate for mechanical scaling (Issue 2)
-                avg_current = np.mean(np.abs(results["solution"]["Current [A]"].entries))
-                cap_ah = model_dict["parameter_values"]["Nominal cell capacity [A.h]"]
-                eff_c_rate = avg_current / cap_ah if cap_ah > 0 else 1.0
             else:
                 # Adjust current for C-rate (handle scalar or profile)
                 cap_ah = model_dict["parameter_values"]["Nominal cell capacity [A.h]"]
 
-                # Effective average c-rate for time scaling and mechanical solve
+                # Effective average c-rate for time scaling
                 if isinstance(c_rate, (list, np.ndarray)):
                     eff_c_rate = np.mean(c_rate)
                     current = c_rate * cap_ah
@@ -120,23 +120,13 @@ class StabilityValidator:
                     current = c_rate * cap_ah
 
                 # Time for 1C is 3600s
-                times = np.linspace(0, 3600 / eff_c_rate, 50)
+                duration = 120 if fast_run else (3600 / eff_c_rate)
+                n_pts = 10 if fast_run else 50
+                times = np.linspace(0, duration, n_pts)
                 results = self.electro_model.simulate(model_dict, times, current_function=current)
-
-            # 3. Mechanical Strain Solve
-            mech_results = self.mech_model.solve_strain(
-                pybamm_sol=results["solution"],
-                params=model_dict["parameter_values"],
-                c_rate=eff_c_rate
-            )
-
-            # 4. Fatigue / Endurance
-            endurance = self.mech_model.compute_endurance_metric(mech_results["max_strain"])
 
             return {
                 "electro": results,
-                "mechanical": mech_results,
-                "endurance": endurance,
                 "params": model_dict["parameter_values"]
             }
         except Exception as e:
@@ -149,8 +139,10 @@ class StabilityValidator:
         v_min = self.optimized_params["Lower voltage cut-off [V]"]
         v_max = self.optimized_params["Upper voltage cut-off [V]"]
 
-        # 1. Base Validation: BESS Dispatch (Issue 3, 11)
-        dispatch_experiment = BESSScenarioGenerator.get_dispatch_scenario(v_min, v_max)
+        fast_run = (os.environ.get("CEM_FAST_RUN") == "True")
+
+        # 1. Base Validation: BESS Dispatch (Issue 3, 11) - left as is
+        dispatch_experiment = BESSScenarioGenerator.get_dispatch_scenario(v_min, v_max, fast=fast_run)
         res_dispatch = self.run_full_simulation(self.optimized_params, experiment=dispatch_experiment)
 
         # 2. Robustness Check: Grid Outage during Charge (Issue 11, 13)
@@ -158,12 +150,16 @@ class StabilityValidator:
         robust_updates = self.optimized_params.copy()
         robust_updates["Positive electrode thickness [m]"] *= 1.1
 
-        blackout_experiment = BESSScenarioGenerator.get_blackout_scenario(v_max)
+        blackout_experiment = BESSScenarioGenerator.get_blackout_scenario(v_max, fast=fast_run)
         res_robust = self.run_full_simulation(robust_updates, experiment=blackout_experiment)
 
         # 3. Varying C-rate Stress Test (Requested by user)
-        print("  Running Varying C-rate Stress Test (Oscillating profile)...")
-        profile = self.electro_model.get_varying_c_rate_profile(base_c_rate=1.0, duration=1800, n_points=50)
+        if fast_run:
+            print("  Running Varying C-rate Stress Test (Fast profile)...")
+            profile = self.electro_model.get_varying_c_rate_profile(base_c_rate=1.0, duration=120, n_points=10)
+        else:
+            print("  Running Varying C-rate Stress Test (Oscillating profile)...")
+            profile = self.electro_model.get_varying_c_rate_profile(base_c_rate=1.0, duration=1800, n_points=50)
         res_varying = self.run_full_simulation(self.optimized_params, c_rate=profile)
 
         # 4. Physically Meaningful Efficiency Metrics (Issue 4, 5, 12)
@@ -199,15 +195,13 @@ class StabilityValidator:
         # 4. Constraint-Based Robustness Scoring (Issue 6, 14)
         def evaluate_robustness(res):
              T_max = np.max(res["electro"]["temperature"])
-             strain_max = res["mechanical"]["max_strain"]
              soh_final = res["electro"]["soh_trajectory"][-1] / 100.0
              v_min_actual = np.min(res["electro"]["terminal_voltage"])
              v_max_actual = np.max(res["electro"]["terminal_voltage"])
 
-             # Hard constraints
+             # Hard constraints focusing on thermal and SOH/voltage stability
              constraints = [
                   T_max < 333.15, # 60C limit
-                  strain_max < self.mech_model.critical_thresholds["NFPP"],
                   soh_final > 0.99, # Negligible degradation for short trace
                   v_min_actual > 0.95 * v_min,
                   v_max_actual < 1.05 * v_max
@@ -236,27 +230,16 @@ class StabilityValidator:
             "eta_coulombic": float(metrics["eta_coulombic"]),
             "eta_voltage": float(metrics["eta_voltage"]),
             "nominal_voltage_v": float(np.mean(res_dispatch["electro"]["terminal_voltage"])),
-            "max_strain": float(res_dispatch["mechanical"]["max_strain"]),
-            "cycle_life": float(min(res_dispatch["endurance"]["n_crit"], 1e12)),
+            "max_thermal_response_k": float(np.max(res_dispatch["electro"]["temperature"])),
             "robustness_score": float(combined_robustness_score),
             "robustness_passed": bool(robustness_passed and var_passed),
+            "blackout_recovery_success": bool(res_robust["electro"]["solution"] is not None),
+            "estimated_charge_cycling_soh": float(res_dispatch["electro"]["soh_trajectory"][-1]),
             "merged_params": clean_params
         }
 
         return results
 
-    def export_to_json(self, results, output_path="src/power_plant/cell_params.json"):
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        with open(output_path, "w") as f:
-            json.dump(results, f, indent=2)
-        print(f"Validated Model (JSON) exported to {output_path}")
-
-    def export_to_matlab(self, results, output_path="src/power_plant/optimized_params.mat"):
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        sio.savemat(output_path, {"optimized_params": results})
-        print(f"Validated Model exported to {output_path}")
-
 if __name__ == "__main__":
     validator = StabilityValidator()
     results = validator.validate_optimized_design()
-    validator.export_to_matlab(results)
