@@ -611,7 +611,6 @@ def run_workflow(engine: Optional[Any] = None):
 
     x_base = np.array([np.mean(b) for b in DESIGN_BOUNDS])
 
-    # Compute Sensitivity Matrix once
     print("COMPUTING SENSITIVITY MATRIX (JACOBIAN) ONCE...")
     G = optimizer.compute_jacobian(x_base, deltas)
     if G is None:
@@ -692,40 +691,6 @@ def run_workflow(engine: Optional[Any] = None):
     ranked_candidates = sorted(candidate_metrics, key=lambda c: utility(c[1]), reverse=True)
     best_candidate_design, best_metrics = ranked_candidates[0]
 
-    print("RUNNING HIGH-FIDELITY FEM VERIFICATION ON THE TOP CANDIDATE DESIGN ONLY...")
-    pt = ParamTransform(
-        base_values=optimizer.base_values,
-        derived=optimizer.derived
-    )
-    pt.apply_physics_deltas(deltas)
-    pt.apply_design_vector(best_candidate_design, DESIGN_SPACE)
-    final_pv = pt.get_parameter_values()
-
-    ok, score = optimizer.evaluate_stability_pde(final_pv, "final_verification")
-    if not ok and len(ranked_candidates) > 1:
-        print("WARNING: Selected optimal candidate failed structural verification. Falling back to stability candidate.")
-        best_candidate_design, best_metrics = ranked_candidates[1]
-        pt = ParamTransform(
-            base_values=optimizer.base_values,
-            derived=optimizer.derived
-        )
-        pt.apply_physics_deltas(deltas)
-        pt.apply_design_vector(best_candidate_design, DESIGN_SPACE)
-        final_pv = pt.get_parameter_values()
-        ok, score = optimizer.evaluate_stability_pde(final_pv, "final_verification")
-
-    final_metrics = optimizer.simulate(final_pv, return_sol=True)
-    if not final_metrics["success"]:
-         raise RuntimeError("Final verification simulation failed.")
-
-    from src.cell_optimization.chem_regularization import mechanical_stability_metric
-    mech_opt = optimizer.mech_model.solve_strain(final_metrics["sol"], final_pv)
-    final_metrics.update({
-        "stability_metric": mechanical_stability_metric(stresses=final_metrics["stresses"]),
-        "max_strain": mech_opt["max_strain"]
-    })
-    final_metrics.pop("sol", None)
-
     groups = {"Energy": [], "Power": [], "Thermal Stability": [], "Stability": [], "Coupled": []}
     S = np.abs(G) / (np.max(np.abs(G), axis=1).reshape(-1, 1) + 1e-12)
     for j, name in enumerate(DESIGN_SPACE):
@@ -747,8 +712,7 @@ def run_workflow(engine: Optional[Any] = None):
         },
         "combined_deltas_representative": deltas,
         "sensitivity_matrix": G.tolist(),
-        "parameter_grouping": groups,
-        "metrics": final_metrics
+        "parameter_grouping": groups
     }
     with open("result.json", "w") as f: json.dump(output, f, indent=2)
 
@@ -773,13 +737,6 @@ def run_workflow(engine: Optional[Any] = None):
     for k, v in output['design_specs_representative'].items():
         if k in ["carbon_fraction", "Typical electrolyte concentration [mol.m-3]"]:
             print(f"    {k:40s}: {v:12.6e}")
-
-    print("-" * 80)
-    print(f"  Final Cell Performance:")
-    print(f"    Energy: {final_metrics['energy']:.4f} Wh")
-    print(f"    Power:  {final_metrics['power']:.4f} W")
-    print(f"    Peak Temperature: {final_metrics['T_max']:.2f} K")
-    print(f"    Max Von Mises Strain: {final_metrics['max_strain']:.4e}")
     print("="*80 + "\n")
     return output
 
