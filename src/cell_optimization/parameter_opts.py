@@ -528,6 +528,40 @@ class HierarchicalOptimizer:
     def run(self):
         return run_workflow(self.engine)
 
+def _optimize_mode_pipeline_worker(job):
+    """ThreadPool worker running step 1 and step 2 parameters co-optimization sequentially for a single objective mode."""
+    i, mode, x_base, deltas, G, STRUCT_INDICES, MAT_INDICES, engine = job
+
+    # Instantiate a thread-local HierarchicalOptimizer to guarantee absolute solver thread safety
+    local_optimizer = HierarchicalOptimizer(engine=engine)
+
+    # 1. Step 1: Structural Parameters (θs) Optimization
+    max_s = np.max(np.abs(G[i, STRUCT_INDICES])) + 1e-12
+    active_indices = [j for j in STRUCT_INDICES if np.abs(G[i, j]) / max_s > 0.5]
+    if not active_indices:
+        active_indices = [int(STRUCT_INDICES[np.argmax(np.abs(G[i, STRUCT_INDICES]))])]
+
+    ref_val = 1.0
+    problem = SingleObjectiveProblem(local_optimizer, x_base, active_indices, deltas, mode, ref_scale=ref_val)
+    pop_size = int(os.environ.get("CEM_POP_SIZE", 8))
+    iters = int(os.environ.get("CEM_ITERATIONS", 3))
+    cem = CrossEntropyOptimizer(population_size=pop_size, iterations=iters)
+    best_active = cem.optimize(problem.evaluate_single, x_base, DESIGN_BOUNDS, active_indices, G[i, :], verbose=False)
+
+    x_opt_struct = x_base.copy()
+    x_opt_struct[active_indices] = best_active
+
+    # 2. Step 2: Material Parameters (θm) Optimization
+    active_indices_m = MAT_INDICES
+    problem_m = SingleObjectiveProblem(local_optimizer, x_opt_struct, active_indices_m, deltas, mode, ref_scale=ref_val)
+    cem_m = CrossEntropyOptimizer(population_size=pop_size, iterations=iters)
+    best_active_m = cem_m.optimize(problem_m.evaluate_single, x_opt_struct, DESIGN_BOUNDS, active_indices_m, G[i, :], verbose=False)
+
+    x_opt_final = x_opt_struct.copy()
+    x_opt_final[active_indices_m] = best_active_m
+
+    return x_opt_final
+
 def run_workflow(engine: Optional[Any] = None):
     from src.cell_optimization.material_opt import MaterialMappingEngine, MaterialCategory
     if engine is None: engine = MaterialMappingEngine()
@@ -616,47 +650,23 @@ def run_workflow(engine: Optional[Any] = None):
     if G is None:
          raise RuntimeError("Jacobian computation failed for optimized cell chemistry.")
 
-    print("\nSTAGE 2: PARAMETER CO-OPTIMIZATION (SEPARATE θs AND θm)")
+    print("\nSTAGE 2: PARAMETER CO-OPTIMIZATION (CONCURRENT OBJECTIVES)")
     STRUCT_INDICES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     MAT_INDICES = [11, 12]
     modes = ["energy", "power", "thermal_stability", "stability"]
 
-    # Step 1: Structural Parameters (θs) Optimization
-    print("  Step 1: Optimizing Structural Parameters (θs)...")
-    struct_opt_designs = []
-    for i, mode in enumerate(modes):
-        max_s = np.max(np.abs(G[i, STRUCT_INDICES])) + 1e-12
-        active_indices = [j for j in STRUCT_INDICES if np.abs(G[i, j]) / max_s > 0.5]
-        if not active_indices: active_indices = [int(STRUCT_INDICES[np.argmax(np.abs(G[i, STRUCT_INDICES]))])]
-        ref_val = 1.0
+    # Multi-threading parallel solve across all independent objective modes (Energy, Power, Thermal, Stability) concurrently!
+    # Solves T_stage2 = max(T_E, T_P, T_T, T_S) instead of T_E + T_P + T_T + T_S
+    jobs = [
+        (i, mode, x_base, deltas, G, STRUCT_INDICES, MAT_INDICES, engine)
+        for i, mode in enumerate(modes)
+    ]
 
-        problem = SingleObjectiveProblem(optimizer, x_base, active_indices, deltas, mode, ref_scale=ref_val)
-        pop_size = int(os.environ.get("CEM_POP_SIZE", 8))
-        iters = int(os.environ.get("CEM_ITERATIONS", 3))
-        cem = CrossEntropyOptimizer(population_size=pop_size, iterations=iters)
-        best_active = cem.optimize(problem.evaluate_single, x_base, DESIGN_BOUNDS, active_indices, G[i, :], verbose=False)
-
-        x_opt = x_base.copy()
-        x_opt[active_indices] = best_active
-        struct_opt_designs.append(x_opt)
-
-    # Step 2: Material Parameters (θm) Optimization
-    print("  Step 2: Optimizing Material Parameters (θm)...")
-    final_opt_designs = []
-    for i, mode in enumerate(modes):
-        x_struct = struct_opt_designs[i].copy()
-        active_indices = MAT_INDICES
-        ref_val = 1.0
-
-        problem = SingleObjectiveProblem(optimizer, x_struct, active_indices, deltas, mode, ref_scale=ref_val)
-        pop_size = int(os.environ.get("CEM_POP_SIZE", 8))
-        iters = int(os.environ.get("CEM_ITERATIONS", 3))
-        cem = CrossEntropyOptimizer(population_size=pop_size, iterations=iters)
-        best_active = cem.optimize(problem.evaluate_single, x_struct, DESIGN_BOUNDS, active_indices, G[i, :], verbose=False)
-
-        x_opt = x_struct.copy()
-        x_opt[active_indices] = best_active
-        final_opt_designs.append(x_opt)
+    print("  Executing Structural & Material Co-Optimization concurrently across independent modes...")
+    max_workers = min(len(modes), max(1, os.cpu_count() - 1))
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        final_opt_designs = list(executor.map(_optimize_mode_pipeline_worker, jobs))
 
     print("RUNNING PARETO FRONT FILTERING...")
     candidate_metrics = []
