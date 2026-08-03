@@ -671,17 +671,18 @@ def run_workflow(engine: Optional[Any] = None):
     MAT_INDICES = [11, 12]
     modes = ["energy", "power", "thermal_stability", "stability"]
 
-    # Multi-threading parallel solve across all independent objective modes (Energy, Power, Thermal, Stability) concurrently!
+    # ProcessPoolExecutor parallel solve across independent objective modes concurrently!
     # Solves T_stage2 = max(T_E, T_P, T_T, T_S) instead of T_E + T_P + T_T + T_S
     jobs = [
         (i, mode, x_base, deltas, G, STRUCT_INDICES, MAT_INDICES, engine)
         for i, mode in enumerate(modes)
     ]
 
+    # Strictly parallelize only two objective optimizations at a time using ProcessPoolExecutor to prevent CPU thrashing
     print("  Executing Structural & Material Co-Optimization concurrently across independent modes...")
-    max_workers = min(len(modes), max(1, os.cpu_count() - 1))
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    max_workers = 2
+    from concurrent.futures import ProcessPoolExecutor
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
         final_opt_designs = list(executor.map(_optimize_mode_pipeline_worker, jobs))
 
     print("RUNNING PARETO FRONT FILTERING...")
@@ -689,7 +690,7 @@ def run_workflow(engine: Optional[Any] = None):
     for x in final_opt_designs:
         pt = ParamTransform(
             base_values=optimizer.base_values,
-            derived=optimizer.derived
+            derived=derived
         )
         pt.apply_physics_deltas(deltas)
         pt.apply_design_vector(x, DESIGN_SPACE)
