@@ -114,6 +114,18 @@ def validate_params(pv: Dict[str, Any], verbose: bool = False):
                 if verbose: print(f"DEBUG: validate_params failed: {am} = {val} out of bounds")
                 return False
 
+    # Physical consistency check: active material fraction + porosity + carbon fraction < 1.0
+    for domain in ["Positive", "Negative"]:
+        por_key = f"{domain} electrode porosity"
+        am_key = f"{domain} electrode active material volume fraction"
+        if por_key in pv and am_key in pv:
+            por = pv[por_key]
+            am = pv[am_key]
+            carb = pv.get("carbon_fraction", 0.05)
+            if (por + am + carb) >= 0.98:
+                if verbose: print(f"DEBUG: validate_params failed: {domain} total fraction exceeds 1.0 (porosity={por}, AM={am}, carbon={carb})")
+                return False
+
     return True
 
 class OCPWrapper:
@@ -216,7 +228,9 @@ class ParamTransform:
                  eps = val
                  tau = eps ** (-0.5)
                  self.values_dict[name] = val
-                 if "Electrolyte conductivity [S.m-1]" in self.values_dict:
+                 # Scale electrolyte conductivity strictly on Separator porosity processing
+                 # to prevent repeated multi-scale wrapping and shape mismatch discretisation errors
+                 if name == "Separator porosity" and "Electrolyte conductivity [S.m-1]" in self.values_dict:
                       self._apply_scaling("Electrolyte conductivity [S.m-1]", (eps / tau) ** 1.5)
             else:
                 self.values_dict[name] = val
@@ -576,6 +590,7 @@ def run_workflow(engine: Optional[Any] = None):
     print("="*120)
 
     # 1. Parallel Dopant Optimization & Scoring (No DFN)
+    # Refactored analytical score to focus strictly on Energy, Power, and Thermal Stability as instructed
     print(f"\nLAYER 1: PARALLEL DOPANT OPTIMIZATION")
     print(f"{'Candidate':25s} | {'QM: Form E':12s} | {'QM: Volume':12s} | {'Derived Delta Key':40s} | {'Value':12s}")
     print("-" * 120)
@@ -593,19 +608,20 @@ def run_workflow(engine: Optional[Any] = None):
         diffusivity_log_delta = d.get("transport", {}).get("diffusivity_log_delta", 0.0)
         conductivity_log_delta = d.get("transport", {}).get("conductivity_log_delta", 0.0)
         exchange_current_log_delta = d.get("kinetic", {}).get("exchange_current_log_delta", 0.0)
-        strain = d.get("structural", {}).get("strain", 0.0)
+        stability_shift = d.get("thermodynamic", {}).get("stability_shift", 0.0)
 
         score = (voltage_boost * 10.0 +
-                 diffusivity_log_delta * 1.5 +
-                 conductivity_log_delta * 0.5 +
-                 exchange_current_log_delta * 2.0 -
-                 abs(strain) * 100.0)
+                 diffusivity_log_delta * 2.0 +
+                 conductivity_log_delta * 1.0 +
+                 exchange_current_log_delta * 2.0 +
+                 stability_shift * 5.0)
         cand.score = score
         if score > best_dopant_score:
             best_dopant_score = score
             best_dopant = cand
 
     # 2. Parallel Salt Optimization & Scoring (No DFN)
+    # Refactored analytical score to focus strictly on Energy, Power, and Thermal Stability as instructed
     print(f"\nLAYER 1: PARALLEL SALT OPTIMIZATION")
     print(f"{'Candidate':25s} | {'QM: Form E':12s} | {'QM: Volume':12s} | {'Derived Delta Key':40s} | {'Value':12s}")
     print("-" * 120)
