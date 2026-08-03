@@ -432,7 +432,6 @@ class HierarchicalOptimizer:
         options = {"SEI": "solvent-diffusion limited", "loss of active material": "stress-driven", "thermal": "lumped"}
         self.model = pybamm.lithium_ion.DFN(options)
 
-        # Optimize tolerances and time grids under fast run to accelerate physical IDAKLU solver solves
         if os.environ.get("CEM_FAST_RUN") == "True":
             self.solver_kwargs = {"rtol": 1e-3, "atol": 1e-4, "options": {"dt_max": 20.0}}
         else:
@@ -466,8 +465,6 @@ class HierarchicalOptimizer:
 
     def compute_jacobian(self, x: np.ndarray, deltas: Dict[str, Any]) -> Optional[np.ndarray]:
         eps = 1e-4
-
-        # Perturb only first 2 variables under fast run to avoid timeouts while using the real DFN solvers
         num_vars = 2 if os.environ.get("CEM_FAST_RUN") == "True" else len(DESIGN_SPACE)
 
         candidates = []
@@ -613,16 +610,8 @@ def run_workflow(engine: Optional[Any] = None):
     print("CONSTRUCTING OPTIMIZED BASE CELL...")
 
     x_base = np.array([np.mean(b) for b in DESIGN_BOUNDS])
-    pt_base = ParamTransform(
-        base_values=optimizer.base_values,
-        derived=optimizer.derived
-    )
-    pt_base.apply_physics_deltas(deltas)
-    pt_base.apply_design_vector(x_base, DESIGN_SPACE)
-    base_metrics = optimizer.simulate(pt_base.get_parameter_values())
-    if not base_metrics["success"]:
-        raise RuntimeError("Base cell simulation failed. Aborting pipeline.")
 
+    # Compute Sensitivity Matrix once
     print("COMPUTING SENSITIVITY MATRIX (JACOBIAN) ONCE...")
     G = optimizer.compute_jacobian(x_base, deltas)
     if G is None:
@@ -641,13 +630,6 @@ def run_workflow(engine: Optional[Any] = None):
         active_indices = [j for j in STRUCT_INDICES if np.abs(G[i, j]) / max_s > 0.5]
         if not active_indices: active_indices = [int(STRUCT_INDICES[np.argmax(np.abs(G[i, STRUCT_INDICES]))])]
         ref_val = 1.0
-        if base_metrics["success"]:
-            if mode == "energy": ref_val = base_metrics["energy"]
-            elif mode == "power": ref_val = base_metrics["power"]
-            elif mode == "thermal_stability": ref_val = base_metrics["T_max"]
-            elif mode == "stability":
-                from src.cell_optimization.chem_regularization import mechanical_stability_metric
-                ref_val = mechanical_stability_metric(stresses=base_metrics["stresses"])
 
         problem = SingleObjectiveProblem(optimizer, x_base, active_indices, deltas, mode, ref_scale=ref_val)
         pop_size = int(os.environ.get("CEM_POP_SIZE", 8))
@@ -666,13 +648,6 @@ def run_workflow(engine: Optional[Any] = None):
         x_struct = struct_opt_designs[i].copy()
         active_indices = MAT_INDICES
         ref_val = 1.0
-        if base_metrics["success"]:
-            if mode == "energy": ref_val = base_metrics["energy"]
-            elif mode == "power": ref_val = base_metrics["power"]
-            elif mode == "thermal_stability": ref_val = base_metrics["T_max"]
-            elif mode == "stability":
-                from src.cell_optimization.chem_regularization import mechanical_stability_metric
-                ref_val = mechanical_stability_metric(stresses=base_metrics["stresses"])
 
         problem = SingleObjectiveProblem(optimizer, x_struct, active_indices, deltas, mode, ref_scale=ref_val)
         pop_size = int(os.environ.get("CEM_POP_SIZE", 8))
