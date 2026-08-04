@@ -5,6 +5,7 @@ import os
 import traceback
 import inspect
 import copy
+import gc
 from collections import OrderedDict
 from typing import Dict, Any, List, Tuple, Optional
 from src.cell_optimization.cem_optimizer import CrossEntropyOptimizer
@@ -300,8 +301,15 @@ def transform_candidates_parallel(
     return [pybamm.ParameterValues(values) for values in transformed_dicts]
 
 class MeshCache:
-    def __init__(self):
-        self.cache = {}
+    """
+    Bounded LRU Cache to manage PyBaMM Mesh objects.
+    To ensure absolute thread safety during parallel simulations, we only cache
+    the read-only Mesh object and always instantiate a fresh pybamm.Discretisation
+    for each thread call.
+    """
+    def __init__(self, max_size: int = 16):
+        self.cache = OrderedDict()
+        self.max_size = max_size
 
     def get_mesh_and_disc(self, params, model, submesh_types, var_pts, spatial_methods):
         geom_keys = [
@@ -312,15 +320,30 @@ class MeshCache:
             "Negative particle radius [m]"
         ]
         key = tuple(float(params.get(k, 0.0)) for k in geom_keys)
-        if key in self.cache:
-            return self.cache[key]
 
-        geometry = copy.deepcopy(model.default_geometry)
-        params.process_geometry(geometry)
-        mesh = pybamm.Mesh(geometry, submesh_types, var_pts)
+        if key in self.cache:
+            mesh = self.cache.pop(key)
+            self.cache[key] = mesh
+        else:
+            geometry = copy.deepcopy(model.default_geometry)
+            params.process_geometry(geometry)
+            mesh = pybamm.Mesh(geometry, submesh_types, var_pts)
+            self.cache[key] = mesh
+
+        while len(self.cache) > self.max_size:
+            _, old_mesh = self.cache.popitem(last=False)
+            del old_mesh
+
+        # Instantiate a fresh, unshared, state-isolated Discretisation object for this simulation solve
         disc = pybamm.Discretisation(mesh, spatial_methods)
-        self.cache[key] = (mesh, disc)
         return mesh, disc
+
+    def clear(self):
+        """Release all cached meshes explicitly."""
+        for mesh in list(self.cache.values()):
+            del mesh
+        self.cache.clear()
+        gc.collect()
 
 class SingleObjectiveProblem:
     def __init__(self, optimizer, x_full, active_indices, deltas, mode, ref_scale=1.0):
@@ -382,6 +405,11 @@ class SimulationRunner:
 
     def run_simulation(self, params: pybamm.ParameterValues, c_rate: float = 1.0) -> Dict[str, Any]:
         params = params.copy()
+        processed_model = None
+        mesh = None
+        disc = None
+        solver = None
+
         try:
             c_max_p = params["Maximum concentration in positive electrode [mol.m-3]"]
             c_max_n = params["Maximum concentration in negative electrode [mol.m-3]"]
@@ -411,6 +439,16 @@ class SimulationRunner:
         except Exception as e:
             err_msg = f"ERROR: DFN Simulation failed: {e}\n{traceback.format_exc()}"
             return {"success": False, "reason": err_msg}
+        finally:
+            del processed_model
+            del solver
+            del params
+
+    def clear_memory(self):
+        """Release cached PyBaMM mesh objects responsibly."""
+        if self.mesh_cache is not None:
+            self.mesh_cache.clear()
+        gc.collect()
 
 def post_process_sol(res: Dict[str, Any], return_sol: bool = False) -> Dict[str, Any]:
     if not res["success"]:
@@ -436,9 +474,6 @@ def post_process_sol(res: Dict[str, Any], return_sol: bool = False) -> Dict[str,
 
 class HierarchicalOptimizer:
     def __init__(self, engine: Optional[Any] = None, base_params: Optional[pybamm.ParameterValues] = None):
-        if engine is None:
-            from src.cell_optimization.material_opt import MaterialMappingEngine
-            engine = MaterialMappingEngine()
         self.engine = engine
         self.base_params = base_params or pybamm.ParameterValues(get_parameter_values())
         self.base_values = dict(self.base_params)
@@ -453,6 +488,9 @@ class HierarchicalOptimizer:
 
         self.runner = SimulationRunner(self.model, pybamm.IDAKLUSolver, self.solver_kwargs)
         self.mech_model = ThermoelasticStrainModel()
+
+    def run(self):
+        return run_workflow(self.engine)
 
     def simulate(self, params: pybamm.ParameterValues, c_rate: float = 1.0, return_sol: bool = False) -> Dict[str, Any]:
         res = self.runner.run_simulation(params, c_rate)
@@ -539,229 +577,270 @@ class HierarchicalOptimizer:
         G = (U * S) @ Vt
         return G
 
-    def run(self):
-        return run_workflow(self.engine)
-
 def _optimize_mode_pipeline_worker(job):
     """ThreadPool worker running step 1 and step 2 parameters co-optimization sequentially for a single objective mode."""
     i, mode, x_base, deltas, G, STRUCT_INDICES, MAT_INDICES, engine = job
 
-    # Instantiate a thread-local HierarchicalOptimizer to guarantee absolute solver thread safety
-    local_optimizer = HierarchicalOptimizer(engine=engine)
+    local_optimizer = None
+    problem = None
+    problem_m = None
+    cem = None
+    cem_m = None
 
-    # 1. Step 1: Structural Parameters (θs) Optimization
-    max_s = np.max(np.abs(G[i, STRUCT_INDICES])) + 1e-12
-    active_indices = [j for j in STRUCT_INDICES if np.abs(G[i, j]) / max_s > 0.5]
-    if not active_indices:
-        active_indices = [int(STRUCT_INDICES[np.argmax(np.abs(G[i, STRUCT_INDICES]))])]
+    try:
+        # Instantiate a thread-local HierarchicalOptimizer to guarantee absolute solver thread safety
+        local_optimizer = HierarchicalOptimizer(engine=engine)
 
-    ref_val = 1.0
-    problem = SingleObjectiveProblem(local_optimizer, x_base, active_indices, deltas, mode, ref_scale=ref_val)
-    pop_size = int(os.environ.get("CEM_POP_SIZE", 8))
-    iters = int(os.environ.get("CEM_ITERATIONS", 3))
-    cem = CrossEntropyOptimizer(population_size=pop_size, iterations=iters)
-    best_active = cem.optimize(problem.evaluate_single, x_base, DESIGN_BOUNDS, active_indices, G[i, :], verbose=False)
+        # 1. Step 1: Structural Parameters (θs) Optimization
+        max_s = np.max(np.abs(G[i, STRUCT_INDICES])) + 1e-12
+        active_indices = [j for j in STRUCT_INDICES if np.abs(G[i, j]) / max_s > 0.5]
+        if not active_indices:
+            active_indices = [int(STRUCT_INDICES[np.argmax(np.abs(G[i, STRUCT_INDICES]))])]
 
-    x_opt_struct = x_base.copy()
-    x_opt_struct[active_indices] = best_active
+        ref_val = 1.0
+        problem = SingleObjectiveProblem(local_optimizer, x_base, active_indices, deltas, mode, ref_scale=ref_val)
+        pop_size = int(os.environ.get("CEM_POP_SIZE", 8))
+        iters = int(os.environ.get("CEM_ITERATIONS", 2))
+        cem = CrossEntropyOptimizer(population_size=pop_size, iterations=iters)
+        best_active = cem.optimize(problem.evaluate_single, x_base, DESIGN_BOUNDS, active_indices, G[i, :], verbose=False)
 
-    # 2. Step 2: Material Parameters (θm) Optimization
-    active_indices_m = MAT_INDICES
-    problem_m = SingleObjectiveProblem(local_optimizer, x_opt_struct, active_indices_m, deltas, mode, ref_scale=ref_val)
-    cem_m = CrossEntropyOptimizer(population_size=pop_size, iterations=iters)
-    best_active_m = cem_m.optimize(problem_m.evaluate_single, x_opt_struct, DESIGN_BOUNDS, active_indices_m, G[i, :], verbose=False)
+        x_opt_struct = x_base.copy()
+        x_opt_struct[active_indices] = best_active
 
-    x_opt_final = x_opt_struct.copy()
-    x_opt_final[active_indices_m] = best_active_m
+        # 2. Step 2: Material Parameters (θm) Optimization
+        active_indices_m = MAT_INDICES
+        problem_m = SingleObjectiveProblem(local_optimizer, x_opt_struct, active_indices_m, deltas, mode, ref_scale=ref_val)
+        cem_m = CrossEntropyOptimizer(population_size=pop_size, iterations=iters)
+        best_active_m = cem_m.optimize(problem_m.evaluate_single, x_opt_struct, DESIGN_BOUNDS, active_indices_m, G[i, :], verbose=False)
 
-    return x_opt_final
+        x_opt_final = x_opt_struct.copy()
+        x_opt_final[active_indices_m] = best_active_m
+
+        return x_opt_final
+    finally:
+        if local_optimizer is not None:
+            local_optimizer.runner.clear_memory()
+        del cem_m
+        del cem
+        del problem_m
+        del problem
+        del local_optimizer
+        gc.collect()
 
 def run_workflow(engine: Optional[Any] = None):
-    from src.cell_optimization.material_opt import MaterialMappingEngine, MaterialCategory
-    if engine is None: engine = MaterialMappingEngine()
-    db, bases = engine.run()
-    if not bases:
-        print("ERROR: Hierarchical optimization aborted: Base material resolution failed.")
-        raise RuntimeError("Base material resolution failed.")
-    from src.cell_optimization.chem_regularization import derive_coupled_deltas, regularize_salt_props
+    optimizer = None
+    G = None
+    final_opt_designs = None
+    candidate_metrics = None
 
-    print("\n" + "="*120)
-    print(f"{'MATERIAL JUXTAPOSITION & DERIVED CELL PARAMETER DELTAS':^120s}")
-    print("="*120)
+    try:
+        from src.cell_optimization.material_opt import MaterialMappingEngine, MaterialCategory
+        if engine is None: engine = MaterialMappingEngine()
+        db, bases = engine.run()
+        if not bases:
+            print("ERROR: Hierarchical optimization aborted: Base material resolution failed.")
+            raise RuntimeError("Base material resolution failed.")
+        from src.cell_optimization.chem_regularization import derive_coupled_deltas, regularize_salt_props
 
-    # 1. Parallel Dopant Optimization & Scoring (No DFN)
-    # Refactored analytical score to focus strictly on Energy, Power, and Thermal Stability as instructed
-    print(f"\nLAYER 1: PARALLEL DOPANT OPTIMIZATION")
-    print(f"{'Candidate':25s} | {'QM: Form E':12s} | {'QM: Volume':12s} | {'Derived Delta Key':40s} | {'Value':12s}")
-    print("-" * 120)
-    best_dopant = None
-    best_dopant_score = -1e9
-    for cand in db[MaterialCategory.CATHODE_DOPANT]:
-        cand.deltas = derive_coupled_deltas(bases["cathode"]["properties"], cand.properties, bases["cathode"]["formula"], cand.composition)
-        p, d = cand.properties, cand.deltas
-        flat = [(k, v) for gn, gv in d.items() for k, v in gv.items()]
-        for i, (k, v) in enumerate(flat):
-            if i == 0: print(f"{cand.name:25s} | {p.get('formation_energy', 0.0):12.4f} | {p.get('volume_per_atom', 0.0):12.4f} | {k:40s} | {v:+.4e}")
-            else: print(f"{'':25s} | {'':12s} | {'':12s} | {k:40s} | {v:+.4e}")
+        print("\n" + "="*120)
+        print(f"{'MATERIAL JUXTAPOSITION & DERIVED CELL PARAMETER DELTAS':^120s}")
+        print("="*120)
 
-        voltage_boost = d.get("thermodynamic", {}).get("voltage_boost", 0.0)
-        diffusivity_log_delta = d.get("transport", {}).get("diffusivity_log_delta", 0.0)
-        conductivity_log_delta = d.get("transport", {}).get("conductivity_log_delta", 0.0)
-        exchange_current_log_delta = d.get("kinetic", {}).get("exchange_current_log_delta", 0.0)
-        stability_shift = d.get("thermodynamic", {}).get("stability_shift", 0.0)
+        # 1. Parallel Dopant Optimization & Scoring (No DFN)
+        # Refactored analytical score to focus strictly on Energy, Power, and Thermal Stability as instructed
+        print(f"\nLAYER 1: PARALLEL DOPANT OPTIMIZATION")
+        print(f"{'Candidate':25s} | {'QM: Form E':12s} | {'QM: Volume':12s} | {'Derived Delta Key':40s} | {'Value':12s}")
+        print("-" * 120)
+        best_dopant = None
+        best_dopant_score = -1e9
+        for cand in db[MaterialCategory.CATHODE_DOPANT]:
+            cand.deltas = derive_coupled_deltas(bases["cathode"]["properties"], cand.properties, bases["cathode"]["formula"], cand.composition)
+            p, d = cand.properties, cand.deltas
+            flat = [(k, v) for gn, gv in d.items() for k, v in gv.items()]
+            for i, (k, v) in enumerate(flat):
+                if i == 0: print(f"{cand.name:25s} | {p.get('formation_energy', 0.0):12.4f} | {p.get('volume_per_atom', 0.0):12.4f} | {k:40s} | {v:+.4e}")
+                else: print(f"{'':25s} | {'':12s} | {'':12s} | {k:40s} | {v:+.4e}")
 
-        score = (voltage_boost * 10.0 +
-                 diffusivity_log_delta * 2.0 +
-                 conductivity_log_delta * 1.0 +
-                 exchange_current_log_delta * 2.0 +
-                 stability_shift * 5.0)
-        cand.score = score
-        if score > best_dopant_score:
-            best_dopant_score = score
-            best_dopant = cand
+            voltage_boost = d.get("thermodynamic", {}).get("voltage_boost", 0.0)
+            diffusivity_log_delta = d.get("transport", {}).get("diffusivity_log_delta", 0.0)
+            conductivity_log_delta = d.get("transport", {}).get("conductivity_log_delta", 0.0)
+            exchange_current_log_delta = d.get("kinetic", {}).get("exchange_current_log_delta", 0.0)
+            stability_shift = d.get("thermodynamic", {}).get("stability_shift", 0.0)
 
-    # 2. Parallel Salt Optimization & Scoring (No DFN)
-    # Refactored analytical score to focus strictly on Energy, Power, and Thermal Stability as instructed
-    print(f"\nLAYER 1: PARALLEL SALT OPTIMIZATION")
-    print(f"{'Candidate':25s} | {'QM: Form E':12s} | {'QM: Volume':12s} | {'Derived Delta Key':40s} | {'Value':12s}")
-    print("-" * 120)
-    best_salt = None
-    best_salt_score = -1e9
-    for cand in db[MaterialCategory.SALT]:
-        cand.deltas = regularize_salt_props(bases["salt"]["formula"], cand.composition, bases["salt"]["properties"], cand.properties)
-        p, d = cand.properties, cand.deltas
-        flat = [(k, v) for gn, gv in d.items() for k, v in gv.items()]
-        for i, (k, v) in enumerate(flat):
-            if i == 0: print(f"{cand.name:25s} | {p.get('formation_energy', 0.0):12.4f} | {p.get('volume_per_atom', 0.0):12.4f} | {k:40s} | {v:+.4e}")
-            else: print(f"{'':25s} | {'':12s} | {'':12s} | {k:40s} | {v:+.4e}")
+            score = (voltage_boost * 10.0 +
+                     diffusivity_log_delta * 2.0 +
+                     conductivity_log_delta * 1.0 +
+                     exchange_current_log_delta * 2.0 +
+                     stability_shift * 5.0)
+            cand.score = score
+            if score > best_dopant_score:
+                best_dopant_score = score
+                best_dopant = cand
 
-        electrolyte_conductivity_log_delta = d.get("transport", {}).get("electrolyte_conductivity_log_delta", 0.0)
-        electrolyte_diffusivity_log_delta = d.get("transport", {}).get("electrolyte_diffusivity_log_delta", 0.0)
+        # 2. Parallel Salt Optimization & Scoring (No DFN)
+        # Refactored analytical score to focus strictly on Energy, Power, and Thermal Stability as instructed
+        print(f"\nLAYER 1: PARALLEL SALT OPTIMIZATION")
+        print(f"{'Candidate':25s} | {'QM: Form E':12s} | {'QM: Volume':12s} | {'Derived Delta Key':40s} | {'Value':12s}")
+        print("-" * 120)
+        best_salt = None
+        best_salt_score = -1e9
+        for cand in db[MaterialCategory.SALT]:
+            cand.deltas = regularize_salt_props(bases["salt"]["formula"], cand.composition, bases["salt"]["properties"], cand.properties)
+            p, d = cand.properties, cand.deltas
+            flat = [(k, v) for gn, gv in d.items() for k, v in gv.items()]
+            for i, (k, v) in enumerate(flat):
+                if i == 0: print(f"{cand.name:25s} | {p.get('formation_energy', 0.0):12.4f} | {p.get('volume_per_atom', 0.0):12.4f} | {k:40s} | {v:+.4e}")
+                else: print(f"{'':25s} | {'':12s} | {'':12s} | {k:40s} | {v:+.4e}")
 
-        score = (electrolyte_conductivity_log_delta * 5.0 +
-                 electrolyte_diffusivity_log_delta * 2.0)
-        cand.score = score
-        if score > best_salt_score:
-            best_salt_score = score
-            best_salt = cand
-    print("="*120 + "\n")
+            electrolyte_conductivity_log_delta = d.get("transport", {}).get("electrolyte_conductivity_log_delta", 0.0)
+            electrolyte_diffusivity_log_delta = d.get("transport", {}).get("electrolyte_diffusivity_log_delta", 0.0)
 
-    optimizer = HierarchicalOptimizer(engine=engine)
-    deltas = {}
-    if best_dopant and best_dopant.deltas:
-        for g_name, props in best_dopant.deltas.items():
-            deltas.setdefault(g_name, {}).update(props)
-    if best_salt and best_salt.deltas:
-        for g_name, props in best_salt.deltas.items():
-            deltas.setdefault(g_name, {}).update(props)
+            score = (electrolyte_conductivity_log_delta * 5.0 +
+                     electrolyte_diffusivity_log_delta * 2.0)
+            cand.score = score
+            if score > best_salt_score:
+                best_salt_score = score
+                best_salt = cand
+        print("="*120 + "\n")
 
-    print(f"--> SELECTED OPTIMAL DOPANT: {best_dopant.name} (Score: {best_dopant.score:.4f})")
-    print(f"--> SELECTED OPTIMAL SALT:   {best_salt.name} (Score: {best_salt.score:.4f})")
-    print("CONSTRUCTING OPTIMIZED BASE CELL...")
+        optimizer = HierarchicalOptimizer(engine=engine)
+        deltas = {}
+        if best_dopant and best_dopant.deltas:
+            for g_name, props in best_dopant.deltas.items():
+                deltas.setdefault(g_name, {}).update(props)
+        if best_salt and best_salt.deltas:
+            for g_name, props in best_salt.deltas.items():
+                deltas.setdefault(g_name, {}).update(props)
 
-    x_base = np.array([np.mean(b) for b in DESIGN_BOUNDS])
+        print(f"--> SELECTED OPTIMAL DOPANT: {best_dopant.name} (Score: {best_dopant.score:.4f})")
+        print(f"--> SELECTED OPTIMAL SALT:   {best_salt.name} (Score: {best_salt.score:.4f})")
+        print("CONSTRUCTING OPTIMIZED BASE CELL...")
 
-    print("COMPUTING SENSITIVITY MATRIX (JACOBIAN) ONCE...")
-    G = optimizer.compute_jacobian(x_base, deltas)
-    if G is None:
-         raise RuntimeError("Jacobian computation failed for optimized cell chemistry.")
+        x_base = np.array([np.mean(b) for b in DESIGN_BOUNDS])
 
-    print("\nSTAGE 2: PARAMETER CO-OPTIMIZATION (SEQUENTIAL OBJECTIVES)")
-    STRUCT_INDICES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    MAT_INDICES = [11, 12]
-    modes = ["energy", "power", "thermal_stability", "stability"]
+        print("COMPUTING SENSITIVITY MATRIX (JACOBIAN) ONCE...")
+        G = optimizer.compute_jacobian(x_base, deltas)
+        if G is None:
+             raise RuntimeError("Jacobian computation failed for optimized cell chemistry.")
 
-    jobs = [
-        (i, mode, x_base, deltas, G, STRUCT_INDICES, MAT_INDICES, engine)
-        for i, mode in enumerate(modes)
-    ]
+        print("\nSTAGE 2: PARAMETER CO-OPTIMIZATION (SEQUENTIAL OBJECTIVES)")
+        STRUCT_INDICES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        MAT_INDICES = [11, 12]
+        modes = ["energy", "power", "thermal_stability", "stability"]
 
-    # Reverted to strictly sequential execution to minimize peak memory footprint and prevent virtual memory exhaustion
-    print("  Executing Structural & Material Co-Optimization sequentially across independent modes...")
-    final_opt_designs = []
-    for job in jobs:
-        final_opt_designs.append(_optimize_mode_pipeline_worker(job))
+        jobs = [
+            (i, mode, x_base, deltas, G, STRUCT_INDICES, MAT_INDICES, engine)
+            for i, mode in enumerate(modes)
+        ]
 
-    print("RUNNING PARETO FRONT FILTERING...")
-    candidate_metrics = []
-    for x in final_opt_designs:
-        pt = ParamTransform(
-            base_values=optimizer.base_values,
-            derived=optimizer.derived
-        )
-        pt.apply_physics_deltas(deltas)
-        pt.apply_design_vector(x, DESIGN_SPACE)
-        res = optimizer.simulate(pt.get_parameter_values())
-        if res["success"]:
-            candidate_metrics.append((x, res))
+        # Reverted to strictly sequential execution to minimize peak memory footprint and prevent virtual memory exhaustion
+        print("  Executing Structural & Material Co-Optimization sequentially across independent modes...")
+        final_opt_designs = []
+        for job in jobs:
+            final_opt_designs.append(_optimize_mode_pipeline_worker(job))
 
-    if not candidate_metrics:
-        raise RuntimeError("No optimized parameter designs succeeded in DFN simulation.")
+        print("RUNNING PARETO FRONT FILTERING...")
+        candidate_metrics = []
+        for x in final_opt_designs:
+            pt = ParamTransform(
+                base_values=optimizer.base_values,
+                derived=optimizer.derived
+            )
+            pt.apply_physics_deltas(deltas)
+            pt.apply_design_vector(x, DESIGN_SPACE)
+            res = optimizer.simulate(pt.get_parameter_values())
+            if res["success"]:
+                candidate_metrics.append((x, res))
 
-    ens = [r["energy"] for _, r in candidate_metrics]
-    pws = [r["power"] for _, r in candidate_metrics]
-    tms = [r["T_max"] for _, r in candidate_metrics]
+        if not candidate_metrics:
+            raise RuntimeError("No optimized parameter designs succeeded in DFN simulation.")
 
-    min_en, max_en = min(ens), max(ens)
-    min_pw, max_pw = min(pws), max(pws)
-    min_tm, max_tm = min(tms), max(tms)
+        ens = [r["energy"] for _, r in candidate_metrics]
+        pws = [r["power"] for _, r in candidate_metrics]
+        tms = [r["T_max"] for _, r in candidate_metrics]
 
-    def utility(res):
-        en_norm = (res["energy"] - min_en) / (max_en - min_en + 1e-12)
-        pw_norm = (res["power"] - min_pw) / (max_pw - min_pw + 1e-12)
-        tm_norm = (max_tm - res["T_max"]) / (max_tm - min_tm + 1e-12)
-        return 0.4 * en_norm + 0.4 * pw_norm + 0.2 * tm_norm
+        min_en, max_en = min(ens), max(ens)
+        min_pw, max_pw = min(pws), max(pws)
+        min_tm, max_tm = min(tms), max(tms)
 
-    ranked_candidates = sorted(candidate_metrics, key=lambda c: utility(c[1]), reverse=True)
-    best_candidate_design, best_metrics = ranked_candidates[0]
+        def utility(res):
+            en_norm = (res["energy"] - min_en) / (max_en - min_en + 1e-12)
+            pw_norm = (res["power"] - min_pw) / (max_pw - min_pw + 1e-12)
+            tm_norm = (max_tm - res["T_max"]) / (max_tm - min_tm + 1e-12)
+            return 0.4 * en_norm + 0.4 * pw_norm + 0.2 * tm_norm
 
-    groups = {"Energy": [], "Power": [], "Thermal Stability": [], "Stability": [], "Coupled": []}
-    S = np.abs(G) / (np.max(np.abs(G), axis=1).reshape(-1, 1) + 1e-12)
-    for j, name in enumerate(DESIGN_SPACE):
-        member_of = []
-        for i, obj in enumerate(["Energy", "Power", "Thermal Stability", "Stability"]):
-            if S[i, j] > 0.5: groups[obj].append(name); member_of.append(obj)
-        if len(member_of) > 1: groups["Coupled"].append(name)
+        ranked_candidates = sorted(candidate_metrics, key=lambda c: utility(c[1]), reverse=True)
+        best_candidate_design, best_metrics = ranked_candidates[0]
 
-    output = {
-        "materials": {
-            "cathode": {"name": best_dopant.name, "formula": best_dopant.composition, "properties": best_dopant.properties},
-            "electrolyte": {"salt": best_salt.name, "properties": best_salt.properties}
-        },
-        "bases": bases,
-        "design_specs_representative": dict(zip(DESIGN_SPACE, best_candidate_design.tolist())),
-        "opt_designs_per_objective": {
-            mode: dict(zip(DESIGN_SPACE, design.tolist()))
-            for mode, design in zip(modes, final_opt_designs)
-        },
-        "combined_deltas_representative": deltas,
-        "sensitivity_matrix": G.tolist(),
-        "parameter_grouping": groups
-    }
-    with open("result.json", "w") as f: json.dump(output, f, indent=2)
+        groups = {"Energy": [], "Power": [], "Thermal Stability": [], "Stability": [], "Coupled": []}
+        S = np.abs(G) / (np.max(np.abs(G), axis=1).reshape(-1, 1) + 1e-12)
+        for j, name in enumerate(DESIGN_SPACE):
+            member_of = []
+            for i, obj in enumerate(["Energy", "Power", "Thermal Stability", "Stability"]):
+                if S[i, j] > 0.5: groups[obj].append(name); member_of.append(obj)
+            if len(member_of) > 1: groups["Coupled"].append(name)
 
-    print("\n" + "="*80)
-    print(f"{'HIERARCHICAL CO-OPTIMIZATION WORKFLOW COMPLETE':^80s}")
-    print("="*80)
-    print("\nCHEMISTRY SELECTION (LAYER 1 - QM & ANALYTICAL SCORING):")
-    print("-" * 80)
-    print(f"  Selected Cathode Dopant: {best_dopant.name} ({best_dopant.composition})")
-    print(f"    Analytical Score:      {best_dopant.score:.4f}")
-    print(f"  Selected Electrolyte Salt: {best_salt.name} ({best_salt.composition})")
-    print(f"    Analytical Score:      {best_salt.score:.4f}")
+        output = {
+            "materials": {
+                "cathode": {"name": best_dopant.name, "formula": best_dopant.composition, "properties": best_dopant.properties},
+                "electrolyte": {"salt": best_salt.name, "properties": best_salt.properties}
+            },
+            "bases": bases,
+            "design_specs_representative": dict(zip(DESIGN_SPACE, best_candidate_design.tolist())),
+            "opt_designs_per_objective": {
+                mode: dict(zip(DESIGN_SPACE, design.tolist()))
+                for mode, design in zip(modes, final_opt_designs)
+            },
+            "combined_deltas_representative": deltas,
+            "sensitivity_matrix": G.tolist(),
+            "parameter_grouping": groups
+        }
+        with open("result.json", "w") as f: json.dump(output, f, indent=2)
 
-    print("\nDESIGN VARIABLES OPTIMIZATION (STAGE 2):")
-    print("-" * 80)
-    print("  Structural Parameters (θs) Optimized:")
-    for k, v in output['design_specs_representative'].items():
-        if k not in ["carbon_fraction", "Typical electrolyte concentration [mol.m-3]"]:
-            print(f"    {k:40s}: {v:12.6e}")
+        print("\n" + "="*80)
+        print(f"{'HIERARCHICAL CO-OPTIMIZATION WORKFLOW COMPLETE':^80s}")
+        print("="*80)
+        print("\nCHEMISTRY SELECTION (LAYER 1 - QM & ANALYTICAL SCORING):")
+        print("-" * 80)
+        print(f"  Selected Cathode Dopant: {best_dopant.name} ({best_dopant.composition})")
+        print(f"    Analytical Score:      {best_dopant.score:.4f}")
+        print(f"  Selected Electrolyte Salt: {best_salt.name} ({best_salt.composition})")
+        print(f"    Analytical Score:      {best_salt.score:.4f}")
 
-    print("  Material Parameters (θm) Optimized:")
-    for k, v in output['design_specs_representative'].items():
-        if k in ["carbon_fraction", "Typical electrolyte concentration [mol.m-3]"]:
-            print(f"    {k:40s}: {v:12.6e}")
-    print("="*80 + "\n")
-    return output
+        print("\nDESIGN VARIABLES OPTIMIZATION (STAGE 2):")
+        print("-" * 80)
+        print("  Structural Parameters (θs) Optimized:")
+        for k, v in output['design_specs_representative'].items():
+            if k not in ["carbon_fraction", "Typical electrolyte concentration [mol.m-3]"]:
+                print(f"    {k:40s}: {v:12.6e}")
 
-if __name__ == "__main__": HierarchicalOptimizer().run()
+        print("  Material Parameters (θm) Optimized:")
+        for k, v in output['design_specs_representative'].items():
+            if k in ["carbon_fraction", "Typical electrolyte concentration [mol.m-3]"]:
+                print(f"    {k:40s}: {v:12.6e}")
+        print("="*80 + "\n")
+        return output
+    finally:
+        print("\nCLEANUP: Releasing optimization memory...")
+        if optimizer is not None:
+            try: optimizer.runner.clear_memory()
+            except Exception as e: print(f"WARNING: Runner cleanup failed: {e}")
+        del G
+        del final_opt_designs
+        del candidate_metrics
+        del optimizer
+        gc.collect()
+        print("CLEANUP: Memory release completed.")
+
+if __name__ == "__main__":
+    optimizer = None
+    try:
+        optimizer = HierarchicalOptimizer()
+        optimizer.run()
+    finally:
+        if optimizer is not None:
+            try: optimizer.runner.clear_memory()
+            except Exception: pass
+        del optimizer
+        gc.collect()
+        print("FINAL CLEANUP: Hierarchical optimization process released cached simulation memory.")
