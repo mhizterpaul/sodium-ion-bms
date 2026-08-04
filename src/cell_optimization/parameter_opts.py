@@ -666,31 +666,28 @@ def run_workflow(engine: Optional[Any] = None):
     if G is None:
          raise RuntimeError("Jacobian computation failed for optimized cell chemistry.")
 
-    print("\nSTAGE 2: PARAMETER CO-OPTIMIZATION (CONCURRENT OBJECTIVES)")
+    print("\nSTAGE 2: PARAMETER CO-OPTIMIZATION (SEQUENTIAL OBJECTIVES)")
     STRUCT_INDICES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     MAT_INDICES = [11, 12]
     modes = ["energy", "power", "thermal_stability", "stability"]
 
-    # ProcessPoolExecutor parallel solve across independent objective modes concurrently!
-    # Solves T_stage2 = max(T_E, T_P, T_T, T_S) instead of T_E + T_P + T_T + T_S
     jobs = [
         (i, mode, x_base, deltas, G, STRUCT_INDICES, MAT_INDICES, engine)
         for i, mode in enumerate(modes)
     ]
 
-    # Strictly parallelize only two objective optimizations at a time using ProcessPoolExecutor to prevent CPU thrashing
-    print("  Executing Structural & Material Co-Optimization concurrently across independent modes...")
-    max_workers = 2
-    from concurrent.futures import ProcessPoolExecutor
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        final_opt_designs = list(executor.map(_optimize_mode_pipeline_worker, jobs))
+    # Reverted to strictly sequential execution to minimize peak memory footprint and prevent virtual memory exhaustion
+    print("  Executing Structural & Material Co-Optimization sequentially across independent modes...")
+    final_opt_designs = []
+    for job in jobs:
+        final_opt_designs.append(_optimize_mode_pipeline_worker(job))
 
     print("RUNNING PARETO FRONT FILTERING...")
     candidate_metrics = []
     for x in final_opt_designs:
         pt = ParamTransform(
             base_values=optimizer.base_values,
-            derived=derived
+            derived=optimizer.derived
         )
         pt.apply_physics_deltas(deltas)
         pt.apply_design_vector(x, DESIGN_SPACE)
