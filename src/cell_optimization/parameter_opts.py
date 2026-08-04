@@ -600,7 +600,7 @@ def _optimize_mode_pipeline_worker(job):
         ref_val = 1.0
         problem = SingleObjectiveProblem(local_optimizer, x_base, active_indices, deltas, mode, ref_scale=ref_val)
         pop_size = int(os.environ.get("CEM_POP_SIZE", 8))
-        iters = int(os.environ.get("CEM_ITERATIONS", 3))
+        iters = int(os.environ.get("CEM_ITERATIONS", 2))
         cem = CrossEntropyOptimizer(population_size=pop_size, iterations=iters)
         best_active = cem.optimize(problem.evaluate_single, x_base, DESIGN_BOUNDS, active_indices, G[i, :], verbose=False)
 
