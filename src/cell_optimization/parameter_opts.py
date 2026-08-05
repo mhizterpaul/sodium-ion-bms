@@ -300,51 +300,6 @@ def transform_candidates_parallel(
         transformed_dicts = list(executor.map(_transform_candidate_worker, jobs))
     return [pybamm.ParameterValues(values) for values in transformed_dicts]
 
-class MeshCache:
-    """
-    Bounded LRU Cache to manage PyBaMM Mesh objects.
-    To ensure absolute thread safety during parallel simulations, we only cache
-    the read-only Mesh object and always instantiate a fresh pybamm.Discretisation
-    for each thread call.
-    """
-    def __init__(self, max_size: int = 16):
-        self.cache = OrderedDict()
-        self.max_size = max_size
-
-    def get_mesh_and_disc(self, params, model, submesh_types, var_pts, spatial_methods):
-        geom_keys = [
-            "Positive electrode thickness [m]",
-            "Negative electrode thickness [m]",
-            "Separator thickness [m]",
-            "Positive particle radius [m]",
-            "Negative particle radius [m]"
-        ]
-        key = tuple(float(params.get(k, 0.0)) for k in geom_keys)
-
-        if key in self.cache:
-            mesh = self.cache.pop(key)
-            self.cache[key] = mesh
-        else:
-            geometry = copy.deepcopy(model.default_geometry)
-            params.process_geometry(geometry)
-            mesh = pybamm.Mesh(geometry, submesh_types, var_pts)
-            self.cache[key] = mesh
-
-        while len(self.cache) > self.max_size:
-            _, old_mesh = self.cache.popitem(last=False)
-            del old_mesh
-
-        # Instantiate a fresh, unshared, state-isolated Discretisation object for this simulation solve
-        disc = pybamm.Discretisation(mesh, spatial_methods)
-        return mesh, disc
-
-    def clear(self):
-        """Release all cached meshes explicitly."""
-        for mesh in list(self.cache.values()):
-            del mesh
-        self.cache.clear()
-        gc.collect()
-
 class SingleObjectiveProblem:
     def __init__(self, optimizer, x_full, active_indices, deltas, mode, ref_scale=1.0):
         self.optimizer = optimizer
@@ -401,14 +356,15 @@ class SimulationRunner:
         self.var_pts = model.default_var_pts
         self.submesh_types = model.default_submesh_types
         self.spatial_methods = model.default_spatial_methods
-        self.mesh_cache = MeshCache()
 
     def run_simulation(self, params: pybamm.ParameterValues, c_rate: float = 1.0) -> Dict[str, Any]:
         params = params.copy()
-        processed_model = None
+        geometry = None
         mesh = None
         disc = None
+        processed_model = None
         solver = None
+        sol = None
 
         try:
             c_max_p = params["Maximum concentration in positive electrode [mol.m-3]"]
@@ -427,12 +383,15 @@ class SimulationRunner:
                 params["Lower voltage cut-off [V]"] = max(0.1, v_init_val - 1.0)
                 print(f"INFO: Relaxed lower voltage cut-off from {v_min:.2f}V to {params['Lower voltage cut-off [V]']:.2f}V (Initial OCV: {v_init_val:.2f}V)")
 
-            mesh, disc = self.mesh_cache.get_mesh_and_disc(
-                params, self.model, self.submesh_types, self.var_pts, self.spatial_methods
-            )
+            # Create geometry, mesh and discretisation directly for this evaluation
+            geometry = copy.deepcopy(self.model.default_geometry)
+            params.process_geometry(geometry)
+            mesh = pybamm.Mesh(geometry, self.submesh_types, self.var_pts)
+            disc = pybamm.Discretisation(mesh, self.spatial_methods)
 
             processed_model = params.process_model(self.model, inplace=False)
             disc.process_model(processed_model, inplace=True)
+
             solver = self.solver_class(**self.solver_kwargs)
             sol = solver.solve(processed_model, [0, 3600 / c_rate], inputs={"Current [A]": c_rate * float(params["Nominal cell capacity [A.h]"])})
             return {"success": True, "sol": sol}
@@ -440,14 +399,38 @@ class SimulationRunner:
             err_msg = f"ERROR: DFN Simulation failed: {e}\n{traceback.format_exc()}"
             return {"success": False, "reason": err_msg}
         finally:
+            if solver is not None:
+                try:
+                    if hasattr(solver, "_model_set_up") and isinstance(solver._model_set_up, dict):
+                        solver._model_set_up.clear()
+                except Exception:
+                    pass
+                try:
+                    if hasattr(solver, "_setup") and isinstance(solver._setup, dict):
+                        solver._setup.clear()
+                    else:
+                        solver._setup = None
+                except Exception:
+                    pass
             del processed_model
             del solver
             del params
+            del geometry
+            del mesh
+            del disc
 
     def clear_memory(self):
-        """Release cached PyBaMM mesh objects responsibly."""
-        if self.mesh_cache is not None:
-            self.mesh_cache.clear()
+        """Release PyBaMM caches and run garbage collection."""
+        import sys
+        for module_name, module in list(sys.modules.items()):
+            if module_name.startswith("pybamm"):
+                for attr_name in dir(module):
+                    try:
+                        attr = getattr(module, attr_name)
+                        if hasattr(attr, "cache_clear") and callable(attr.cache_clear):
+                            attr.cache_clear()
+                    except Exception:
+                        pass
         gc.collect()
 
 def post_process_sol(res: Dict[str, Any], return_sol: bool = False) -> Dict[str, Any]:
@@ -496,7 +479,45 @@ class HierarchicalOptimizer:
         res = self.runner.run_simulation(params, c_rate)
         if not res["success"]:
             print(res["reason"])
-        return post_process_sol(res, return_sol=return_sol)
+            return res
+
+        sol = res.get("sol")
+        metrics = post_process_sol(res, return_sol=return_sol)
+
+        # Dispose Solution
+        if not return_sol:
+            if sol is not None:
+                try:
+                    if hasattr(sol, "_all_models"):
+                        sol._all_models = []
+                except Exception:
+                    pass
+                del sol
+                res["sol"] = None
+
+        # Clear PyBaMM parameter values substitutor cache
+        try:
+            if hasattr(params, "_processor") and params._processor is not None:
+                params._processor.clear_cache()
+        except Exception:
+            pass
+
+        # Clear all global pybamm caches
+        import sys
+        for module_name, module in list(sys.modules.items()):
+            if module_name.startswith("pybamm"):
+                for attr_name in dir(module):
+                    try:
+                        attr = getattr(module, attr_name)
+                        if hasattr(attr, "cache_clear") and callable(attr.cache_clear):
+                            attr.cache_clear()
+                    except Exception:
+                        pass
+
+        # gc.collect()
+        gc.collect()
+
+        return metrics
 
     def evaluate_stability_pde(self, params: pybamm.ParameterValues, mode: str, c_rate: float = 1.0) -> Tuple[bool, float]:
         res = self.simulate(params, c_rate=c_rate, return_sol=True)
@@ -535,47 +556,70 @@ class HierarchicalOptimizer:
 
         max_workers = max(1, os.cpu_count() - 1)
         from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            jobs = [(params, 1.0) for params in candidate_params]
-            raw_results = list(executor.map(lambda job: self.runner.run_simulation(job[0], job[1]), jobs))
 
-        sim_results = [post_process_sol(res) for res in raw_results]
+        raw_results = []
+        sim_results = []
+        G = None
+        try:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                jobs = [(params, 1.0) for params in candidate_params]
+                raw_results = list(executor.map(lambda job: self.runner.run_simulation(job[0], job[1]), jobs))
 
-        base_res = sim_results[0]
-        if not base_res["success"]:
-            print(f"WARNING: Baseline DFN simulation failed: {base_res.get('reason')}. Skipping candidate.")
-            return None
+            sim_results = [post_process_sol(res) for res in raw_results]
 
-        from src.cell_optimization.chem_regularization import mechanical_stability_metric
-        j_base = np.array([
-            base_res["energy"],
-            base_res["power"],
-            base_res["T_max"],
-            mechanical_stability_metric(stresses=base_res["stresses"])
-        ])
-        G = np.zeros((4, len(DESIGN_SPACE)))
+            base_res = sim_results[0]
+            if not base_res["success"]:
+                print(f"WARNING: Baseline DFN simulation failed: {base_res.get('reason')}. Skipping candidate.")
+                return None
 
-        for j in range(num_vars):
-            res = sim_results[j + 1]
-            if res["success"]:
-                j_pert = np.array([
-                    res["energy"],
-                    res["power"],
-                    res["T_max"],
-                    mechanical_stability_metric(stresses=res["stresses"])
-                ])
-                G[:, j] = (np.log(np.abs(j_pert) + 1e-12) - np.log(np.abs(j_base) + 1e-12)) / eps
-            else:
-                print(f"WARNING: Perturbation for {DESIGN_SPACE[j]} failed: {res.get('reason')}")
+            from src.cell_optimization.chem_regularization import mechanical_stability_metric
+            j_base = np.array([
+                base_res["energy"],
+                base_res["power"],
+                base_res["T_max"],
+                mechanical_stability_metric(stresses=base_res["stresses"])
+            ])
+            G = np.zeros((4, len(DESIGN_SPACE)))
 
-        G = np.nan_to_num(G, nan=0.0, posinf=0.0, neginf=0.0)
-        if not np.isfinite(G).all(): raise RuntimeError("Degenerate Jacobian detected.")
-        U, S, Vt = np.linalg.svd(G, full_matrices=False)
-        cond_limit = 1e6
-        smax = S[0]
-        S = np.array([max(s, smax / cond_limit) for s in S])
-        G = (U * S) @ Vt
-        return G
+            for j in range(num_vars):
+                res = sim_results[j + 1]
+                if res["success"]:
+                    j_pert = np.array([
+                        res["energy"],
+                        res["power"],
+                        res["T_max"],
+                        mechanical_stability_metric(stresses=res["stresses"])
+                    ])
+                    G[:, j] = (np.log(np.abs(j_pert) + 1e-12) - np.log(np.abs(j_base) + 1e-12)) / eps
+                else:
+                    print(f"WARNING: Perturbation for {DESIGN_SPACE[j]} failed: {res.get('reason')}")
+
+            G = np.nan_to_num(G, nan=0.0, posinf=0.0, neginf=0.0)
+            if not np.isfinite(G).all(): raise RuntimeError("Degenerate Jacobian detected.")
+            U, S, Vt = np.linalg.svd(G, full_matrices=False)
+            cond_limit = 1e6
+            smax = S[0]
+            S = np.array([max(s, smax / cond_limit) for s in S])
+            G = (U * S) @ Vt
+            return G
+        finally:
+            # Stage Boundary Cleanup: delete Solution, delete processed model, delete discretisation, delete mesh, clear PyBaMM caches, gc.collect()
+            if raw_results:
+                for res in raw_results:
+                    if isinstance(res, dict) and "sol" in res:
+                        sol = res["sol"]
+                        if sol is not None:
+                            try:
+                                if hasattr(sol, "_all_models"):
+                                    sol._all_models = []
+                            except Exception:
+                                pass
+                            del sol
+            del raw_results
+            del sim_results
+            del candidate_params
+
+            self.runner.clear_memory()
 
 def _optimize_mode_pipeline_worker(job):
     """ThreadPool worker running step 1 and step 2 parameters co-optimization sequentially for a single objective mode."""
@@ -618,13 +662,29 @@ def _optimize_mode_pipeline_worker(job):
 
         return x_opt_final
     finally:
+        # Stage Boundary Cleanup: delete Solution, processed model, discretisation, mesh, clear PyBaMM caches, gc.collect()
+        if problem is not None:
+            del problem
+        if problem_m is not None:
+            del problem_m
         if local_optimizer is not None:
-            local_optimizer.runner.clear_memory()
+            if hasattr(local_optimizer, "runner") and local_optimizer.runner is not None:
+                local_optimizer.runner.clear_memory()
+            del local_optimizer
         del cem_m
         del cem
-        del problem_m
-        del problem
-        del local_optimizer
+
+        # Clear all global caches
+        import sys
+        for module_name, module in list(sys.modules.items()):
+            if module_name.startswith("pybamm"):
+                for attr_name in dir(module):
+                    try:
+                        attr = getattr(module, attr_name)
+                        if hasattr(attr, "cache_clear") and callable(attr.cache_clear):
+                            attr.cache_clear()
+                    except Exception:
+                        pass
         gc.collect()
 
 def run_workflow(engine: Optional[Any] = None):
