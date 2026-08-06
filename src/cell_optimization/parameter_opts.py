@@ -794,11 +794,27 @@ def run_workflow(engine: Optional[Any] = None):
             for i, mode in enumerate(modes)
         ]
 
-        # Reverted to strictly sequential execution to minimize peak memory footprint and prevent virtual memory exhaustion
-        print("  Executing Structural & Material Co-Optimization sequentially across independent modes...")
-        final_opt_designs = []
-        for job in jobs:
-            final_opt_designs.append(_optimize_mode_pipeline_worker(job))
+        # Split into two pairs and run sequentially to optimize peak memory footprint while utilizing parallelism
+        print("  Executing Structural & Material Co-Optimization in two sequential pairs of parallel runs...")
+        from concurrent.futures import ThreadPoolExecutor
+
+        final_opt_designs = [None] * 4
+
+        # Pair 1: energy and power
+        pair1_jobs = [jobs[0], jobs[1]]
+        print("  Running Pair 1 (energy, power) in parallel...")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            pair1_results = list(executor.map(_optimize_mode_pipeline_worker, pair1_jobs))
+        final_opt_designs[0] = pair1_results[0]
+        final_opt_designs[1] = pair1_results[1]
+
+        # Pair 2: thermal_stability and stability
+        pair2_jobs = [jobs[2], jobs[3]]
+        print("  Running Pair 2 (thermal_stability, stability) in parallel...")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            pair2_results = list(executor.map(_optimize_mode_pipeline_worker, pair2_jobs))
+        final_opt_designs[2] = pair2_results[0]
+        final_opt_designs[3] = pair2_results[1]
 
         print("RUNNING PARETO FRONT FILTERING...")
         candidate_metrics = []
