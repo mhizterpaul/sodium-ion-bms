@@ -638,28 +638,28 @@ def _optimize_mode_pipeline_worker(job):
         pop_size = int(os.environ.get("CEM_POP_SIZE", 8))
         iters = int(os.environ.get("CEM_ITERATIONS", 3))
 
-        # 1. Step 1: Material Parameters (θm) Optimization first
-        active_indices_m = MAT_INDICES
-        ref_val = 1.0
-        problem_m = SingleObjectiveProblem(local_optimizer, x_base, active_indices_m, deltas, mode, ref_scale=ref_val)
-        cem_m = CrossEntropyOptimizer(population_size=pop_size, iterations=iters)
-        best_active_m = cem_m.optimize(problem_m.evaluate_single, x_base, DESIGN_BOUNDS, active_indices_m, G[i, :], verbose=False)
-
-        x_opt_material = x_base.copy()
-        x_opt_material[active_indices_m] = best_active_m
-
-        # 2. Step 2: Structural Parameters (θs) Optimization second, on top of x_opt_material
+        # 1. Step 1: Structural Parameters (θs) Optimization first
         max_s = np.max(np.abs(G[i, STRUCT_INDICES])) + 1e-12
         active_indices = [j for j in STRUCT_INDICES if np.abs(G[i, j]) / max_s > 0.5]
         if not active_indices:
             active_indices = [int(STRUCT_INDICES[np.argmax(np.abs(G[i, STRUCT_INDICES]))])]
 
-        problem = SingleObjectiveProblem(local_optimizer, x_opt_material, active_indices, deltas, mode, ref_scale=ref_val)
+        ref_val = 1.0
+        problem = SingleObjectiveProblem(local_optimizer, x_base, active_indices, deltas, mode, ref_scale=ref_val)
         cem = CrossEntropyOptimizer(population_size=pop_size, iterations=iters)
-        best_active = cem.optimize(problem.evaluate_single, x_opt_material, DESIGN_BOUNDS, active_indices, G[i, :], verbose=False)
+        best_active = cem.optimize(problem.evaluate_single, x_base, DESIGN_BOUNDS, active_indices, G[i, :], verbose=False)
 
-        x_opt_final = x_opt_material.copy()
-        x_opt_final[active_indices] = best_active
+        x_opt_struct = x_base.copy()
+        x_opt_struct[active_indices] = best_active
+
+        # 2. Step 2: Material Parameters (θm) Optimization second, on top of x_opt_struct
+        active_indices_m = MAT_INDICES
+        problem_m = SingleObjectiveProblem(local_optimizer, x_opt_struct, active_indices_m, deltas, mode, ref_scale=ref_val)
+        cem_m = CrossEntropyOptimizer(population_size=pop_size, iterations=iters)
+        best_active_m = cem_m.optimize(problem_m.evaluate_single, x_opt_struct, DESIGN_BOUNDS, active_indices_m, G[i, :], verbose=False)
+
+        x_opt_final = x_opt_struct.copy()
+        x_opt_final[active_indices_m] = best_active_m
 
         return x_opt_final
     finally:
