@@ -504,23 +504,6 @@ class HierarchicalOptimizer:
         except Exception:
             pass
 
-        # Clear all global pybamm caches
-        import sys
-        for module_name, module in list(sys.modules.items()):
-            if module_name.startswith("pybamm"):
-                for attr_name in dir(module):
-                    try:
-                        attr = getattr(module, attr_name)
-                        if hasattr(attr, "cache_clear") and callable(attr.cache_clear):
-                            attr.cache_clear()
-                        elif hasattr(attr, "clear_cache") and callable(attr.clear_cache):
-                            attr.clear_cache()
-                    except Exception:
-                        pass
-
-        # gc.collect()
-        gc.collect()
-
         return metrics
 
     def evaluate_stability_pde(self, params: pybamm.ParameterValues, mode: str, c_rate: float = 1.0) -> Tuple[bool, float]:
