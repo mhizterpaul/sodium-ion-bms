@@ -1,20 +1,5 @@
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor
-
-class ProcessorPoolExecutor:
-    """
-    A single-threaded sequential executor matching ProcessorPoolExecutor naming
-    to provide absolute thread-safety, zero thread-scheduling overhead, and
-    eliminate any PyBaMM cache contention.
-    """
-    def __init__(self, *args, **kwargs):
-        pass
-    def __enter__(self):
-        return self
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        pass
-    def map(self, fn, *iterables):
-        return map(fn, *iterables)
+from concurrent.futures import ThreadPoolExecutor as ProcessPoolExecutor
 
 class CrossEntropyOptimizer:
     def __init__(
@@ -169,8 +154,8 @@ class CrossEntropyOptimizer:
 
             samples_z = np.array(rounded_samples_z)
 
-            # 6. Run evaluations
-            with ProcessorPoolExecutor() as executor:
+            # 6. Run parallel evaluations using ProcessPoolExecutor
+            with ProcessPoolExecutor() as executor:
                 jobs = [(sz, evaluator_func, x0, active_indices, xl, xu) for sz in samples_z]
                 results = list(executor.map(lambda job: self._evaluate_one(*job), jobs))
 
