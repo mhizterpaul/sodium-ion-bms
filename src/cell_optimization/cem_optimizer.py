@@ -1,7 +1,67 @@
 import numpy as np
 from concurrent.futures import ProcessPoolExecutor
-from concurrent.futures import ThreadPoolExecutor
-ProcessPoolExecutor = ThreadPoolExecutor
+
+def process_evaluate_worker(args):
+    """
+    Picklable standalone worker function executed in parallel child processes.
+    Reconstructs the optimizer and SingleObjectiveProblem to run the DFN
+    simulations in a process-isolated, thread-safe manner.
+    """
+    x_full, deltas, mode = args
+    import gc
+    # Import locally inside the process to prevent circular imports
+    from src.cell_optimization.parameter_opts import HierarchicalOptimizer, DESIGN_BOUNDS, validate_params, ParamTransform, DESIGN_SPACE
+    from src.cell_optimization.chem_regularization import mechanical_stability_metric
+
+    local_optimizer = None
+    try:
+        # Create a completely isolated optimizer inside the child process
+        local_optimizer = HierarchicalOptimizer()
+
+        # 1. Parameter Validation
+        pt = ParamTransform(
+            base_values=local_optimizer.base_values,
+            derived=local_optimizer.derived
+        )
+        pt.apply_physics_deltas(deltas)
+        pt.apply_design_vector(x_full, DESIGN_SPACE)
+        pv = pt.get_parameter_values()
+
+        g1 = (x_full[0] - x_full[1]) / max(DESIGN_BOUNDS[0][1], DESIGN_BOUNDS[1][1])
+        if not validate_params(pv):
+            return 1000.0, False, [max(0.0, g1), 0.0, 1.0]
+
+        # 2. Run simulation
+        res = local_optimizer.simulate(pv)
+        if not res["success"]:
+            return 1000.0, False, [max(0.0, g1), 0.0, 1.0]
+
+        g2 = res["T_max"] - 333.15
+
+        if mode == "energy":
+            f_val = -res["energy"]
+        elif mode == "power":
+            f_val = -res["power"]
+        elif mode == "thermal_stability":
+            f_val = res["T_max"]
+        elif mode == "stability":
+            f_val = -mechanical_stability_metric(stresses=res["stresses"])
+        else:
+            f_val = 1000.0
+
+        score_unpenalized = f_val
+        g_list = [g1, g2, 0.0]
+        feasible = (g1 <= 0.0) and (g2 <= 0.0)
+        return score_unpenalized, feasible, g_list
+    except Exception:
+        return 1000.0, False, [1.0, 1.0, 1.0]
+    finally:
+        if local_optimizer is not None:
+            try:
+                local_optimizer.runner.clear_memory()
+            except Exception:
+                pass
+        gc.collect()
 
 class CrossEntropyOptimizer:
     def __init__(
@@ -52,14 +112,14 @@ class CrossEntropyOptimizer:
 
     def _evaluate_one(self, sample_z, evaluator_func, x0, active_indices, xl, xu):
         """
-        Private helper method to evaluate a single candidate sample.
+        Private helper method to evaluate a single candidate sample sequentially.
         Geometry rounding occurs before evaluation and before elite update.
         """
         x_active = self._to_x(sample_z, xl, xu)
         x_full = x0.copy()
         x_full[active_indices] = x_active
 
-        # Geometry-aware rounding (already pre-rounded in optimize caller)
+        # Geometry-aware rounding
         for idx, val in enumerate(x_full):
             if idx in [0, 1]:
                 x_full[idx] = np.round(val * 1e6) / 1e6
@@ -116,6 +176,17 @@ class CrossEntropyOptimizer:
         best_x = x0[active_indices].copy()
         best_history = []
 
+        # Check if the evaluator_func is a bound method of SingleObjectiveProblem
+        is_single_obj = False
+        deltas = {}
+        mode = "energy"
+        if hasattr(evaluator_func, "__self__"):
+            problem_obj = evaluator_func.__self__
+            if problem_obj.__class__.__name__ == "SingleObjectiveProblem":
+                is_single_obj = True
+                deltas = problem_obj.deltas
+                mode = problem_obj.mode
+
         for it in range(self.iterations):
             # 2. Adaptive Population Size via smooth continuous schedule
             max_std_ratio = np.max(np.sqrt(np.diag(cov_z)) / (initial_std_z + 1e-12))
@@ -156,10 +227,44 @@ class CrossEntropyOptimizer:
 
             samples_z = np.array(rounded_samples_z)
 
-            # 6. Run parallel evaluations using ProcessPoolExecutor
-            with ProcessPoolExecutor() as executor:
-                jobs = [(sz, evaluator_func, x0, active_indices, xl, xu) for sz in samples_z]
-                results = list(executor.map(lambda job: self._evaluate_one(*job), jobs))
+            # 6. Run parallel evaluations using a real ProcessPoolExecutor
+            if is_single_obj:
+                jobs = []
+                for sample_z in samples_z:
+                    x_active = self._to_x(sample_z, xl, xu)
+                    x_full = x0.copy()
+                    x_full[active_indices] = x_active
+
+                    # Ensure pre-rounding
+                    for idx, val in enumerate(x_full):
+                        if idx in [0, 1]:
+                            x_full[idx] = np.round(val * 1e6) / 1e6
+                        elif idx in [4, 5]:
+                            x_full[idx] = np.round(val * 1e8) / 1e8
+                    jobs.append((x_full, deltas, mode))
+
+                with ProcessPoolExecutor() as executor:
+                    raw_results = list(executor.map(process_evaluate_worker, jobs))
+
+                results = []
+                for res_raw in raw_results:
+                    score_unpenalized, feasible, g_list = res_raw
+                    penalty = 0.0
+                    if g_list:
+                        violations = [max(0.0, g) for g in g_list]
+                        penalty = self.lambda_penalty * sum(v**2 for v in violations)
+                        if not feasible:
+                            if penalty == 0.0:
+                                penalty = 1e5
+                    score = score_unpenalized + penalty
+                    results.append((score, feasible))
+            else:
+                results = []
+                for sample_z in samples_z:
+                    x_active = self._to_x(sample_z, xl, xu)
+                    x_full = x0.copy()
+                    x_full[active_indices] = x_active
+                    results.append(self._evaluate_one(sample_z, evaluator_func, x0, active_indices, xl, xu))
 
             scores = np.array([r[0] for r in results])
             feasibles = np.array([r[1] for r in results])
