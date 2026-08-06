@@ -429,6 +429,8 @@ class SimulationRunner:
                         attr = getattr(module, attr_name)
                         if hasattr(attr, "cache_clear") and callable(attr.cache_clear):
                             attr.cache_clear()
+                        elif hasattr(attr, "clear_cache") and callable(attr.clear_cache):
+                            attr.clear_cache()
                     except Exception:
                         pass
         gc.collect()
@@ -511,6 +513,8 @@ class HierarchicalOptimizer:
                         attr = getattr(module, attr_name)
                         if hasattr(attr, "cache_clear") and callable(attr.cache_clear):
                             attr.cache_clear()
+                        elif hasattr(attr, "clear_cache") and callable(attr.clear_cache):
+                            attr.clear_cache()
                     except Exception:
                         pass
 
@@ -684,6 +688,8 @@ def _optimize_mode_pipeline_worker(job):
                         attr = getattr(module, attr_name)
                         if hasattr(attr, "cache_clear") and callable(attr.cache_clear):
                             attr.cache_clear()
+                        elif hasattr(attr, "clear_cache") and callable(attr.clear_cache):
+                            attr.clear_cache()
                     except Exception:
                         pass
         gc.collect()
