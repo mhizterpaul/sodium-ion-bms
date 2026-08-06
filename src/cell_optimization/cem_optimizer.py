@@ -1,5 +1,7 @@
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor as ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
+ProcessPoolExecutor = ThreadPoolExecutor
 
 class CrossEntropyOptimizer:
     def __init__(
