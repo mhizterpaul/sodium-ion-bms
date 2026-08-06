@@ -668,16 +668,18 @@ def _optimize_mode_pipeline_worker(job):
         return x_opt_final
     finally:
         # Stage Boundary Cleanup: delete Solution, processed model, discretisation, mesh, clear PyBaMM caches, gc.collect()
-        if problem is not None:
+        if "problem" in locals() and problem is not None:
             del problem
-        if problem_m is not None:
+        if "problem_m" in locals() and problem_m is not None:
             del problem_m
-        if local_optimizer is not None:
+        if "local_optimizer" in locals() and local_optimizer is not None:
             if hasattr(local_optimizer, "runner") and local_optimizer.runner is not None:
                 local_optimizer.runner.clear_memory()
             del local_optimizer
-        del cem_m
-        del cem
+        if "cem_m" in locals():
+            del cem_m
+        if "cem" in locals():
+            del cem
 
         # Clear all global caches
         import sys
