@@ -140,8 +140,8 @@ class CrossEntropyOptimizer:
                 self.cache[cache_key] = result
                 return result
 
-            # Run parallel evaluations
-            with ThreadPoolExecutor() as executor:
+            # Run parallel evaluations with reduced parallel workers
+            with ThreadPoolExecutor(max_workers=2) as executor:
                 results = list(executor.map(evaluate_one, samples_z))
 
             scores = np.array([r[0] for r in results])
