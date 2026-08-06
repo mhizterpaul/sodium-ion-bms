@@ -1,4 +1,7 @@
 import numpy as np
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
+ProcessPoolExecutor = ThreadPoolExecutor
 
 class CrossEntropyOptimizer:
     def __init__(
@@ -47,21 +50,17 @@ class CrossEntropyOptimizer:
                 raw_samples[i, j] = val
         return raw_samples
 
-    def _evaluate_one(self, sample_z, evaluator_func, x0, active_indices, xl, xu):
+    def _evaluate_one(self, sample_z, evaluator_func, x0, active_indices, xl, xu, rounding_func=None):
         """
-        Private helper method to evaluate a single candidate sample sequentially.
-        Geometry rounding occurs before evaluation and before elite update.
+        Private helper method to evaluate a single candidate sample.
         """
         x_active = self._to_x(sample_z, xl, xu)
         x_full = x0.copy()
         x_full[active_indices] = x_active
 
-        # Geometry-aware rounding
-        for idx, val in enumerate(x_full):
-            if idx in [0, 1]:
-                x_full[idx] = np.round(val * 1e6) / 1e6
-            elif idx in [4, 5]:
-                x_full[idx] = np.round(val * 1e8) / 1e8
+        # Apply domain-specific rounding if provided
+        if rounding_func is not None:
+            x_full = rounding_func(x_full)
 
         res_eval = evaluator_func(x_full)
         if isinstance(res_eval, tuple):
@@ -88,7 +87,7 @@ class CrossEntropyOptimizer:
         score = obj_val + penalty
         return score, feasible, x_full
 
-    def optimize(self, evaluator_func, x0, bounds, active_indices, G_vector, verbose=True):
+    def optimize(self, evaluator_func, x0, bounds, active_indices, G_vector, rounding_func=None, verbose=True):
         """
         Sensitivity-Guided Cross-Entropy Method (SG-CEM) Optimizer.
         """
@@ -132,7 +131,7 @@ class CrossEntropyOptimizer:
             # 4. Draw samples in z-space
             samples_z = self._reflect_sample(mu_z, cov_z_reg, pop_size)
 
-            # 5. Round samples in x-space immediately and project them back to z-space
+            # 5. Round samples in x-space immediately (using rounding_func if provided) and project them back to z-space
             # Rounding occurs BEFORE evaluation and BEFORE elite updates
             rounded_samples_z = []
             for sample_z in samples_z:
@@ -140,12 +139,8 @@ class CrossEntropyOptimizer:
                 x_full = x0.copy()
                 x_full[active_indices] = x_active
 
-                # Geometry-aware rounding
-                for idx, val in enumerate(x_full):
-                    if idx in [0, 1]:
-                        x_full[idx] = np.round(val * 1e6) / 1e6
-                    elif idx in [4, 5]:
-                        x_full[idx] = np.round(val * 1e8) / 1e8
+                if rounding_func is not None:
+                    x_full = rounding_func(x_full)
 
                 rounded_active = x_full[active_indices]
                 rounded_sample_z = self._to_z(rounded_active, xl, xu)
@@ -153,11 +148,10 @@ class CrossEntropyOptimizer:
 
             samples_z = np.array(rounded_samples_z)
 
-            # 6. Run sequential evaluations as requested
-            results = []
-            for sample_z in samples_z:
-                res_val = self._evaluate_one(sample_z, evaluator_func, x0, active_indices, xl, xu)
-                results.append(res_val)
+            # 6. Run parallel evaluations using ProcessPoolExecutor as requested
+            with ProcessPoolExecutor() as executor:
+                jobs = [(sz, evaluator_func, x0, active_indices, xl, xu, rounding_func) for sz in samples_z]
+                results = list(executor.map(lambda job: self._evaluate_one(*job), jobs))
 
             scores = np.array([r[0] for r in results])
             feasibles = np.array([r[1] for r in results])

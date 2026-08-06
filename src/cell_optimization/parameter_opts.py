@@ -625,6 +625,20 @@ class HierarchicalOptimizer:
 
             self.runner.clear_memory()
 
+def geometry_rounding(x: np.ndarray) -> np.ndarray:
+    """
+    Rounds design space parameters for geometry/mesh consistency:
+    - Electrode thicknesses (indices 0, 1) rounded to nearest 1 μm.
+    - Particle radii (indices 4, 5) rounded to nearest 10 nm.
+    """
+    x_rounded = x.copy()
+    for idx, val in enumerate(x_rounded):
+        if idx in [0, 1]:
+            x_rounded[idx] = np.round(val * 1e6) / 1e6
+        elif idx in [4, 5]:
+            x_rounded[idx] = np.round(val * 1e8) / 1e8
+    return x_rounded
+
 def _optimize_mode_pipeline_worker(job):
     """ThreadPool worker running step 1 and step 2 parameters co-optimization sequentially for a single objective mode."""
     i, mode, x_base, deltas, G, STRUCT_INDICES, MAT_INDICES, engine = job
@@ -651,7 +665,7 @@ def _optimize_mode_pipeline_worker(job):
         ref_val = 1.0
         problem = SingleObjectiveProblem(local_optimizer, x_base, active_indices, deltas, mode, ref_scale=ref_val)
         cem = CrossEntropyOptimizer(population_size=pop_size, iterations=iters)
-        best_active = cem.optimize(problem.evaluate_single, x_base, DESIGN_BOUNDS, active_indices, G[i, :], verbose=False)
+        best_active = cem.optimize(problem.evaluate_single, x_base, DESIGN_BOUNDS, active_indices, G[i, :], rounding_func=geometry_rounding, verbose=False)
 
         x_opt_struct = x_base.copy()
         x_opt_struct[active_indices] = best_active
@@ -660,7 +674,7 @@ def _optimize_mode_pipeline_worker(job):
         active_indices_m = MAT_INDICES
         problem_m = SingleObjectiveProblem(local_optimizer, x_opt_struct, active_indices_m, deltas, mode, ref_scale=ref_val)
         cem_m = CrossEntropyOptimizer(population_size=pop_size, iterations=iters)
-        best_active_m = cem_m.optimize(problem_m.evaluate_single, x_opt_struct, DESIGN_BOUNDS, active_indices_m, G[i, :], verbose=False)
+        best_active_m = cem_m.optimize(problem_m.evaluate_single, x_opt_struct, DESIGN_BOUNDS, active_indices_m, G[i, :], rounding_func=geometry_rounding, verbose=False)
 
         x_opt_final = x_opt_struct.copy()
         x_opt_final[active_indices_m] = best_active_m
