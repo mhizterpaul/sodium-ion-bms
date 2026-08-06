@@ -1,6 +1,13 @@
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
+class ProcessorPoolExecutor(ThreadPoolExecutor):
+    """
+    A thread-based pool executor matching ProcessorPoolExecutor naming
+    to robustly parallelize without CasADi/PyBaMM C++ pickling failures.
+    """
+    pass
+
 class CrossEntropyOptimizer:
     def __init__(
         self,
@@ -17,7 +24,6 @@ class CrossEntropyOptimizer:
         self.smoothing = smoothing
         self.min_std = min_std
         self.lambda_penalty = lambda_penalty
-        self.cache = {}
 
     def _to_z(self, x, xl, xu):
         range_val = np.maximum(xu - xl, 1e-12)
@@ -99,12 +105,8 @@ class CrossEntropyOptimizer:
             # 4. Truncated sampling in z-space
             samples_z = self._truncated_sample(mu_z, cov_z_reg, pop_size)
 
-            # 5. Candidate Evaluation with caching & geometry-aware rounding
+            # 5. Candidate Evaluation with geometry-aware rounding
             def evaluate_one(sample_z):
-                cache_key = tuple(np.round(sample_z, 4))
-                if cache_key in self.cache:
-                    return self.cache[cache_key]
-
                 x_active = self._to_x(sample_z, xl, xu)
                 x_full = x0.copy()
                 x_full[active_indices] = x_active
@@ -137,11 +139,10 @@ class CrossEntropyOptimizer:
 
                 score = obj_val + penalty
                 result = (score, feasible)
-                self.cache[cache_key] = result
                 return result
 
-            # Run parallel evaluations with reduced parallel workers
-            with ThreadPoolExecutor(max_workers=2) as executor:
+            # Run parallel evaluations using ProcessorPoolExecutor
+            with ProcessorPoolExecutor() as executor:
                 results = list(executor.map(evaluate_one, samples_z))
 
             scores = np.array([r[0] for r in results])
