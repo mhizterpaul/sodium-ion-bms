@@ -4,9 +4,9 @@ from concurrent.futures import ProcessPoolExecutor
 class CrossEntropyOptimizer:
     def __init__(
         self,
-        population_size=64,
+        population_size=32,
         elite_fraction=0.15,
-        iterations=15,
+        iterations=5,
         smoothing=0.7,
         min_std=1e-4,
         lambda_penalty=1e5

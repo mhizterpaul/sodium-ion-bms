@@ -637,7 +637,7 @@ def _optimize_mode_pipeline_worker(job):
         local_optimizer = HierarchicalOptimizer(engine=engine)
 
         pop_size = int(os.environ.get("CEM_POP_SIZE", 8))
-        iters = int(os.environ.get("CEM_ITERATIONS", 3))
+        iters = int(os.environ.get("CEM_ITERATIONS", 2))
 
         # 1. Step 1: Structural Parameters (θs) Optimization first
         max_s = np.max(np.abs(G[i, STRUCT_INDICES])) + 1e-12
