@@ -88,8 +88,6 @@ The digital twin validates the performance of the BESS by programmatically evalu
 ---
 ### Distributed Dynamic State Estimation Using Lantent Network Realization Signatures (core contribution)
 
-The objective of this work is to determine whether the internal operating state and structural characteristics of an unknown downstream distribution network can be inferred solely from synchronized electrical measurements acquired at the known distribution station boundary.
-
 Unlike conventional Distribution System State Estimation (DSSE), where the complete network topology and bus model are assumed known, this research considers a partially observable network in which only the upstream distribution station is known while the downstream network remains hidden.
 
 The realization problem is formulated as
