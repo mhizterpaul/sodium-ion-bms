@@ -73,6 +73,7 @@ The BESS evaluation implements realistic grid outage scenarios, PV-firming profi
 
 2. High-Fidelity Efficiency Benchmarking
 The digital twin validates the performance of the BESS by programmatically evaluating three distinct physically-grounded efficiency metrics across simulated dispatches:
+
 - **Coulombic Efficiency ($\eta_C$):** Evaluated via the integration of current flow:
   $$ \eta_C = \frac{\int_{discharge} I dt}{\int_{charge} I dt} $$
   using robust current-direction tracking based on changes in the discharge capacity.
@@ -81,13 +82,7 @@ The digital twin validates the performance of the BESS by programmatically evalu
 - **Voltage Efficiency ($\eta_V$):** Derived directly as the ratio of energy efficiency to Coulombic efficiency:
   $$ \eta_V = \frac{\eta_E}{\eta_C} $$
 
-3. Thermoelastic Strain-Based Structural Integrity Model
-The spatial temperature and stoichiometric gradients act as drivers for mechanical expansion and contraction within the electrode-electrolyte-interphase continuum. The mechanical response is modeled as a 1D-to-3D thermoelastic continuum.
-Deformation-producing strains are resolved along the electrode thickness axis to evaluate structural fatigue.
-A hard constraint-based robustness score is computed by comparing the maximum spatial strain against a critical lower-bound failure envelope ($\epsilon_{crit}$), which represents the minimum strain at which irreversible physical degradation initiates. If the local induced strain exceeds this critical envelope, mechanical failure is triggered, and the cycle-life endurance metric ($n_{crit}$, $t_{crit}$) is evaluated.
-
-
-*   **Limitations 5:  While this work focuses on a foundational design space, the cell architecture remains amenable to further performance enhancement via composite electrode structuring, advanced pore network engineering, perturbing other dopant sites (beyond the Fe-site), and exploring a broader range of electrolyte systems (solvents and additives) to further enhance cycle life and energy density. The current optimization scope is intentionally streamlined to accommodate the computational constraints of the DFN solver.
+*   **Limitations**:  While this work focuses on a foundational design space, the cell architecture remains amenable to further performance enhancement via composite electrode structuring, advanced pore network engineering, perturbing other dopant sites (beyond the Fe-site), and exploring a broader range of electrolyte systems (solvents and additives) to further enhance cycle life and energy density. The current optimization scope is intentionally streamlined to accommodate the computational constraints of the DFN solver.
   
 
 ---
@@ -107,7 +102,7 @@ where
 
 * (M) denotes synchronized measurements acquired at feeders and distribution transformers,
 * (X_R) is a latent realization state describing the hidden network,
-* (\Phi(\cdot)) is an unknown realization operator learned empirically from simulated operating scenarios.
+* The aim is to derive (\Phi(\cdot)) realization operator, empirically from simulated operating scenarios.
 
 The emphasis is therefore on discovering which hidden network properties are electrically observable at the distribution station interface and how these observables evolve under changing operating conditions.
 
@@ -130,7 +125,7 @@ It consists of:
 
                   │
 
-        Main Distribution Bus (Point of Common Coupling) ── Power Conditioning Unit (PCU) ── Generator
+        Main Distribution Bus ── Generator
 
                   │
       ┌───────────┼───────────┐
@@ -149,14 +144,15 @@ Transformer   Transformer   Transformer
 ```
 
 The plant model contains strictly distribution network elements and local sources to facilitate Latent Network Realization:
+
 * **Utility Source (Swing Bus)**: Represents the steady connection to the transmission grid.
+
 * **Distribution Substation Transformer**: Substation transformer supplying the medium-voltage bus.
-* **Main Distribution Bus (Point of Common Coupling)**: Serves as the central bus where the generators and feeders connect.
-* **Generator**: A shared local generator providing primary active generation capacity, representing local active energy generation to simplify the microgrid known plant.
-* **Power Conditioning Unit (PCU)**: A single unit interfacing the generator, modeled without internal step-up transformers or switchgear to simplify the modeling of the boundary assets.
-* **Switchgear**: Medium-voltage switchgear and protection components modeled as a separate block in the plant.
+
 * **Three Outgoing Feeders**: Radial lines extending from the substation, each characterized by known feeder lengths and impedances.
+
 * **Fixed Set of Transformers**: Step-down distribution transformers whose primary-side terminals serve as the boundary measurement interfaces.
+
 * **Measurement and Monitoring Devices**: Electrical sensors capturing voltage, current, active/reactive power, and sequence components at each feeder head and transformer primary terminal.
 
 ---
@@ -212,26 +208,6 @@ Measurements include
 * Apparent power
 * Power factor
 
-##### Transformer Operating State
-
-* Transformer loading
-
-[
-Loading=\frac{S}{S_{rated}}
-]
-
-* Voltage regulation
-* Tap position (if applicable)
-* Estimated secondary demand
-* Copper losses
-* Core losses
-* Sequence components
-* Estimated transformer impedance
-
-[
-Z=\frac{V}{I}
-]
-
 ##### Dynamic Quantities
 
 Where supported
@@ -239,8 +215,181 @@ Where supported
 * Loading rate
 * Overload duration
 * Load recovery characteristics
-* Transformer temperature (optional)
+* Transformer temperature 
 * Transient voltage and current waveforms
+
+---
+
+#### Primary Distribution Transformer Specification (ATP-EMTP Model)
+
+##### General Characteristics
+
+| Parameter         | Value                    | Notes                                          |
+| ----------------- | ------------------------ | ---------------------------------------------- |
+| Transformer Type  | Three-phase, Two-winding | Injection Substation Transformer               |
+| Rated Power       | **7.5 MVA**              | Typical Nigerian urban distribution substation |
+| Rated Frequency   | **50 Hz**                | Nigerian grid frequency                        |
+| Primary Voltage   | **33 kV (L-L)**          | HV winding                                     |
+| Secondary Voltage | **11 kV (L-L)**          | LV feeder bus                                  |
+| Number of Phases  | 3                        | Balanced three-phase                           |
+| Cooling           | ONAN                     | Oil Natural Air Natural                        |
+| Vector Group      | Dyn11                    | Δ/Yg configuration                             |
+| Neutral Grounding | Solidly grounded (LV)    | Earth fault protection                         |
+| Core Type         | Three-limb CRGO          | Cold Rolled Grain Oriented Steel               |
+| Standard          | IEC 60076                | Nigerian utility practice                      |
+
+---
+
+##### Rated Electrical Quantities
+
+| Parameter               | Value        |
+| ----------------------- | ------------ |
+| Rated Apparent Power    | 7.5 MVA      |
+| Rated Power Factor      | 0.95 lagging |
+| Rated Primary Current   | **131.2 A**  |
+| Rated Secondary Current | **393.6 A**  |
+| Frequency               | 50 Hz        |
+
+
+---
+
+##### Operating Loading
+
+| Quantity         | Value    |
+| ---------------- | -------- |
+| Peak Active Load | 5.6 MW   |
+| Reactive Load    | 2.1 MVAr |
+| Apparent Load    | 6.0 MVA  |
+| Loading          | 80%      |
+
+---
+
+##### Voltage Regulation
+
+| Parameter         | Value    |
+| ----------------- | -------- |
+| No-load Voltage   | 11.15 kV |
+| Full-load Voltage | 11.00 kV |
+| Regulation        | 1.36 %   |
+
+---
+
+##### Tap Changer
+
+| Parameter           | Value  |
+| ------------------- | ------ |
+| Type                | OLTC   |
+| Range               | ±7.5 % |
+| Step Size           | 2.5 %  |
+| Number of Positions | 7      |
+| Nominal Position    | 0      |
+
+---
+
+##### Winding Parameters
+
+| Parameter          | HV       | LV                       |
+| ------------------ | -------- | ------------------------ |
+| Connection         | Delta    | Grounded Wye             |
+| Rated Voltage      | 33 kV    | 11 kV                    |
+| Turns Ratio        | 3 : 1    | —                        |
+| Winding Resistance | 0.006 pu | Included in equivalent R |
+
+---
+
+##### Losses
+
+###### Copper Loss
+
+| Parameter                | Value |
+| ------------------------ | ----- |
+| Full-load Copper Loss    | 50 kW |
+| Copper Loss @80% Loading | 32 kW |
+
+###### Core Loss
+
+| Parameter    | Value  |
+| ------------ | ------ |
+| No-load Loss | 7.5 kW |
+
+###### Total Loss
+
+| Parameter               | Value   |
+| ----------------------- | ------- |
+| Total Loss @80% Loading | 39.5 kW |
+| Efficiency              | 99.35 % |
+
+---
+
+##### Leakage Impedance
+
+| Parameter            | Value  |
+| -------------------- | ------ |
+| Percentage Impedance | 8.35 % |
+| Resistance           | 0.60 % |
+| Leakage Reactance    | 8.33 % |
+| X/R Ratio            | 13.9   |
+
+
+##### Sequence Impedances (per-unit)
+
+| Sequence | Resistance | Reactance |
+| -------- | ---------- | --------- |
+| Positive | 0.0060     | 0.0833    |
+| Negative | 0.0060     | 0.0833    |
+| Zero     | 0.0120     | 0.0450    |
+
+---
+
+##### Magnetizing Branch
+
+| Parameter             | Value  |
+| --------------------- | ------ |
+| Excitation Current    | 0.8 %  |
+| Magnetizing Reactance | 250 pu |
+| Core-loss Resistance  | 800 pu |
+
+---
+
+##### Short-Circuit Characteristics
+
+| Parameter                   | Value                    |
+| --------------------------- | ------------------------ |
+| Short-circuit Voltage       | 8.35 %                   |
+| Rated Short-circuit Current | 12 × Rated Current (1 s) |
+| Thermal Limit               | IEC 60076                |
+
+---
+
+##### Saturation Characteristics (Required for ATP-EMTP Saturable Transformer)
+
+| Flux (pu) | Magnetizing Current (pu) |
+| --------- | ------------------------ |
+| 0.0       | 0.000                    |
+| 0.8       | 0.002                    |
+| 1.0       | 0.008                    |
+| 1.1       | 0.015                    |
+| 1.2       | 0.050                    |
+| 1.3       | 0.180                    |
+| 1.4       | 0.420                    |
+| 1.5       | 0.900                    |
+
+This nonlinear magnetization curve enables ATP-EMTP to simulate inrush currents, ferroresonance, and saturation effects more accurately than a linear magnetizing branch.
+
+---
+
+##### BCTRAN Equivalent Parameters
+
+| Quantity                    | Value              |
+| --------------------------- | ------------------ |
+| Base Power                  | 7.5 MVA            |
+| Base Frequency              | 50 Hz              |
+| Positive Sequence Impedance | 0.006 + j0.0833 pu |
+| Zero Sequence Impedance     | 0.012 + j0.045 pu  |
+| Magnetizing Reactance       | 250 pu             |
+| Core-loss Resistance        | 800 pu             |
+| Winding Connections         | Δ/Yg               |
+| Tap Position                | 0                  |
 
 ---
 
@@ -285,46 +434,17 @@ The perturbation process modifies hidden network characteristics including
 * Motor penetration
 * Capacitor placement
 * Transformer loading
-* Distributed energy resource penetration (optional)
+
 
 Each perturbed network is simulated under a range of operating conditions to generate synchronized feeder and transformer measurements.
-
-The objective is to determine how variations in hidden network structure and operating state manifest in the measurable electrical response at the known distribution station boundary.
 
 The simulation produces a comprehensive dataset relating hidden network perturbations to observable boundary measurements for subsequent realization and distributed dynamic state estimation.
 
 ---
 
-**5. Distributed Dynamic State Estimation**
-
-The network state is inferred from synchronized feeder and transformer measurements.
-
-The estimation problem is expressed as
-
-[
-X_R=\Phi(M)
-]
-
-where the realization operator (\Phi(\cdot)) is learned from the simulated operating scenarios.
-
-The estimated realization state may include
-
-* Effective electrical distance to active loads
-* Aggregate network impedance
-* Phase-coupling indices
-* Network stiffness
-* Transformer loading state
-* Feeder coherency
-* Dominant power-flow modes
-* Synchronization indices
-* Dynamic spectral modes
-
-These latent coordinates evolve continuously as the hidden downstream network changes and collectively characterize its instantaneous operating condition.
-
 The synchronized measurements are transformed into physics-informed features that are expected to generalize across operating conditions
 
 ---
-
 
 **6. Validation**
 
@@ -345,6 +465,5 @@ Validation focuses on answering the following research questions.
 4. **Sensitivity to Hidden Network Perturbations**
 
    Which classes of downstream perturbations—including topology changes, load redistribution, switching events, transformer loading, and line parameter variations—produce measurable changes at the distribution station boundary?
-
 
 The validation establishes the practical limits of boundary-based realization and identifies the sensing architecture required for distributed dynamic state estimation in partially observable distribution networks.
