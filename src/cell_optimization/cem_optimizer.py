@@ -120,7 +120,7 @@ class CrossEntropyOptimizer:
                 jobs.append(x_full)
 
             try:
-                with ProcessPoolExecutor(max_workers=3) as executor:
+                with ProcessPoolExecutor(max_workers=2) as executor:
                     raw_results = list(executor.map(evaluator_func, jobs))
             except Exception:
                 # Fallback to sequential execution if parallel pool fails
