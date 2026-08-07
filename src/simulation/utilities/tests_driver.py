@@ -89,7 +89,7 @@ class ElectrochemicalThermalDriverModel:
         try:
             if experiment is not None:
                 # Standard API usage (Issue 2)
-                sim = pybamm.Simulation(model, parameter_values=param, experiment=experiment, solver=self.solver)
+                sim = pybamm.Simulation(model, parameter_values=param, experiment=experiment, solver=self.solver, cache_esoh=False)
                 solution = sim.solve()
             else:
                 if current_function is not None:
@@ -111,7 +111,7 @@ class ElectrochemicalThermalDriverModel:
                     else:
                         param["Current function [A]"] = current_function
 
-                sim = pybamm.Simulation(model, parameter_values=param, solver=self.solver)
+                sim = pybamm.Simulation(model, parameter_values=param, solver=self.solver, cache_esoh=False)
                 solution = sim.solve(times)
         except Exception as e:
             print(f"WARNING: Simulation solver encountered an error: {e}. Attempting fallback to partial solution.")

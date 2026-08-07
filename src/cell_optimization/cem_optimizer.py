@@ -129,6 +129,12 @@ class CrossEntropyOptimizer:
             # Clear PyBaMM caches and run GC on the main thread after all parallel jobs have completed/joined!
             import sys
             import gc
+            import shutil
+            from pathlib import Path
+
+            # Clear downloaded data cache
+            shutil.rmtree(Path.home() / ".cache" / "pybamm", ignore_errors=True)
+
             for module_name, module in list(sys.modules.items()):
                 if module_name.startswith("pybamm"):
                     for attr_name in dir(module):
