@@ -110,13 +110,10 @@ class OptimizationValidator:
 
              energy_b = abs(trapz_func(v_b * curr_b, t_b)) / 3600
              power_b = np.max(np.abs(v_b * curr_b))
-             mech_b = self.solve_mechanical_integrity(base_sol, base_pv)
 
              baseline_metrics = {
                   "energy": float(energy_b),
-                  "power": float(power_b),
-                  "max_strain": mech_b["max_strain"],
-                  "mechanical_integrity_factor": mech_b["mechanical_integrity_factor"]
+                  "power": float(power_b)
              }
         except Exception as e:
              print(f"WARNING: Baseline simulation failed: {e}")

@@ -129,18 +129,6 @@ Measures the temperature excursion produced during operation:
 
 [\Delta T=T_{\max}-T_{\min}] and the maximum operating temperature is[T_{\max}=\max_t T(t).]
 
-State of Charge
-
-The instantaneous stored-energy state is represented as:
-
-[SoC(t)=\frac{Q(t)}{Q_{\max}}\times100\%.]
-
-State of Health
-
-Capacity-based degradation is represented as:
-
-[SoH(t)=\frac{Q_{\max}(t)}{Q_{\max}(0)}\times100\%.]
-
 Depth of Discharge
 
 For each simulated cycle:
