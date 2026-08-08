@@ -81,4 +81,16 @@ class CoSimulationRunner:
         result.update(f_trans)
         result.update(fft_features)
 
+        # Add explicit synchronized measurements at transformers and feeders
+        for f_name, m in synced_measurements.items():
+            result[f"{f_name}_voltage_a"] = float(m.voltage_abc[0])
+            result[f"{f_name}_voltage_b"] = float(m.voltage_abc[1])
+            result[f"{f_name}_voltage_c"] = float(m.voltage_abc[2])
+            result[f"{f_name}_current_a"] = float(m.current_abc[0])
+            result[f"{f_name}_current_b"] = float(m.current_abc[1])
+            result[f"{f_name}_current_c"] = float(m.current_abc[2])
+            result[f"{f_name}_p_kw"] = float(m.p_kw)
+            result[f"{f_name}_q_kvar"] = float(m.q_kvar)
+            result[f"{f_name}_s_kva"] = float(m.s_kva)
+
         return result
