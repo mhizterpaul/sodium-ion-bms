@@ -40,6 +40,18 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
 
         loads_dist = distribute_loads(modified_topo["buses"])
 
+        # Perturb load compositions: linear, non-linear, heavy-duty
+        # Scenario indices dictate different predominant load categories
+        if idx % 3 == 0:
+            load_comp = {"linear": 0.7, "non_linear": 0.15, "heavy_duty": 0.15}
+        elif idx % 3 == 1:
+            load_comp = {"linear": 0.15, "non_linear": 0.7, "heavy_duty": 0.15}
+        else:
+            load_comp = {"linear": 0.15, "non_linear": 0.15, "heavy_duty": 0.7}
+
+        # Perturb transformer loading dynamically across scenarios
+        trans_load_val = 30.0 + 5.0 * (idx % 10) # range: 30% to 75%
+
         h_net_scen = HiddenNetworkScenario(
             scenario_id=scenario_id,
             num_buses=len(modified_topo["buses"]),
@@ -47,10 +59,10 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
             topology=modified_topo,
             line_parameters={"mult": line_mult},
             loads=loads_dist,
-            load_composition={"residential": 0.5, "commercial": 0.3, "industrial": 0.2},
+            load_composition=load_comp,
             motor_penetration=0.08,
             capacitor_configuration={},
-            transformer_loading={"trans1": 60.0, "trans2": 60.0, "trans3": 60.0},
+            transformer_loading={"trans1": trans_load_val, "trans2": trans_load_val, "trans3": trans_load_val},
             switching_events=[]
         )
 
