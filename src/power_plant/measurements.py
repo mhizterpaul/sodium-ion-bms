@@ -176,3 +176,54 @@ def get_boundary_measurements(transformer_names=["trans1", "trans2", "trans3"]):
 
     measurements["frequency_hz"] = freq
     return measurements
+
+MEASUREMENT_POINTS = {
+    "feeder1": {
+        "element": "line.feeder1",
+        "bus": "main_bus",
+    },
+    "feeder2": {
+        "element": "line.feeder2",
+        "bus": "main_bus",
+    },
+    "feeder3": {
+        "element": "line.feeder3",
+        "bus": "main_bus",
+    },
+    "transformer1": {
+        "element": "transformer.trans1",
+        "bus": "feeder1_head",
+    },
+    "transformer2": {
+        "element": "transformer.trans2",
+        "bus": "feeder2_head",
+    },
+    "transformer3": {
+        "element": "transformer.trans3",
+        "bus": "feeder3_head",
+    },
+}
+
+def configure_measurement_monitors():
+    commands = [
+        "new monitor.feeder1_vi element=line.feeder1 terminal=1 mode=0",
+        "new monitor.feeder2_vi element=line.feeder2 terminal=1 mode=0",
+        "new monitor.feeder3_vi element=line.feeder3 terminal=1 mode=0",
+        "new monitor.trans1_vi element=transformer.trans1 terminal=1 mode=0",
+        "new monitor.trans2_vi element=transformer.trans2 terminal=1 mode=0",
+        "new monitor.trans3_vi element=transformer.trans3 terminal=1 mode=0",
+    ]
+    for command in commands:
+        dss.run_command(command)
+
+def configure_power_monitors():
+    commands = [
+        "new monitor.feeder1_pq element=line.feeder1 terminal=1 mode=1",
+        "new monitor.feeder2_pq element=line.feeder2 terminal=1 mode=1",
+        "new monitor.feeder3_pq element=line.feeder3 terminal=1 mode=1",
+        "new monitor.trans1_pq element=transformer.trans1 terminal=1 mode=1",
+        "new monitor.trans2_pq element=transformer.trans2 terminal=1 mode=1",
+        "new monitor.trans3_pq element=transformer.trans3 terminal=1 mode=1",
+    ]
+    for command in commands:
+        dss.run_command(command)
