@@ -124,7 +124,29 @@ class CrossEntropyOptimizer:
                     raw_results = list(executor.map(evaluator_func, jobs))
             except Exception:
                 # Fallback to sequential execution if parallel pool fails
-                raw_results = [evaluator_func(job) for job in jobs]
+                raw_results = []
+                for job in jobs:
+                    res_val = evaluator_func(job)
+                    raw_results.append(res_val)
+                    # AGGRESSIVE CLEANUP AFTER EACH SEQUENTIAL EVALUATION!
+                    import sys
+                    import gc
+                    import shutil
+                    from pathlib import Path
+
+                    shutil.rmtree(Path.home() / ".cache" / "pybamm", ignore_errors=True)
+                    for module_name, module in list(sys.modules.items()):
+                        if module_name.startswith("pybamm"):
+                            for attr_name in dir(module):
+                                try:
+                                    attr = getattr(module, attr_name)
+                                    if hasattr(attr, "cache_clear") and callable(attr.cache_clear):
+                                        attr.cache_clear()
+                                    elif hasattr(attr, "clear_cache") and callable(attr.clear_cache):
+                                        attr.clear_cache()
+                                except Exception:
+                                    pass
+                    gc.collect()
 
             # Clear PyBaMM caches and run GC on the main thread after all parallel jobs have completed/joined!
             import sys
