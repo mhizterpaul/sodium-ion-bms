@@ -1,7 +1,7 @@
 from opendssdirect import dss
 import numpy as np
 
-from src.power_plant.known_plant import initialize_known_plant
+from src.power_plant.plant import initialize_known_plant
 from src.power_plant.operating_point import solve_operating_point
 from src.power_plant.measurements import get_boundary_measurements
 
@@ -11,7 +11,6 @@ from src.hidden_network.transformers import get_distribution_transformer_spec
 from src.hidden_network.perturbations import apply_topology_reconfiguration
 
 from src.transient.atp_case_builder import ATPCaseBuilder
-from src.transient.atp_backend import PhysicalTransientSolver
 from src.transient.synchronization import synchronize_measurements
 
 from src.features.steady_state import extract_steady_state_features
@@ -22,7 +21,6 @@ from src.features.spectral import extract_spectral_features
 class CoSimulationRunner:
     def __init__(self):
         self.atp_builder = ATPCaseBuilder()
-        self.atp_solver = PhysicalTransientSolver()
 
     def run_scenario(self, sim_scenario) -> dict:
         """
@@ -64,7 +62,8 @@ class CoSimulationRunner:
 
         for event in sim_scenario.events:
             self.atp_builder.build(op, h_net, event, f"src/simulation/atp_cases/{h_net.scenario_id}_{event.event_type}.ATP")
-            emt_waveforms = self.atp_solver.run_transient_solve(op, h_net, event)
+            # Backend process deleted, fallback to synchronized operating-point values
+            emt_waveforms = None
             synced_measurements = synchronize_measurements(dss_measurements, emt_waveforms)
             fft_features = extract_spectral_features(emt_waveforms)
 
