@@ -66,21 +66,231 @@ The projected design space ($\theta = [\theta_s, \theta_m]$) is explored with a 
 
 #### BESS Robustness Evaluation Framework
 
+
 1. Electrochemical–Thermal Driver Model
-The cell behavior is resolved using a Doyle-Fuller-Newman (DFN) electrochemical framework coupled with a lumped thermal model.
-This captures the co-evolution of state of charge (SOC), state of health (SOH) degradation trajectory, and transient thermal fields $T(t)$ under complex, multi-stage charge-discharge cycling.
-The BESS evaluation implements realistic grid outage scenarios, PV-firming profiles, and oscillating C-rate stress tests.
 
-2. High-Fidelity Efficiency Benchmarking
-The digital twin validates the performance of the BESS by programmatically evaluating three distinct physically-grounded efficiency metrics across simulated dispatches:
 
-- **Coulombic Efficiency ($\eta_C$):** Evaluated via the integration of current flow:
-  $$ \eta_C = \frac{\int_{discharge} I dt}{\int_{charge} I dt} $$
-  using robust current-direction tracking based on changes in the discharge capacity.
-- **Energy Efficiency ($\eta_E$):** Evaluated by integrating terminal power:
-  $$ \eta_E = \frac{\int_{discharge} V \cdot I dt}{\int_{charge} V \cdot I dt} $$
-- **Voltage Efficiency ($\eta_V$):** Derived directly as the ratio of energy efficiency to Coulombic efficiency:
-  $$ \eta_V = \frac{\eta_E}{\eta_C} $$
+
+The BESS is evaluated using the DFN electrochemical model coupled with the lumped thermal model. The model provides the measurable simulation outputs required for performance evaluation:
+
+Terminal voltage, \(V(t)\)
+
+Terminal current, \(I(t)\)
+
+Temperature, \(T(t)\)
+
+State of charge, \(SoC(t)\)
+
+Available capacity, \(Q(t)\)
+
+Energy throughput
+
+
+The BESS is evaluated under simulated grid-outage, PV-firming, and variable C-rate dispatch profiles.
+
+2. Performance Measurements
+
+
+
+Each performance metric is calculated directly from the simulated measurements.
+
+Round-Trip Energy Efficiency (RTE)
+
+Measures the fraction of charging energy recovered during discharge:
+
+\[
+\eta_{RTE}
+=
+\frac{E_{\mathrm{dis}}}{E_{\mathrm{chg}}}
+\]
+
+where
+
+\[
+E_{\mathrm{dis}}
+=
+\int_{\mathrm{discharge}} V(t)I(t)\,dt
+\]
+
+and
+
+\[
+E_{\mathrm{chg}}
+=
+\int_{\mathrm{charge}} |V(t)I(t)|\,dt.
+\]
+
+Coulombic Efficiency
+
+Measures the fraction of charge recovered in terms of electrical charge:
+
+\[
+\eta_C
+=
+\frac{Q_{\mathrm{dis}}}{Q_{\mathrm{chg}}}
+\]
+
+with
+
+\[
+Q_{\mathrm{dis}}
+=
+\int_{\mathrm{discharge}} |I(t)|\,dt,
+\qquad
+Q_{\mathrm{chg}}
+=
+\int_{\mathrm{charge}} |I(t)|\,dt.
+\]
+
+Voltage Efficiency
+
+Represents the voltage-related loss independently of charge throughput:
+
+\[
+\eta_V
+=
+\frac{\eta_{RTE}}{\eta_C}.
+\]
+
+Usable Energy Capacity
+
+Measures the energy delivered over the defined operating SOC window:
+
+\[
+E_{\mathrm{usable}}
+=
+\int_{t_0}^{t_1}|V(t)I(t)|\,dt
+\]
+
+where \(t_0\) and \(t_1\) correspond to the specified upper and lower SOC limits.
+
+Power Capability
+
+Measures the maximum deliverable electrical power during the simulated operating window:
+
+\[
+P_{\max}
+=
+\max_t |V(t)I(t)|.
+\]
+
+Thermal Response
+
+Measures the temperature excursion produced during operation:
+
+\[
+\Delta T
+=
+T_{\max}-T_{\min}
+\]
+
+and the maximum operating temperature is
+
+\[
+T_{\max}=\max_t T(t).
+\]
+
+State of Charge
+
+The instantaneous stored-energy state is represented as:
+
+\[
+SoC(t)
+=
+\frac{Q(t)}{Q_{\max}}\times100\%.
+\]
+
+State of Health
+
+Capacity-based degradation is represented as:
+
+\[
+SoH(t)
+=
+\frac{Q_{\max}(t)}
+{Q_{\max}(0)}
+\times100\%.
+\]
+
+Depth of Discharge
+
+For each simulated cycle:
+
+\[
+DoD
+=
+SoC_{\max}-SoC_{\min}.
+\]
+
+Equivalent Full Cycles
+
+Accumulated energy throughput is converted into equivalent full cycles:
+
+\[
+EFC
+=
+\frac{\displaystyle\int |P(t)|\,dt}
+{2E_{\mathrm{rated}}}.
+\]
+
+The factor of \(2\) accounts for one complete charge and discharge throughput.
+
+Capacity Fade
+
+The loss of usable capacity relative to the initial condition is:
+
+\[
+F_Q(t)
+=
+1-
+\frac{Q_{\max}(t)}
+{Q_{\max}(0)}.
+\]
+
+Cycle Life
+
+Cycle life is estimated from the simulated degradation trajectory as the point at which the battery reaches the prescribed minimum \(SoH\):
+
+\[
+N_{\mathrm{life}}
+=
+\min
+\left\{
+N:
+SoH(N)\le SoH_{\mathrm{limit}}
+\right\}.
+\]
+
+Calendar Life
+
+Where calendar-aging simulations are performed, the corresponding lifetime is:
+
+\[
+t_{\mathrm{life}}
+=
+\min
+\left\{
+t:
+SoH(t)\le SoH_{\mathrm{limit}}
+\right\}.
+\]
+
+Levelized Cost of Storage
+
+For the economic assessment:
+
+\[
+LCOS
+=
+\frac{C_{\mathrm{capital}}+
+C_{\mathrm{replacement}}+
+C_{\mathrm{operation}}}
+{E_{\mathrm{lifetime,dis}}}
+\]
+
+where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered by the BESS.
+
+---
 
 *   **Limitations**:  While this work focuses on a foundational design space, the cell architecture remains amenable to further performance enhancement via composite electrode structuring, advanced pore network engineering, perturbing other dopant sites (beyond the Fe-site), and exploring a broader range of electrolyte systems (solvents and additives) to further enhance cycle life and energy density. The current optimization scope is intentionally streamlined to accommodate the computational constraints of the DFN solver.
   
