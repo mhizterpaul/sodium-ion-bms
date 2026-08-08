@@ -20,7 +20,8 @@ def initialize_known_plant():
     dss.run_command("new circuit.FixedPlant basekv=33.0 pu=1.0 phases=3")
 
     # 2. Substation Transformer (33 kV to 11 kV, delta-wye, 7.5 MVA)
-    # Rwdg=0.6%, X=8.33% from spec sheet in paper.md
+    # Modelled exactly as specified in the ATP-EMTP Primary Transformer model from docs/paper.md:
+    # 7.5 MVA, 33/11 kV, %r=0.6, %loadloss=0.667 (50 kW copper loss), %noloadloss=0.1 (7.5 kW core loss), %imag=0.8, xhl=8.33
     dss.run_command(
         "new transformer.substation "
         "phases=3 windings=2 "
@@ -28,7 +29,11 @@ def initialize_known_plant():
         "conns=[delta, wye] "
         "kvs=[33.0, 11.0] "
         "kvas=[7500, 7500] "
-        "%r=0.6 xhl=8.33"
+        "%r=0.6 "
+        "%loadloss=0.667 "
+        "%noloadloss=0.1 "
+        "%imag=0.8 "
+        "xhl=8.33"
     )
 
     # 3. Configure Controllable Shared Generator (coupled at 11 kV main_bus)
