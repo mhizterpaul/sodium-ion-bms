@@ -9,12 +9,13 @@ from src.hidden_network.loads import distribute_loads
 from src.hidden_network.perturbations import apply_topology_reconfiguration
 from src.transient.events import TransientEvent
 
-def generate_experiments_dataset(n_scenarios: int = 15):
+def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = False):
     """
     Orchestrates the program experiments dataset generation by sweeping through QSTS scenarios,
     coupling OpenDSS operating conditions with transient events, and exporting the synchronized features.
+    If write_to_disk is True, it will export to scenario_results.csv. By default, it generates in-memory.
     """
-    print(f"INFO: Sweeping and generating {n_scenarios} electromagnetic-transient scenarios...")
+    print(f"INFO: Sweeping and generating {n_scenarios} electromagnetic-transient scenarios (In-Memory)...")
     runner = CoSimulationRunner()
     results = []
 
@@ -84,17 +85,19 @@ def generate_experiments_dataset(n_scenarios: int = 15):
         record.update(features)
         results.append(record)
 
-    csv_dir = "src/simulation"
-    os.makedirs(csv_dir, exist_ok=True)
-    csv_path = os.path.join(csv_dir, "scenario_results.csv")
+    if write_to_disk:
+        csv_dir = "src/simulation"
+        os.makedirs(csv_dir, exist_ok=True)
+        csv_path = os.path.join(csv_dir, "scenario_results.csv")
 
-    headers = list(results[0].keys())
-    with open(csv_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=headers)
-        writer.writeheader()
-        writer.writerows(results)
-
-    print(f"INFO: Successfully exported synchronized boundary dataset of {n_scenarios} scenarios to {csv_path}")
+        headers = list(results[0].keys())
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=headers)
+            writer.writeheader()
+            writer.writerows(results)
+        print(f"INFO: Successfully exported synchronized boundary dataset of {n_scenarios} scenarios to {csv_path}")
+    else:
+        print(f"INFO: Generated dataset of {n_scenarios} scenarios in-memory successfully.")
     return results
 
 if __name__ == "__main__":
