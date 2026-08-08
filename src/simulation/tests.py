@@ -241,8 +241,5 @@ class StabilityValidator:
         return results
 
 if __name__ == "__main__":
-    import json
     validator = StabilityValidator()
     results = validator.validate_optimized_design()
-    print("SUCCESS: Validation results:")
-    print(json.dumps(results, indent=2))
