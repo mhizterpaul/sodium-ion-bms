@@ -322,9 +322,14 @@ class SingleObjectiveProblem:
         pv = pt.get_parameter_values()
 
         if not validate_params(pv):
+            if hasattr(pv, "_processor") and pv._processor is not None:
+                pv._processor.clear_cache()
             return 1000.0, [max(0.0, g1), 0.0, 1.0], False
 
         res = self.optimizer.simulate(pv)
+        if hasattr(pv, "_processor") and pv._processor is not None:
+            pv._processor.clear_cache()
+
         if not res["success"]:
             return 1000.0, [max(0.0, g1), 0.0, 1.0], False
 
@@ -422,6 +427,9 @@ class SimulationRunner:
     def clear_memory(self):
         """Release PyBaMM caches and run garbage collection."""
         import sys
+        import shutil
+        from pathlib import Path
+        shutil.rmtree(Path.home() / ".cache" / "pybamm", ignore_errors=True)
         for module_name, module in list(sys.modules.items()):
             if module_name.startswith("pybamm"):
                 for attr_name in dir(module):
