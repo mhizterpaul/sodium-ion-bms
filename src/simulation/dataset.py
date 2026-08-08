@@ -55,12 +55,17 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
         )
 
         event_type = events_pool[idx % len(events_pool)]
+        if event_type == "temporary_fault" and len(modified_topo["lines"]) > 0:
+            fault_target = random.choice(modified_topo["lines"])["name"]
+        else:
+            fault_target = f"transformer{feeder_idx}"
+
         t_event = TransientEvent(
             event_type=event_type,
             start_time_s=20.0,
             duration_s=0.1,
-            target=f"transformer{feeder_idx}",
-            parameters={"energization_angle_deg": 0.0}
+            target=fault_target,
+            parameters={"energization_angle_deg": 0.0, "fault_resistance_ohm": 0.05}
         )
 
         sim_scen = SimulationScenario(
