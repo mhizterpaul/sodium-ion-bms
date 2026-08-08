@@ -100,7 +100,7 @@ class OptimizationValidator:
             "Total heat transfer coefficient [W.m-2.K-1]": derived["total_htc"]
         }, check_already_exists=False)
 
-        base_sim = pybamm.Simulation(base_model, parameter_values=base_pv, cache_esoh=False)
+        base_sim = pybamm.Simulation(base_model, parameter_values=base_pv)
         try:
              base_sol = base_sim.solve([0, 3600], inputs={"Current [A]": base_pv["Nominal cell capacity [A.h]"]})
              v_b = base_sol["Terminal voltage [V]"].entries
@@ -139,7 +139,7 @@ class OptimizationValidator:
              model = pybamm.sodium_ion.DFN(options=options)
         except AttributeError:
              model = pybamm.lithium_ion.DFN(options=options)
-        sim = pybamm.Simulation(model, parameter_values=params, cache_esoh=False)
+        sim = pybamm.Simulation(model, parameter_values=params)
 
         try:
             sol = sim.solve([0, 3600], inputs={"Current [A]": params["Nominal cell capacity [A.h]"]})
