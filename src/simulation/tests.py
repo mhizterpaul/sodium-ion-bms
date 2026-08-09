@@ -71,9 +71,9 @@ class BESSScenarioGenerator:
             BESSScenarioGenerator.charge_step("0.5C", limit=v_max)
         ])
 
-class StabilityValidator:
+class BESSEvaluator:
     """
-    Stability Validation focusing on robustness, blackout recovery, thermal response, efficiency,
+    BESS Performance Evaluator focusing on robustness, blackout recovery, thermal response, efficiency,
     and charge cycling estimation.
     """
 
@@ -148,8 +148,8 @@ class StabilityValidator:
             print(f"ERROR: run_full_simulation failed: {e}\n{traceback.format_exc()}")
             raise
 
-    def validate_optimized_design(self):
-        print("Validating optimized twin with full physics (using BESS scenarios)...")
+    def evaluate_bess_performance(self):
+        print("Evaluating optimized BESS performance with full physics (using BESS scenarios)...")
 
         v_min = self.optimized_params["Lower voltage cut-off [V]"]
         v_max = self.optimized_params["Upper voltage cut-off [V]"]
@@ -319,6 +319,6 @@ class StabilityValidator:
         print(f"Exported metrics to {filename}")
 
 if __name__ == "__main__":
-    validator = StabilityValidator()
-    results = validator.validate_optimized_design()
-    validator.export_to_json(results)
+    evaluator = BESSEvaluator()
+    results = evaluator.evaluate_bess_performance()
+    evaluator.export_to_json(results)
