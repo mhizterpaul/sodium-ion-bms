@@ -440,6 +440,7 @@ This is directly useful for the question: Which hidden network properties are el
 
 ##### validation architecture
 
+```text
                 DATASET
                     │
           ┌─────────┴─────────┐
@@ -484,7 +485,7 @@ This is directly useful for the question: Which hidden network properties are el
         └───────────┬───────────┘
                     ▼
         Operator Design Requirements
-
+```
 
 We decide whether the statistical unit should be the scenario trajectory, the event response, or derived window-level features. That choice determines whether these tests remain statistically valid in the presence of temporal autocorrelation and repeated measurements.
 
