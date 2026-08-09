@@ -230,28 +230,6 @@ class BESSEvaluator:
 
         return results
 
-    def export_to_json(self, results, filename="final_validation.json"):
-        """Saves evaluation results to final_validation.json."""
-        serializable_results = {}
-        for k, v in results.items():
-            if isinstance(v, (int, float, str, bool, list, dict)):
-                serializable_results[k] = v
-        # If final_validation.json already exists, we merge into the "validation" section
-        if os.path.exists(filename):
-            try:
-                with open(filename, "r") as f:
-                    data = json.load(f)
-            except Exception:
-                data = {}
-        else:
-            data = {}
-
-        data["validation"] = serializable_results
-        with open(filename, "w") as f:
-            json.dump(data, f, indent=2)
-        print(f"Exported metrics to {filename}")
-
 if __name__ == "__main__":
     evaluator = BESSEvaluator()
     results = evaluator.evaluate_bess_performance()
-    evaluator.export_to_json(results)
