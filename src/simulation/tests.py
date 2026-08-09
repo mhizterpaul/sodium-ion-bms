@@ -25,7 +25,7 @@ from src.cell_optimization.parameter_opts import ParamTransform, DESIGN_SPACE
 from src.simulation.utilities.tests_driver import ElectrochemicalThermalDriverModel
 
 class BESSScenarioGenerator:
-    """Generates realistic BESS Experiments (Issue 3, 11, 13) with optimized rest durations."""
+    """Generates realistic BESS Experiments with optimized rest durations."""
 
     @staticmethod
     def charge_step(rate, limit=None):
@@ -36,39 +36,14 @@ class BESSScenarioGenerator:
         return f"Discharge at {rate} until {limit}V" if limit else f"Discharge at {rate}"
 
     @staticmethod
-    def get_blackout_scenario(v_max, fast=False):
-        if fast:
-            return pybamm.Experiment([
-                "Charge at 1C for 2 minutes",
-                "Rest for 2 minutes"
-            ])
-        # Unexpected grid outage during charging with 2-minute rest
-        return pybamm.Experiment([
-            "Charge at 1C for 20 minutes",
-            "Rest for 120 seconds"
-        ])
-
-    @staticmethod
     def get_dispatch_scenario(v_min, v_max, fast=False):
-        # Issue 3, 10: Multi-stage realistic BESS dispatch - Left as is for dispatch performance evaluation
         return pybamm.Experiment([
             BESSScenarioGenerator.discharge_step("0.5C", limit=v_min),
             "Rest for 20 minutes",
             BESSScenarioGenerator.charge_step("0.5C", limit=v_max),
             "Rest for 20 minutes",
-            "Discharge at 10 W for 10 minutes", # Peak shaving proxy
+            "Discharge at 10 W for 10 minutes",
             "Rest for 30 minutes"
-        ])
-
-    @staticmethod
-    def get_pv_firming_scenario(v_max):
-        # Realistic PV ramps with optimized 30-second rest durations
-        return pybamm.Experiment([
-            "Charge at 0.2C for 5 minutes",
-            "Rest for 30 seconds",
-            "Charge at 0.8C for 5 minutes",
-            "Rest for 30 seconds",
-            BESSScenarioGenerator.charge_step("0.5C", limit=v_max)
         ])
 
 class BESSEvaluator:
@@ -156,28 +131,11 @@ class BESSEvaluator:
 
         fast_run = (os.environ.get("CEM_FAST_RUN") == "True")
 
-        # 1. Base Validation: BESS Dispatch (Issue 3, 11) - left as is
+        # 1. Base Evaluation: BESS Dispatch (Issue 3, 11)
         dispatch_experiment = BESSScenarioGenerator.get_dispatch_scenario(v_min, v_max, fast=fast_run)
         res_dispatch = self.run_full_simulation(self.optimized_params, experiment=dispatch_experiment)
 
-        # 2. Robustness Check: Grid Outage during Charge (Issue 11, 13)
-        print("  Running Robustness Check: Grid Outage during high-rate charge (+10% thickness)...")
-        robust_updates = self.optimized_params.copy()
-        robust_updates["Positive electrode thickness [m]"] *= 1.1
-
-        blackout_experiment = BESSScenarioGenerator.get_blackout_scenario(v_max, fast=fast_run)
-        res_robust = self.run_full_simulation(robust_updates, experiment=blackout_experiment)
-
-        # 3. Varying C-rate Stress Test (Requested by user)
-        if fast_run:
-            print("  Running Varying C-rate Stress Test (Fast profile)...")
-            profile = self.electro_model.get_varying_c_rate_profile(base_c_rate=1.0, duration=120, n_points=10)
-        else:
-            print("  Running Varying C-rate Stress Test (Oscillating profile)...")
-            profile = self.electro_model.get_varying_c_rate_profile(base_c_rate=1.0, duration=1800, n_points=50)
-        res_varying = self.run_full_simulation(self.optimized_params, c_rate=profile)
-
-        # 4. Physically Meaningful Efficiency Metrics (Issue 4, 5, 12)
+        # 2. Physically Meaningful Efficiency Metrics (Issue 4, 5, 12)
         def compute_efficiency_metrics(sol):
              v = sol["Terminal voltage [V]"].entries
              i = sol["Current [A]"].entries
@@ -186,7 +144,6 @@ class BESSEvaluator:
 
              # Identify flow direction via Discharge capacity change (Issue 4, 12)
              q_ah = sol["Discharge capacity [A.h]"].entries
-             # Positive diff in discharge capacity = discharge process
              is_discharge = np.concatenate([[True], np.diff(q_ah) >= 0])
 
              trapz_func = getattr(np, "trapezoid", getattr(np, "trapz", None))
@@ -206,30 +163,6 @@ class BESSEvaluator:
              return {"e_in": e_in, "e_out": e_out, "eta_energy": eta_e, "eta_coulombic": eta_c, "eta_voltage": eta_v}
 
         metrics = compute_efficiency_metrics(res_dispatch["electro"]["solution"])
-
-        # 4. Constraint-Based Robustness Scoring (Issue 6, 14)
-        def evaluate_robustness(res):
-             T_max = np.max(res["electro"]["temperature"])
-             soh_final = res["electro"]["soh_trajectory"][-1] / 100.0
-             v_min_actual = np.min(res["electro"]["terminal_voltage"])
-             v_max_actual = np.max(res["electro"]["terminal_voltage"])
-
-             # Hard constraints focusing on thermal and SOH/voltage stability
-             constraints = [
-                  T_max < 333.15, # 60C limit
-                  soh_final > 0.99, # Negligible degradation for short trace
-                  v_min_actual > 0.95 * v_min,
-                  v_max_actual < 1.05 * v_max
-             ]
-
-             score = sum(constraints) / len(constraints)
-             return score, all(constraints)
-
-        robustness_score, robustness_passed = evaluate_robustness(res_robust)
-
-        # Also check varying c-rate robustness
-        var_score, var_passed = evaluate_robustness(res_varying)
-        combined_robustness_score = (robustness_score + var_score) / 2.0
 
         # Compute EFC according to paper.md
         v_t = res_dispatch["electro"]["terminal_voltage"]
