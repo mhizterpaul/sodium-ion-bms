@@ -52,18 +52,28 @@ class BESSEvaluator:
     and charge cycling estimation.
     """
 
-    def __init__(self):
-        # Enforce final_validation.json dependency
-        val_path = "final_validation.json"
-        if not os.path.exists(val_path):
-            raise FileNotFoundError(f"Missing mandatory pipeline artifact: {val_path}. Run validate.py first.")
-
-        with open(val_path, "r") as f:
-            self.pipeline_data = json.load(f)
+    def __init__(self, optimized_res=None):
+        if optimized_res is not None:
+            if "optimization" in optimized_res:
+                self.pipeline_data = optimized_res
+            else:
+                self.pipeline_data = {"optimization": optimized_res}
+        else:
+            # Fallback to reading file if exists
+            val_path = "final_validation.json"
+            alt_path = "result.json"
+            if os.path.exists(val_path):
+                with open(val_path, "r") as f:
+                    self.pipeline_data = json.load(f)
+            elif os.path.exists(alt_path):
+                with open(alt_path, "r") as f:
+                    self.pipeline_data = {"optimization": json.load(f)}
+            else:
+                raise FileNotFoundError("Missing optimized_res or JSON pipeline artifacts.")
 
         opt_data = self.pipeline_data.get("optimization")
         if not opt_data:
-            raise KeyError(f"Invalid optimization data in {val_path}")
+            raise KeyError("Invalid optimization data structure")
 
         # Reconstruct optimized parameters using the pipeline values
         base_params = get_parameter_values()

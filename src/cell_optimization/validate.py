@@ -219,12 +219,3 @@ if __name__ == "__main__":
             result.get("combined_deltas_representative", {})
         )
         val_metrics = validator.run_validation()
-
-        # Merge results for report.ipynb compliance
-        final_report = {
-            "optimization": result,
-            "validation": val_metrics
-        }
-        with open("final_validation.json", "w") as f:
-            json.dump(final_report, f, indent=2)
-        print("Final validation report saved to final_validation.json")
