@@ -494,52 +494,34 @@ This nonlinear magnetization curve enables ATP-EMTP to simulate inrush currents,
 
 The simulation framework systematically perturbs the unknown downstream network while maintaining a fixed upstream distribution station.
 
-OpenDSS is used to model the distribution station and downstream distribution network.
+OpenDSS is used to simulate the known upstream station together with the hidden downstream distribution network.
 
-It provides
+A transient simulator is included to support waveform-based event responses, but the current implementation also relies on synchronized steady-state boundary measurements from OpenDSS.
 
-* Three-phase power flow
-* Quasi-static time-series simulation
-* Distribution feeder modelling
-* Distribution transformer modelling
-* Voltage regulator operation
-* Capacitor bank switching
-* Load switching
-* Protection device modelling
-* Python integration for automated simulation studies
+The code generates scenario datasets by:
 
----
+* building hidden downstream topologies with radial and optional ring configurations
+* modifying the number of downstream buses and network connectivity
+* perturbing line parameters using a scenario-dependent multiplier
+* varying load allocation and load composition across linear, non-linear, and heavy-duty load classes
+* assigning transformer loading to each boundary transformer in the range 30–75 %
+* instantiating switching events for transformer inrush, capacitor switching, motor starts, feeder switching, and temporary faults
+* constructing OpenDSS objects for lines, loads, capacitors, motors, and distributed energy resources
 
-A transient simulator, was used to reproduce waveform responses associated with
+For each scenario, `CoSimulationRunner.run_scenario`:
 
-* Transformer energization
-* Capacitor switching
-* Motor starting
-* Feeder switching
-* Temporary faults
+* solves the OpenDSS operating point for the known upstream plant plus the hidden downstream network
+* collects boundary measurements from feeder and transformer terminals via `get_boundary_measurements()`
+* builds an ATP event case with `ATPCaseBuilder`
+* currently falls back to synchronized operating-point values when EMT waveform output is unavailable
 
-These simulations complement the steady-state information obtained from OpenDSS.
+Measurements captured in each result include:
 
-The perturbation process modifies hidden network characteristics including
+* transformer and feeder three-phase voltages and currents
+* active power (`P`), reactive power (`Q`), and apparent power (`S`) at boundary nodes
+* derived steady-state features, sequence features, transient features, and spectral features
 
-* Number of downstream buses
-* Network connectivity
-* Distribution line parameters
-* Load allocation
-* Load composition
-* Load switching sequences
-* Motor penetration
-* Capacitor placement
-* Transformer loading
-
-
-Each perturbed network is simulated under a range of operating conditions to generate synchronized feeder and transformer measurements.
-
-The simulation produces a comprehensive dataset relating hidden network perturbations to observable boundary measurements for subsequent realization and distributed dynamic state estimation.
-
----
-
-The synchronized measurements are transformed into physics-informed features that are expected to generalize across operating conditions
+Each perturbed network is therefore simulated to produce synchronized feeder and transformer boundary measurements that link hidden network perturbations to observable station-level signatures. The synchronized measurements are transformed into physics-informed features that are expected to generalize across operating conditions
 
 ---
 
