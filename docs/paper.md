@@ -305,180 +305,7 @@ Where supported
 
 ---
 
-#### Primary Distribution Transformer Specification (ATP-EMTP Model)
-
-##### General Characteristics
-
-| Parameter         | Value                    | Notes                                          |
-| ----------------- | ------------------------ | ---------------------------------------------- |
-| Transformer Type  | Three-phase, Two-winding | Injection Substation Transformer               |
-| Rated Power       | **7.5 MVA**              | Typical Nigerian urban distribution substation |
-| Rated Frequency   | **50 Hz**                | Nigerian grid frequency                        |
-| Primary Voltage   | **33 kV (L-L)**          | HV winding                                     |
-| Secondary Voltage | **11 kV (L-L)**          | LV feeder bus                                  |
-| Number of Phases  | 3                        | Balanced three-phase                           |
-| Cooling           | ONAN                     | Oil Natural Air Natural                        |
-| Vector Group      | Dyn11                    | Δ/Yg configuration                             |
-| Neutral Grounding | Solidly grounded (LV)    | Earth fault protection                         |
-| Core Type         | Three-limb CRGO          | Cold Rolled Grain Oriented Steel               |
-| Standard          | IEC 60076                | Nigerian utility practice                      |
-
----
-
-##### Rated Electrical Quantities
-
-| Parameter               | Value        |
-| ----------------------- | ------------ |
-| Rated Apparent Power    | 7.5 MVA      |
-| Rated Power Factor      | 0.95 lagging |
-| Rated Primary Current   | **131.2 A**  |
-| Rated Secondary Current | **393.6 A**  |
-| Frequency               | 50 Hz        |
-
-
----
-
-##### Operating Loading
-
-| Quantity         | Value    |
-| ---------------- | -------- |
-| Peak Active Load | 5.6 MW   |
-| Reactive Load    | 2.1 MVAr |
-| Apparent Load    | 6.0 MVA  |
-| Loading          | 80%      |
-
----
-
-##### Voltage Regulation
-
-| Parameter         | Value    |
-| ----------------- | -------- |
-| No-load Voltage   | 11.15 kV |
-| Full-load Voltage | 11.00 kV |
-| Regulation        | 1.36 %   |
-
----
-
-##### Tap Changer
-
-| Parameter           | Value  |
-| ------------------- | ------ |
-| Type                | OLTC   |
-| Range               | ±7.5 % |
-| Step Size           | 2.5 %  |
-| Number of Positions | 7      |
-| Nominal Position    | 0      |
-
----
-
-##### Winding Parameters
-
-| Parameter          | HV       | LV                       |
-| ------------------ | -------- | ------------------------ |
-| Connection         | Delta    | Grounded Wye             |
-| Rated Voltage      | 33 kV    | 11 kV                    |
-| Turns Ratio        | 3 : 1    | —                        |
-| Winding Resistance | 0.006 pu | Included in equivalent R |
-
----
-
-##### Losses
-
-###### Copper Loss
-
-| Parameter                | Value |
-| ------------------------ | ----- |
-| Full-load Copper Loss    | 50 kW |
-| Copper Loss @80% Loading | 32 kW |
-
-###### Core Loss
-
-| Parameter    | Value  |
-| ------------ | ------ |
-| No-load Loss | 7.5 kW |
-
-###### Total Loss
-
-| Parameter               | Value   |
-| ----------------------- | ------- |
-| Total Loss @80% Loading | 39.5 kW |
-| Efficiency              | 99.35 % |
-
----
-
-##### Leakage Impedance
-
-| Parameter            | Value  |
-| -------------------- | ------ |
-| Percentage Impedance | 8.35 % |
-| Resistance           | 0.60 % |
-| Leakage Reactance    | 8.33 % |
-| X/R Ratio            | 13.9   |
-
-
-##### Sequence Impedances (per-unit)
-
-| Sequence | Resistance | Reactance |
-| -------- | ---------- | --------- |
-| Positive | 0.0060     | 0.0833    |
-| Negative | 0.0060     | 0.0833    |
-| Zero     | 0.0120     | 0.0450    |
-
----
-
-##### Magnetizing Branch
-
-| Parameter             | Value  |
-| --------------------- | ------ |
-| Excitation Current    | 0.8 %  |
-| Magnetizing Reactance | 250 pu |
-| Core-loss Resistance  | 800 pu |
-
----
-
-##### Short-Circuit Characteristics
-
-| Parameter                   | Value                    |
-| --------------------------- | ------------------------ |
-| Short-circuit Voltage       | 8.35 %                   |
-| Rated Short-circuit Current | 12 × Rated Current (1 s) |
-| Thermal Limit               | IEC 60076                |
-
----
-
-##### Saturation Characteristics (Required for ATP-EMTP Saturable Transformer)
-
-| Flux (pu) | Magnetizing Current (pu) |
-| --------- | ------------------------ |
-| 0.0       | 0.000                    |
-| 0.8       | 0.002                    |
-| 1.0       | 0.008                    |
-| 1.1       | 0.015                    |
-| 1.2       | 0.050                    |
-| 1.3       | 0.180                    |
-| 1.4       | 0.420                    |
-| 1.5       | 0.900                    |
-
-This nonlinear magnetization curve enables ATP-EMTP to simulate inrush currents, ferroresonance, and saturation effects more accurately than a linear magnetizing branch.
-
----
-
-##### BCTRAN Equivalent Parameters
-
-| Quantity                    | Value              |
-| --------------------------- | ------------------ |
-| Base Power                  | 7.5 MVA            |
-| Base Frequency              | 50 Hz              |
-| Positive Sequence Impedance | 0.006 + j0.0833 pu |
-| Zero Sequence Impedance     | 0.012 + j0.045 pu  |
-| Magnetizing Reactance       | 250 pu             |
-| Core-loss Resistance        | 800 pu             |
-| Winding Connections         | Δ/Yg               |
-| Tap Position                | 0                  |
-
----
-
-**4. Distribution Network Simulation And Station Modeling**
+##### 4. Distribution Network Simulation And Station Modeling
 
 The simulation framework systematically perturbs the unknown downstream network while maintaining a fixed upstream distribution station.
 
@@ -513,24 +340,152 @@ Each perturbed network is therefore simulated to produce synchronized feeder and
 
 ---
 
-**6. Validation**
+##### statistical tests for state estimation
 
-Validation focuses on answering the following research questions.
+* Test 1 — Distance correlation: does the measurement contain information about hidden state?
 
-1. **Hidden Network Observability**
+Distance correlation was specifically developed to detect dependence between random vectors and has the important property that population distance correlation is zero iff the variables are independent.
 
-   Which structural and operational characteristics of the hidden downstream network are observable from synchronized feeder and transformer measurements?
+Define:
+\[ X=\text{hidden network state} \] and \[ Y=\text{measurement vector}. \]
+Calculate \[ dCor(X,Y). \]
 
-2. **Network Complexity**
+the hypothesis becomes:
+\[ H_0:X\perp Y \] versus \[ H_1:X\not\perp Y. \]
+But we do not rely on the asymptotic p-value. we use a permutation test.
 
-   As the hidden network size increases (e.g., increasing numbers of downstream buses), how does the observability and estimation accuracy of the realization algorithm change?
+* Test 2 — MMD: do two hidden networks generate different measurement distributions?
 
-3. **Measurement Sufficiency**
+This is particularly useful because the hidden networks are discrete realizations.
 
-   What combination of feeder and transformer measurements provides sufficient information for accurate distributed dynamic state estimation?
+Take two hidden network states: \[ G_a,\;G_b. \]
+Their corresponding measurement distributions are: \[ P_a(Y) \]and\[ P_b(Y). \]
+The null hypothesis is:
+\[ H_0:P_a=P_b. \]
 
-4. **Sensitivity to Hidden Network Perturbations**
+Using the Maximum Mean Discrepancy (MMD) two-sample test. Gretton et al. formulated MMD specifically as a kernel-based statistical test for determining whether two samples originate from different distributions.
 
-   Which classes of downstream perturbations—including topology changes, load redistribution, switching events, transformer loading, and line parameter variations—produce measurable changes at the distribution station boundary?
+Conceptually: \[ MMD^2(P_a,P_b) = \left\| \mu_{P_a}-\mu_{P_b} \right\|_{\mathcal H}^{2}. \]
 
-The validation establishes the practical limits of boundary-based realization and identifies the sensing architecture required for distributed dynamic state estimation in partially observable distribution networks.
+This is extremely appropriate for the dataset because we don't need to assume that the measurements are Gaussian.
+
+* Test 3 — PERMANOVA: are measurement vectors separated by hidden network state?
+
+Anderson's PERMANOVA provides a non-parametric multivariate analogue of ANOVA based on distances and permutations.
+
+The model can be: \[ D_{ij}=d(Y_i,Y_j) \]
+where \(d\) might be: Euclidean distance, standardized Euclidean distance,
+Mahalanobis distance,
+or another appropriate distance.
+
+Then test: \[ H_0: \text{measurement distributions do not differ by network realization}. \] The resulting pseudo-\(F\) statistic and permutation \(p\)-value tell you whether the groups differ.
+
+More importantly we report:
+\[ R^2_{\rm network} = \frac{SS_{\rm network}}{SS_{\rm total}}. \]
+
+PERMANOVA can confound location differences with dispersion differences. Therefore, we pair it with a dispersion test rather than reporting it alone.
+
+Brown–Forsythe: does network state change measurement variability?
+
+For each measurement feature \(Y_j\), test:
+\[ H_0: \sigma^2_{G_1} = \sigma^2_{G_2} = \cdots = \sigma^2_{G_K}. \] Brown–Forsythe is specifically designed as a robust test for equality of variances, making it less sensitive to non-normality than the classical variance-ratio approach.
+
+For example:
+Network A and B may have similar mean voltage/current responses, but Network B produces substantially greater variability.
+
+That variability itself can carry information about the hidden network.
+So we investigate: \[ E[Y|G]. \] and \[ Var(Y|G). \]
+
+* Test 4 — Noise robustness: 
+we don't merely add Gaussian noise and report correlation coefficients.
+we Construct controlled noise levels.
+
+For example:
+\[ Y^{(\sigma)} = Y+\epsilon, \] with \[ \epsilon\sim\mathcal N(0,\sigma^2). \]
+Or
+\[ Y_j^{(\sigma)} = Y_j+\epsilon_j, \] where
+\[ \epsilon_j\sim \mathcal N(0,\sigma_j^2). \]
+
+Then repeat the same statistical tests.
+Now you can define an empirical statistical observability threshold.
+
+* Test 5 — TOST for practical equivalence
+
+Suppose two different hidden networks produce almost indistinguishable measurement responses.
+formulate an equivalence margin for a measurement feature:
+
+\[ \Delta_L=-\delta,\qquad \Delta_U=+\delta. \]
+Then perform the Two One-Sided Tests procedure:
+\[ H_{01}:\Delta\leq-\delta \]and\[ H_{02}:\Delta\geq+\delta. \]
+Rejecting both means the difference lies within the pre-specified practically negligible interval.
+
+
+That gives a principled way of identifying observationally indistinguishable network classes
+HSIC is another kernel-based independence test.
+we test: \[ H_0:X\perp Y. \] HSIC measures dependence through the Hilbert–Schmidt norm of the cross-covariance operator.
+
+* Test 6 — Is hidden network configuration statistically observable?
+
+This is important for your eventual operator design.
+
+For each measurement channel \(Y_j\), test which classes of downstream perturbations—including topology changes, network size, load redistribution, switching events, transformer loading, and line parameter variations—produce measurable changes at the distribution station boundary:
+
+\[ H_0:X\perp Y_j. \]
+Tests:
+distance correlation
+permutation test
+HSIC as secondary confirmation
+
+This is directly useful for the question: Which hidden network properties are electrically observable at the station interface?
+
+##### validation architecture
+
+                DATASET
+                    │
+          ┌─────────┴─────────┐
+          │                   │
+   Hidden Network State   Measurements
+          │                   │
+          └─────────┬─────────┘
+                    │
+              Statistical
+                Analysis
+                    │
+        ┌───────────┼───────────┐
+        │           │           │
+     Dependence  Distribution  Multivariate
+        │        Separation     Separation
+        │           │           │
+      dCor         MMD       PERMANOVA
+      HSIC
+        │           │           │
+        └───────────┼───────────┘
+                    │
+             Noise Injection
+                    │
+          ┌─────────┴─────────┐
+          │                   │
+       SNR sweep          Sensor noise
+          │                   │
+          └─────────┬─────────┘
+                    │
+           Repeat statistical
+               validation
+                    │
+                    ▼
+       Statistical Observability
+                    │
+        ┌───────────┴───────────┐
+        │                       │
+ Distinguishable states    Equivalent states
+        │                       │
+       MMD                 TOST/equivalence
+        │                       │
+        └───────────┬───────────┘
+                    ▼
+        Operator Design Requirements
+
+
+We decide whether the statistical unit should be the scenario trajectory, the event response, or derived window-level features. That choice determines whether these tests remain statistically valid in the presence of temporal autocorrelation and repeated measurements.
+
+The validation establishes the practical limits of boundary-based realization and identifies the sensing architecture required for distributed dynamic state estimation in partially observable distribution networks within the limits of the simulated environment.
