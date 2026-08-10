@@ -16,7 +16,7 @@ from src.hidden_network.perturbations import apply_topology_reconfiguration
 
 from src.transient.atp_case_builder import ATPCaseBuilder
 from src.transient.synchronization import synchronize_measurements
-from src.transient.emt_emulator import simulate_emt_waveforms
+from src.transient.emt_emulator import run_atp_case
 from src.features.wavelet_processor import process_pcc_waveforms
 
 class SimulationResult:
@@ -96,7 +96,9 @@ class CoSimulationRunner:
         self.atp_builder.build(op, h_net, event, f"src/simulation/atp_cases/{scenario_id}_{event.event_type}.ATP")
 
         # EMT Simulator producing actual waveforms
-        emt_waveforms = simulate_emt_waveforms(metered_pccs, pcc_measurements, event, fs=10000.0, duration=0.1)
+        # Pass actual lines' specifications to the solver
+        lines_specs = topo.get("lines", [])
+        emt_waveforms = run_atp_case(metered_pccs, pcc_measurements, event, lines_specs, fs=10000.0, duration=0.1)
 
         # Waveform Integrity Assertions (complying with Rule 21)
         assert emt_waveforms is not None, f"EMT waveform generation failed for {scenario_id}"

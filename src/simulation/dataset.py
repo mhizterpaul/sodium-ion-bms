@@ -15,7 +15,7 @@ from src.power_plant.measurements import get_pcc_measurements
 from src.transient.synchronization import synchronize_measurements
 from src.features.steady_state import extract_steady_state_features
 from src.features.sequence import extract_sequence_features
-from src.transient.emt_emulator import simulate_emt_waveforms
+from src.transient.emt_emulator import run_atp_case
 from src.features.wavelet_processor import process_pcc_waveforms
 
 def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = False):
@@ -249,8 +249,11 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
             gt_2 = {
                 "scenario_id": scenario_id,
                 "feeder_id": f"feeder_{f_id}",
-                "simulated_event": event_type,
-                "switching_timestamp_s": float(t_event.start_time_s)
+                "event_type": event_type,
+                "effective_load_kw": float(sim_result.steady_state_measurements[pcc_id]["p_kw"]) if pcc_id in sim_result.steady_state_measurements else 0.0,
+                "load_type": config["load_comp"],
+                "start_timestamp_s": float(t_event.start_time_s),
+                "end_timestamp_s": float(t_event.start_time_s + t_event.duration_s)
             }
             dataset_2.append({"ground_truth": gt_2, "observations": obs_2})
 
