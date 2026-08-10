@@ -43,7 +43,6 @@ def identify_candidate_pccs(topology: dict) -> list[dict]:
         child = ln["bus2"]
         line_name = ln["name"]
 
-        # Determine branch type (radial or ring)
         b_type = "ring" if line_name.startswith("tie_") else "radial"
 
         candidate_pccs.append({
@@ -70,17 +69,23 @@ def identify_candidate_pccs(topology: dict) -> list[dict]:
 
 def select_metered_pccs(candidate_pccs: list[dict], fraction: float, seed: int) -> list[dict]:
     """
-    Selects a fraction of the candidate PCCs using a seeded RNG.
+    Selects all transformer secondary PCCs, and a configured fraction of branch PCCs
+    using a seeded RNG, ensuring perfect alignment with the methodology.
     """
     if not (0.0 < fraction <= 1.0):
         raise ValueError(f"meter_fraction must be in (0.0, 1.0], got {fraction}")
 
-    n_meters = max(1, int(np.ceil(fraction * len(candidate_pccs))))
+    transformer_pccs = [p for p in candidate_pccs if p.get("branch_type") == "transformer"]
+    branch_pccs = [p for p in candidate_pccs if p.get("branch_type") != "transformer"]
 
-    # Use seeded random generator to ensure reproducibility
+    n_branch_meters = max(1, int(np.ceil(fraction * len(branch_pccs)))) if branch_pccs else 0
+
     rng = np.random.default_rng(seed)
 
-    # Choose indices to avoid hashing/comparability issues on dict elements in rng.choice
-    selected_indices = rng.choice(len(candidate_pccs), size=n_meters, replace=False)
+    if branch_pccs:
+        selected_indices = rng.choice(len(branch_pccs), size=n_branch_meters, replace=False)
+        selected_branch_pccs = [branch_pccs[i] for i in selected_indices]
+    else:
+        selected_branch_pccs = []
 
-    return [candidate_pccs[i] for i in selected_indices]
+    return transformer_pccs + selected_branch_pccs
