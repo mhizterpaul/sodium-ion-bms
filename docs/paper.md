@@ -244,7 +244,11 @@ The plant model contains strictly distribution network elements and local source
 
 #### 3. Measurement Architecture
 
-Measurements are obtained strictly from PCC and transformer measurements using smart meters. The metering hierarchy is organized as follows:
+Measurements are obtained from two sensing layers: PCC line measurements using smart meters and transformer edge monitoring. 
+
+**A. PCC Smart-Meter Measurements**
+
+The metering hierarchy is organized as follows:
 
 ```text
              Known MV feeder
@@ -261,14 +265,12 @@ Measurements are obtained strictly from PCC and transformer measurements using s
               │                 │
             Line A            Line B
               │                 │
-             PCC
-          Smart Meter
+             PCC                |
+          Smart Meter           |
               │                 │
-          ┌───┴───┐        ┌───┴───┐
-          │       │        │       │
+          ┌───┴───┐       ┌───┴───┐
+          │        │       │         │
 ```
-
-**A. PCC Smart-Meter Measurements**
 
 Selected candidate PCCs are instrumented with smart meters to acquire:
 
