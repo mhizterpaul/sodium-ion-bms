@@ -158,18 +158,36 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
         # 3. CONSTRUCT DATASET 1 (Scenario-Based Dataset)
         # We append three separate records, one for each feeder, to strictly prevent cross-transformer leaks
         for f_id in [1, 2, 3]:
+            pcc_id = f"trans{f_id}_lv_pcc"
+            pcc_res = sim_result.processed_pccs.get(pcc_id)
+
+            # Compute meter-informed line/impedance estimates (network parameters from power flow solution)
+            z_est = 0.0
+            r_est = 0.0
+            x_est = 0.0
+            if pcc_res:
+                v_lv_avg = float(np.mean(pcc_res.raw_voltage))
+                i_lv_avg = float(np.mean(pcc_res.raw_current))
+                p_val = float(sim_result.steady_state_measurements[pcc_id]["p_kw"]) * 1000.0
+                q_val = float(sim_result.steady_state_measurements[pcc_id]["q_kvar"]) * 1000.0
+
+                z_est = v_lv_avg / (i_lv_avg + 1e-6)
+                r_est = p_val / (3.0 * i_lv_avg**2 + 1e-6)
+                x_est = q_val / (3.0 * i_lv_avg**2 + 1e-6)
+
             gt_1 = {
                 "scenario_id": f"{scenario_id}_feeder_{f_id}",
                 "feeder_id": f"feeder_{f_id}",
                 "topology_type": "ring" if topologies[f_id].get("is_ring") else "radial",
                 "hidden_total_buses": len(topologies[f_id]["buses"]),
                 "hidden_total_edges": len(topologies[f_id]["lines"]),
-                "line_parameter_multiplier": line_mult
+                "line_parameter_multiplier": line_mult,
+                "estimated_z_eq_ohm": round(float(z_est), 4),
+                "estimated_r_eq_ohm": round(float(r_est), 4),
+                "estimated_x_eq_ohm": round(float(x_est), 4)
             }
 
             obs_1_features = {}
-            pcc_id = f"trans{f_id}_lv_pcc"
-            pcc_res = sim_result.processed_pccs.get(pcc_id)
             if pcc_res:
                 obs_1_features[f"{pcc_id}_voltage_mag_avg"] = float(np.mean(pcc_res.raw_voltage))
                 obs_1_features[f"{pcc_id}_current_mag_avg"] = float(np.mean(pcc_res.raw_current))
