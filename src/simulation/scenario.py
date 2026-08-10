@@ -21,3 +21,9 @@ class SimulationScenario:
     generator_p_kw: float
     generator_q_kvar: float
     events: list[TransientEvent]
+    meter_fraction: float = 0.5
+    seed: int = 42
+
+    def __post_init__(self):
+        if not (0.0 < self.meter_fraction <= 1.0):
+            raise ValueError(f"meter_fraction must be in (0.0, 1.0], got {self.meter_fraction}")

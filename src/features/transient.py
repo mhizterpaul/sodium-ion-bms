@@ -3,7 +3,11 @@ import numpy as np
 def extract_transient_features(measurements: dict, emt_waveforms=None) -> dict:
     """
     Extracts dynamic transient features such as peak values, dV/dt, dI/dt, and integral transient energy.
+    Returns empty dict if EMT waveforms are unavailable.
     """
+    if emt_waveforms is None:
+        return {}
+
     features = {}
 
     for f_name, m in measurements.items():
@@ -21,17 +25,14 @@ def extract_transient_features(measurements: dict, emt_waveforms=None) -> dict:
             t = emt_waveforms.time_s
 
             dt = np.diff(t)
-            # Prevent division by zero
             dt = np.where(dt == 0.0, 1e-6, dt)
 
-            # Compute gradient derivatives along time axis
             dv_dt = np.diff(v_wave, axis=0) / dt[:, None]
             di_dt = np.diff(i_wave, axis=0) / dt[:, None]
 
             features[f"{f_name}_dv_dt"] = float(np.max(np.abs(dv_dt)))
             features[f"{f_name}_di_dt"] = float(np.max(np.abs(di_dt)))
 
-            # Integral transient energy
             features[f"{f_name}_transient_energy_v"] = float(np.sum(v_wave**2) * (t[1] - t[0]))
 
     return features

@@ -4,7 +4,11 @@ def extract_spectral_features(emt_waveforms=None, fs: float = 10000.0) -> dict:
     """
     Computes spectral features including dominant frequency, spectral centroid,
     and wavelet subband energy proxies from EMT high-frequency waveforms.
+    Returns empty dict if EMT waveforms are unavailable.
     """
+    if emt_waveforms is None:
+        return {}
+
     features = {
         "spectral_centroid_hz": 50.0,
         "dominant_frequency_hz": 50.0,
@@ -13,7 +17,7 @@ def extract_spectral_features(emt_waveforms=None, fs: float = 10000.0) -> dict:
         "wavelet_energy_high_pct": 0.0
     }
 
-    if emt_waveforms is not None and len(emt_waveforms.feeder_voltage_abc) > 0:
+    if len(emt_waveforms.feeder_voltage_abc) > 0:
         f_name = list(emt_waveforms.feeder_voltage_abc.keys())[0]
         v_wave = emt_waveforms.feeder_voltage_abc[f_name][:, 0]
 
