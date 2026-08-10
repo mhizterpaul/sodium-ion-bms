@@ -244,7 +244,7 @@ The plant model contains strictly distribution network elements and local source
 
 #### 3. Measurement Architecture
 
-Measurements are obtained strictly from PCC edge monitoring using smart meters. The metering hierarchy is organized as follows:
+Measurements are obtained strictly from PCC and transformer measurements using smart meters. The metering hierarchy is organized as follows:
 
 ```text
              Known MV feeder
@@ -288,6 +288,33 @@ Selected candidate PCCs are instrumented with smart meters to acquire:
 * Voltage unbalance
 * Current unbalance
 * Positive-, negative-, and zero-sequence components
+
+---
+
+**B. Transformer Measurements**
+
+Each distribution transformer serves as an edge measurement node representing the interface to an unknown downstream network.
+
+Measurements include
+
+##### Primary Electrical Measurements
+
+* High-voltage terminal voltage magnitude and phase angle
+* High-voltage terminal current magnitude and phase angle
+* Active power
+* Reactive power
+* Apparent power
+* Power factor
+
+##### Dynamic Quantities
+
+Where supported
+
+* Loading rate
+* Overload duration
+* Load recovery characteristics
+* Transformer temperature
+* Transient voltage and current waveforms
 
 ---
 
