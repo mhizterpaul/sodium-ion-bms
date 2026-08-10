@@ -17,7 +17,7 @@ from src.hidden_network.perturbations import apply_topology_reconfiguration
 from src.transient.atp_case_builder import ATPCaseBuilder
 from src.transient.synchronization import synchronize_measurements
 from src.transient.emt_emulator import run_atp_case
-from src.features.wavelet_processor import process_pcc_waveforms
+from src.transient.atp_parser import evaluate_atp
 
 class SimulationResult:
     def __init__(self, time_s: np.ndarray, metered_pccs: list[dict], steady_state_measurements: dict, processed_pccs: dict):
@@ -94,7 +94,6 @@ class CoSimulationRunner:
             raise RuntimeError(f"No transient event specified for scenario {scenario_id}")
 
         atp_case_path = f"src/simulation/atp_cases/{scenario_id}_{event.event_type}.ATP"
-        # Build ATP case card (NetworkRealization is passed as h_net)
         self.atp_builder.build(h_net, op, event, atp_case_path)
 
         # Actual ATP-EMTP execution and waveform extraction
@@ -108,24 +107,25 @@ class CoSimulationRunner:
         processed_pccs = {}
 
         # 4. Steady-state normalization, FFT, and SWT Decomposition (complying with Rule 7, 8, 19, 21)
+        # Evaluated ONLY on transformer LV secondaries (since customer smart meters do not measure transients)
         for pcc in metered_pccs:
             pcc_id = pcc["pcc_id"]
-            v_wave = emt_waveforms.pcc_voltages.get(pcc_id)
-            i_wave = emt_waveforms.pcc_currents.get(pcc_id)
+            if pcc.get("branch_type") == "transformer":
+                v_wave = emt_waveforms.pcc_voltages.get(pcc_id)
+                i_wave = emt_waveforms.pcc_currents.get(pcc_id)
 
-            # Run Waveform assertions for each phase/channel
-            assert v_wave is not None, f"Missing voltage waveform for PCC {pcc_id} in scenario {scenario_id}"
-            assert i_wave is not None, f"Missing current waveform for PCC {pcc_id} in scenario {scenario_id}"
-            assert v_wave.ndim >= 2
-            assert i_wave.ndim >= 2
-            assert len(emt_waveforms.time_s) == v_wave.shape[0]
-            assert len(emt_waveforms.time_s) == i_wave.shape[0]
-            assert np.all(np.isfinite(v_wave))
-            assert np.all(np.isfinite(i_wave))
+                assert v_wave is not None, f"Missing voltage waveform for PCC {pcc_id} in scenario {scenario_id}"
+                assert i_wave is not None, f"Missing current waveform for PCC {pcc_id} in scenario {scenario_id}"
+                assert v_wave.ndim >= 2
+                assert i_wave.ndim >= 2
+                assert len(emt_waveforms.time_s) == v_wave.shape[0]
+                assert len(emt_waveforms.time_s) == i_wave.shape[0]
+                assert np.all(np.isfinite(v_wave))
+                assert np.all(np.isfinite(i_wave))
 
-            # Normalization window precedes event (event start at 0.02s)
-            processed_pcc = process_pcc_waveforms(pcc_id, emt_waveforms.time_s, v_wave, i_wave, event_start=0.02)
-            processed_pccs[pcc_id] = processed_pcc
+                # Evaluate ATP secondary transient waveform using evaluate_atp()
+                processed_pcc = evaluate_atp(pcc_id, emt_waveforms.time_s, v_wave, i_wave, event_start=0.02)
+                processed_pccs[pcc_id] = processed_pcc
 
         return SimulationResult(
             time_s=emt_waveforms.time_s,

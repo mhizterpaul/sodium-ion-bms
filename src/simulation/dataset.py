@@ -13,10 +13,8 @@ from src.hidden_network.perturbations import apply_topology_reconfiguration
 from src.transient.events import TransientEvent
 from src.power_plant.measurements import get_pcc_measurements
 from src.transient.synchronization import synchronize_measurements
-from src.features.steady_state import extract_steady_state_features
-from src.features.sequence import extract_sequence_features
 from src.transient.emt_emulator import run_atp_case
-from src.features.wavelet_processor import process_pcc_waveforms
+from src.transient.atp_parser import evaluate_atp
 
 def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = False):
     """
@@ -156,7 +154,6 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
         sim_result = runner.run_scenario(sim_scen)
 
         # 3. CONSTRUCT DATASET 1 (Scenario-Based Dataset)
-        # We append three separate records, one for each feeder, to strictly prevent cross-transformer leaks
         for f_id in [1, 2, 3]:
             pcc_id = f"trans{f_id}_lv_pcc"
             pcc_res = sim_result.processed_pccs.get(pcc_id)
@@ -205,8 +202,8 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
             dataset_1.append({"ground_truth": gt_1, "observations": obs_1})
 
         # 4. CONSTRUCT DATASET 2 (Event-Based Dataset)
-        for pcc_id, processed in sim_result.processed_pccs.items():
-            # Determine feeder ID of this PCC
+        for pcc in sim_result.metered_pccs:
+            pcc_id = pcc["pcc_id"]
             if "trans1" in pcc_id or "down_1_" in pcc_id:
                 f_id = 1
             elif "trans2" in pcc_id or "down_2_" in pcc_id:
@@ -216,35 +213,61 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
 
             parent_trans_pcc_id = f"trans{f_id}_lv_pcc"
 
-            obs_2 = {
-                "scenario_id": scenario_id,
-                "feeder_id": f"feeder_{f_id}",
-                "network_state_id": f"state_{f_id}_{topologies[f_id].get('is_ring')}_{len(topologies[f_id]['buses'])}",
-                "event_id": event_type,
-                "pcc_id": pcc_id,
-                "steady_state_reference": {
-                    "v_mags_ss": list(sim_result.steady_state_measurements[parent_trans_pcc_id]["v_mags"]),
-                    "i_mags_ss": list(sim_result.steady_state_measurements[parent_trans_pcc_id]["i_mags"])
-                },
-                "raw_transient_waveform": {
-                    "time": list(sim_result.time_s),
-                    "voltage_abc": processed.raw_voltage.tolist(),
-                    "current_abc": processed.raw_current.tolist()
-                },
-                "normalized_transient_waveform": {
-                    "voltage_abc": processed.normalized_voltage.tolist(),
-                    "current_abc": processed.normalized_current.tolist()
-                },
-                "fft": {
-                    "voltage": [fft.tolist() for fft in processed.voltage_fft],
-                    "current": [fft.tolist() for fft in processed.current_fft]
-                },
-                "swt": {
-                    "voltage": [[[cA.tolist(), cD.tolist()] for cA, cD in p_swt] for p_swt in processed.voltage_swt],
-                    "current": [[[cA.tolist(), cD.tolist()] for cA, cD in p_swt] for p_swt in processed.current_swt]
-                },
-                "features": processed.features
-            }
+            # Evaluate only if transformer secondary (which contains high-frequency transient/wavelet features)
+            processed = sim_result.processed_pccs.get(pcc_id)
+            if processed:
+                obs_2 = {
+                    "scenario_id": scenario_id,
+                    "feeder_id": f"feeder_{f_id}",
+                    "network_state_id": f"state_{f_id}_{topologies[f_id].get('is_ring')}_{len(topologies[f_id]['buses'])}",
+                    "event_id": event_type,
+                    "pcc_id": pcc_id,
+                    "steady_state_reference": {
+                        "v_mags_ss": list(sim_result.steady_state_measurements[parent_trans_pcc_id]["v_mags"]),
+                        "i_mags_ss": list(sim_result.steady_state_measurements[parent_trans_pcc_id]["i_mags"])
+                    },
+                    "raw_transient_waveform": {
+                        "time": list(sim_result.time_s),
+                        "voltage_abc": processed.raw_voltage.tolist(),
+                        "current_abc": processed.raw_current.tolist()
+                    },
+                    "normalized_transient_waveform": {
+                        "voltage_abc": processed.normalized_voltage.tolist(),
+                        "current_abc": processed.normalized_current.tolist()
+                    },
+                    "fft": {
+                        "voltage": [fft.tolist() for fft in processed.voltage_fft],
+                        "current": [fft.tolist() for fft in processed.current_fft]
+                    },
+                    "swt": {
+                        "voltage": [[[cA.tolist(), cD.tolist()] for cA, cD in p_swt] for p_swt in processed.voltage_swt],
+                        "current": [[[cA.tolist(), cD.tolist()] for cA, cD in p_swt] for p_swt in processed.current_swt]
+                    },
+                    "features": processed.features
+                }
+            else:
+                # Customer smart meter: ONLY steady-state measurements, no transients
+                obs_2 = {
+                    "scenario_id": scenario_id,
+                    "feeder_id": f"feeder_{f_id}",
+                    "network_state_id": f"state_{f_id}_{topologies[f_id].get('is_ring')}_{len(topologies[f_id]['buses'])}",
+                    "event_id": event_type,
+                    "pcc_id": pcc_id,
+                    "steady_state_reference": {
+                        "v_mags_ss": list(sim_result.steady_state_measurements[parent_trans_pcc_id]["v_mags"]),
+                        "i_mags_ss": list(sim_result.steady_state_measurements[parent_trans_pcc_id]["i_mags"])
+                    },
+                    "raw_transient_waveform": {},
+                    "normalized_transient_waveform": {},
+                    "fft": {},
+                    "swt": {},
+                    "features": {
+                        f"{pcc_id}_voltage_mag_avg": float(np.mean(sim_result.steady_state_measurements[pcc_id]["v_mags"])) if pcc_id in sim_result.steady_state_measurements else 0.0,
+                        f"{pcc_id}_current_mag_avg": float(np.mean(sim_result.steady_state_measurements[pcc_id]["i_mags"])) if pcc_id in sim_result.steady_state_measurements else 0.0,
+                        f"{pcc_id}_p_kw": float(sim_result.steady_state_measurements[pcc_id]["p_kw"]) if pcc_id in sim_result.steady_state_measurements else 0.0,
+                        f"{pcc_id}_q_kvar": float(sim_result.steady_state_measurements[pcc_id]["q_kvar"]) if pcc_id in sim_result.steady_state_measurements else 0.0
+                    }
+                }
 
             gt_2 = {
                 "scenario_id": scenario_id,
