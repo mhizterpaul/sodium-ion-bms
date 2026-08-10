@@ -185,7 +185,7 @@ X_R=\Phi(M)
 
 where
 
-* (M) denotes synchronized measurements acquired at feeders and distribution transformers,
+* (M) denotes synchronized measurements acquired at the meters and distribution transformers,
 * (X_R) is a latent realization state describing the hidden network,
 * The aim is to derive (\Phi(\cdot)) realization operator, empirically from simulated operating scenarios.
 
@@ -234,11 +234,11 @@ The plant model contains strictly distribution network elements and local source
 
 * **Distribution Substation Transformer**: Substation transformer supplying the medium-voltage bus.
 
-* **Three Outgoing Feeders**: Radial lines extending from the substation, each characterized by known feeder lengths and impedances.
+* **Main Feeder**: with lines extending from the substation, each characterized by known feeder lengths and impedances.
 
 * **Fixed Set of Transformers**: Step-down distribution transformers whose primary-side terminals serve as the boundary measurement interfaces.
 
-* **Measurement and Monitoring Devices**: Electrical sensors capturing voltage, current, active/reactive power, and sequence components at each feeder head and transformer primary terminal.
+* **Measurement and Monitoring Devices**: Electrical sensors capturing voltage, current, active/reactive power, and sequence components at the meters and transformer primary terminal.
 
 ---
 
@@ -357,7 +357,6 @@ The simulation framework generates two distinct, decoupled datasets to evaluate 
 2. **Dataset 2 (Event-Based Dataset)**: Focuses on transient/switching dynamic state realization.
    - **Ground-Truth Target Variables ($X_R$):** Event type (`simulated_event`) and event occurrence timestamp (`switching_timestamp_s`).
    - **Observation Features ($M_{\mathrm{PCC}}$):** Synchronized readings from the edge transformer devices and the configured fraction of selected branch smart-meters.
-
 Each perturbed network is simulated to produce these decoupled datasets, linking hidden network states and events to observable PCC-level signatures without any target label leakage.
 
 ---
