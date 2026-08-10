@@ -244,7 +244,11 @@ The plant model contains strictly distribution network elements and local source
 
 #### 3. Measurement Architecture
 
-Measurements are obtained strictly from PCC and transformer measurements using smart meters. The metering hierarchy is organized as follows:
+Measurements are obtained from two sensing layers: PCC line measurements using smart meters and transformer edge monitoring.
+
+**A. PCC Smart-Meter Measurements**
+
+The metering hierarchy is organized as follows:
 
 ```text
              Known MV feeder
@@ -261,14 +265,12 @@ Measurements are obtained strictly from PCC and transformer measurements using s
               │                 │
             Line A            Line B
               │                 │
-             PCC
-          Smart Meter
+             PCC                |
+          Smart Meter           |
               │                 │
-          ┌───┴───┐        ┌───┴───┐
-          │       │        │       │
+          ┌───┴───┐       ┌───┴───┐
+          │        │       │         │
 ```
-
-**A. PCC Smart-Meter Measurements**
 
 Selected candidate PCCs are instrumented with smart meters to acquire:
 
@@ -342,7 +344,7 @@ For each scenario, `CoSimulationRunner.run_scenario`:
 
 Measurements captured in each result include:
 
-* transformer and feeder three-phase voltages and currents
+* transformer three-phase voltages and currents waveforms
 * active power (`P`), reactive power (`Q`), and apparent power (`S`) at boundary nodes
 * derived steady-state features, sequence features, transient features, and spectral features
 
@@ -350,11 +352,11 @@ The simulation framework generates two distinct, decoupled datasets to evaluate 
 
 1. **Dataset 1 (Scenario-Based Dataset)**: Focuses on steady-state network realization and structural state estimation.
    - **Ground-Truth Target Variables ($X_R$):** Network line parameter multiplier (`line_parameter_multiplier`), topology class (`topology_type`), and network size (`hidden_total_buses`).
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Strictly limited to the three distribution transformer secondary LV smart-meter steady-state measurements, completely excluding any downstream branch PCC measurements.
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Strictly limited to the three distribution transformer secondary monitoring device steady-state measurements and LV smart-meter measurements.
 
 2. **Dataset 2 (Event-Based Dataset)**: Focuses on transient/switching dynamic state realization.
    - **Ground-Truth Target Variables ($X_R$):** Event type (`simulated_event`) and event occurrence timestamp (`switching_timestamp_s`).
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Synchronized readings from the configured fraction of selected branch and transformer smart-meter PCC measurements.
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Synchronized readings from the configured fraction of selected branch and transformer edge measurements and smart-meter PCC measurements.
 
 Each perturbed network is simulated to produce these decoupled datasets, linking hidden network states and events to observable PCC-level signatures without any target label leakage.
 
