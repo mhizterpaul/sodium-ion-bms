@@ -352,7 +352,7 @@ The simulation framework generates two distinct, decoupled datasets to evaluate 
 
 1. **Dataset 1 (Scenario-Based Dataset)**: Focuses on steady-state network realization and structural state estimation.
    - **Ground-Truth Target Variables ($X_R$):** Network line parameter multiplier (`line_parameter_multiplier`), topology class (`topology_type`), and network size (`hidden_total_buses`).
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Strictly limited to the three distribution transformer secondary monitoring device steady-state measurements and transformer edge LV smart-meter measurements.
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Strictly limited to the LV transformer monitoring device steady-state measurements and transformer edge LV smart-meter measurements.
 
 2. **Dataset 2 (Event-Based Dataset)**: Focuses on transient/switching dynamic state realization.
    - **Ground-Truth Target Variables ($X_R$):** Event type (`simulated_event`) and event occurrence timestamp (`switching_timestamp_s`).
