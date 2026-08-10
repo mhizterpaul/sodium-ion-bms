@@ -268,7 +268,7 @@ Measurements are obtained strictly from PCC and transformer measurements using s
           │       │        │       │
 ```
 
-**PCC Smart-Meter Measurements**
+**A. PCC Smart-Meter Measurements**
 
 Selected candidate PCCs are instrumented with smart meters to acquire:
 
