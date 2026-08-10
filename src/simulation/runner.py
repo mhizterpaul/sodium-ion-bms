@@ -16,32 +16,35 @@ from src.hidden_network.perturbations import apply_topology_reconfiguration
 
 from src.transient.atp_case_builder import ATPCaseBuilder
 from src.transient.synchronization import synchronize_measurements
+from src.transient.emt_emulator import simulate_emt_waveforms
+from src.features.wavelet_processor import process_pcc_waveforms
 
-from src.features.steady_state import extract_steady_state_features
-from src.features.sequence import extract_sequence_features
-from src.features.transient import extract_transient_features
-from src.features.spectral import extract_spectral_features
+class SimulationResult:
+    def __init__(self, time_s: np.ndarray, metered_pccs: list[dict], steady_state_measurements: dict, processed_pccs: dict):
+        self.time_s = time_s
+        self.metered_pccs = metered_pccs
+        self.steady_state_measurements = steady_state_measurements
+        self.processed_pccs = processed_pccs
 
 class CoSimulationRunner:
     def __init__(self):
         self.atp_builder = ATPCaseBuilder()
 
-    def run_scenario(self, sim_scenario) -> tuple[dict, list[dict]]:
+    def run_scenario(self, sim_scenario) -> SimulationResult:
         """
-        Coordinates full co-simulation run: DSS operating point + ATP transient.
-        Returns a tuple of (features_dict, metered_pccs_list).
+        Coordinates full co-simulation run: DSS operating point + EMT transient waveform simulation.
+        Returns a structured SimulationResult object.
         """
         initialize_known_plant()
 
         h_net = sim_scenario.hidden_network
         topo = h_net.topology
+        scenario_id = h_net.scenario_id
 
         dss.run_command(f"new linecode.down_lv nphases=3 r1=0.45 x1=0.15 r0=1.20 x0=0.35 c1=4.0 c0=2.0 units=km")
 
-        # Build independent LV topologies
         topologies = topo.get("topologies", {})
         if topologies:
-            # Validate root connection of all hidden topologies to the transformer secondary
             for feeder_idx, sub_topo in topologies.items():
                 hidden_root_bus = sub_topo["buses"][0]
                 expected_transformer_secondary = f"feeder{feeder_idx}_sec"
@@ -76,49 +79,55 @@ class CoSimulationRunner:
 
         op = solve_operating_point(sim_scenario.generator_p_kw, sim_scenario.generator_q_kvar)
 
-        # Identify candidate PCCs and select metered PCCs
+        # 1. Identify candidate PCCs and select metered PCCs
         candidate_pccs = identify_candidate_pccs(topo)
         meter_fraction = getattr(sim_scenario, "meter_fraction", 0.5)
         seed = getattr(sim_scenario, "seed", 42)
         metered_pccs = select_metered_pccs(candidate_pccs, fraction=meter_fraction, seed=seed)
 
-        # Get PCC measurements
+        # 2. Get OpenDSS power flow measurements (meter-informed network representation)
         pcc_measurements = get_pcc_measurements(metered_pccs)
 
-        synced_measurements = {}
-        fft_features = {}
+        # 3. Simulate High-Fidelity physical EMT transient waveforms
+        event = sim_scenario.events[0] if sim_scenario.events else None
+        if event is None:
+            raise RuntimeError(f"No transient event specified for scenario {scenario_id}")
 
-        for event in sim_scenario.events:
-            self.atp_builder.build(op, h_net, event, f"src/simulation/atp_cases/{h_net.scenario_id}_{event.event_type}.ATP")
-            # Backend process deleted, fallback to synchronized operating-point values
-            emt_waveforms = None
-            synced_measurements = synchronize_measurements(pcc_measurements, emt_waveforms)
-            fft_features = extract_spectral_features(emt_waveforms)
+        self.atp_builder.build(op, h_net, event, f"src/simulation/atp_cases/{scenario_id}_{event.event_type}.ATP")
 
-        if not sim_scenario.events:
-            synced_measurements = synchronize_measurements(pcc_measurements, None)
-            fft_features = extract_spectral_features(None)
+        # EMT Simulator producing actual waveforms
+        emt_waveforms = simulate_emt_waveforms(metered_pccs, pcc_measureforms := pcc_measurements, event, fs=10000.0, duration=0.1)
 
-        f_steady = extract_steady_state_features(synced_measurements)
-        f_seq = extract_sequence_features(synced_measurements)
-        f_trans = extract_transient_features(synced_measurements, None) # No EMT waveforms
+        # Waveform Integrity Assertions (complying with Rule 21)
+        assert emt_waveforms is not None, f"EMT waveform generation failed for {scenario_id}"
+        assert emt_waveforms.time_s.ndim == 1
+        assert len(emt_waveforms.time_s) == int(10000.0 * 0.1)
 
-        result = {}
-        result.update(f_steady)
-        result.update(f_seq)
-        result.update(f_trans)
-        result.update(fft_features)
+        processed_pccs = {}
 
-        # Add explicit synchronized measurements at metered PCCs only
-        for pcc_id, m in synced_measurements.items():
-            result[f"{pcc_id}_voltage_a"] = float(m.voltage_abc[0])
-            result[f"{pcc_id}_voltage_b"] = float(m.voltage_abc[1])
-            result[f"{pcc_id}_voltage_c"] = float(m.voltage_abc[2])
-            result[f"{pcc_id}_current_a"] = float(m.current_abc[0])
-            result[f"{pcc_id}_current_b"] = float(m.current_abc[1])
-            result[f"{pcc_id}_current_c"] = float(m.current_abc[2])
-            result[f"{pcc_id}_p_kw"] = float(m.p_kw)
-            result[f"{pcc_id}_q_kvar"] = float(m.q_kvar)
-            result[f"{pcc_id}_s_kva"] = float(m.s_kva)
+        # 4. Steady-state normalization, FFT, and SWT Decomposition (complying with Rule 7, 8, 19, 21)
+        for pcc in metered_pccs:
+            pcc_id = pcc["pcc_id"]
+            v_wave = emt_waveforms.pcc_voltages.get(pcc_id)
+            i_wave = emt_waveforms.pcc_currents.get(pcc_id)
 
-        return result, metered_pccs
+            # Run Waveform assertions for each phase/channel
+            assert v_wave is not None, f"Missing voltage waveform for PCC {pcc_id} in scenario {scenario_id}"
+            assert i_wave is not None, f"Missing current waveform for PCC {pcc_id} in scenario {scenario_id}"
+            assert v_wave.ndim >= 2
+            assert i_wave.ndim >= 2
+            assert len(emt_waveforms.time_s) == v_wave.shape[0]
+            assert len(emt_waveforms.time_s) == i_wave.shape[0]
+            assert np.all(np.isfinite(v_wave))
+            assert np.all(np.isfinite(i_wave))
+
+            # Normalization window precedes event (event start at 0.02s)
+            processed_pcc = process_pcc_waveforms(pcc_id, emt_waveforms.time_s, v_wave, i_wave, event_start=0.02)
+            processed_pccs[pcc_id] = processed_pcc
+
+        return SimulationResult(
+            time_s=emt_waveforms.time_s,
+            metered_pccs=metered_pccs,
+            steady_state_measurements=pcc_measurements,
+            processed_pccs=processed_pccs
+        )
