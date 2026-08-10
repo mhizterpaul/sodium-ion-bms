@@ -296,25 +296,22 @@ Selected candidate PCCs are instrumented with smart meters to acquire:
 Each distribution transformer serves as an edge measurement node representing the interface to an unknown downstream network.
 
 Measurements include
+Primary Electrical Measurements
 
-##### Primary Electrical Measurements
+    High-voltage terminal voltage magnitude and phase angle
+    High-voltage terminal current magnitude and phase angle
+    Active power
+    Reactive power
+    Apparent power
+    Power factor
 
-* High-voltage terminal voltage magnitude and phase angle
-* High-voltage terminal current magnitude and phase angle
-* Active power
-* Reactive power
-* Apparent power
-* Power factor
+Dynamic Quantities
 
-##### Dynamic Quantities
-
-Where supported
-
-* Loading rate
-* Overload duration
-* Load recovery characteristics
-* Transformer temperature
-* Transient voltage and current waveforms
+    Loading rate
+    Overload duration
+    Load recovery characteristics
+    Transformer temperature
+    Transient voltage and current waveforms
 
 ---
 
