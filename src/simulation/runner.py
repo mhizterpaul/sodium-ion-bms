@@ -96,7 +96,7 @@ class CoSimulationRunner:
         self.atp_builder.build(op, h_net, event, f"src/simulation/atp_cases/{scenario_id}_{event.event_type}.ATP")
 
         # EMT Simulator producing actual waveforms
-        emt_waveforms = simulate_emt_waveforms(metered_pccs, pcc_measureforms := pcc_measurements, event, fs=10000.0, duration=0.1)
+        emt_waveforms = simulate_emt_waveforms(metered_pccs, pcc_measurements, event, fs=10000.0, duration=0.1)
 
         # Waveform Integrity Assertions (complying with Rule 21)
         assert emt_waveforms is not None, f"EMT waveform generation failed for {scenario_id}"

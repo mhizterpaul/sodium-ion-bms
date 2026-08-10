@@ -24,6 +24,8 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
     generating 3 independent LV networks under Option A, solving OpenDSS operating points,
     running EMT simulations to acquire three-phase transient waveforms, and outputting
     two distinct, decoupled datasets.
+    Each element in the datasets strictly references exactly one transformer's measurements
+    to prevent cross-transformer leaks.
     """
     print(f"INFO: Sweeping and generating {n_scenarios} OpenDSS QSTS/operating point scenarios (In-Memory)...")
     runner = CoSimulationRunner()
@@ -154,18 +156,19 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
         sim_result = runner.run_scenario(sim_scen)
 
         # 3. CONSTRUCT DATASET 1 (Scenario-Based Dataset)
-        gt_1 = {
-            "scenario_id": scenario_id,
-            "network_id": f"feeder_{feeder_idx}",
-            "topology_type": "ring" if is_ring else "radial",
-            "hidden_total_buses": len(modified_topo["buses"]),
-            "hidden_total_edges": len(modified_topo["lines"]),
-            "line_parameter_multiplier": line_mult
-        }
+        # We append three separate records, one for each feeder, to strictly prevent cross-transformer leaks
+        for f_id in [1, 2, 3]:
+            gt_1 = {
+                "scenario_id": f"{scenario_id}_feeder_{f_id}",
+                "feeder_id": f"feeder_{f_id}",
+                "topology_type": "ring" if topologies[f_id].get("is_ring") else "radial",
+                "hidden_total_buses": len(topologies[f_id]["buses"]),
+                "hidden_total_edges": len(topologies[f_id]["lines"]),
+                "line_parameter_multiplier": line_mult
+            }
 
-        # Strictly limited to the LV transformer monitoring device steady-state measurements and transformer edge LV smart-meter measurements.
-        obs_1_features = {}
-        for pcc_id in ["trans1_lv_pcc", "trans2_lv_pcc", "trans3_lv_pcc"]:
+            obs_1_features = {}
+            pcc_id = f"trans{f_id}_lv_pcc"
             pcc_res = sim_result.processed_pccs.get(pcc_id)
             if pcc_res:
                 obs_1_features[f"{pcc_id}_voltage_mag_avg"] = float(np.mean(pcc_res.raw_voltage))
@@ -177,22 +180,33 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
                 obs_1_features[f"{pcc_id}_voltage_unbalance_pct"] = float(sim_result.steady_state_measurements[pcc_id]["v_unbalance_pct"])
                 obs_1_features[f"{pcc_id}_current_unbalance_pct"] = float(sim_result.steady_state_measurements[pcc_id]["i_unbalance_pct"])
 
-        obs_1 = {
-            "scenario_id": scenario_id,
-            "features": obs_1_features
-        }
-        dataset_1.append({"ground_truth": gt_1, "observations": obs_1})
+            obs_1 = {
+                "scenario_id": f"{scenario_id}_feeder_{f_id}",
+                "features": obs_1_features
+            }
+            dataset_1.append({"ground_truth": gt_1, "observations": obs_1})
 
         # 4. CONSTRUCT DATASET 2 (Event-Based Dataset)
         for pcc_id, processed in sim_result.processed_pccs.items():
+            # Determine feeder ID of this PCC
+            if "trans1" in pcc_id or "down_1_" in pcc_id:
+                f_id = 1
+            elif "trans2" in pcc_id or "down_2_" in pcc_id:
+                f_id = 2
+            else:
+                f_id = 3
+
+            parent_trans_pcc_id = f"trans{f_id}_lv_pcc"
+
             obs_2 = {
                 "scenario_id": scenario_id,
-                "network_state_id": f"state_{config['topology']}_{config['buses']}_{config['line_mult']}",
+                "feeder_id": f"feeder_{f_id}",
+                "network_state_id": f"state_{f_id}_{topologies[f_id].get('is_ring')}_{len(topologies[f_id]['buses'])}",
                 "event_id": event_type,
                 "pcc_id": pcc_id,
                 "steady_state_reference": {
-                    "v_mags_ss": list(sim_result.steady_state_measurements[pcc_id]["v_mags"]),
-                    "i_mags_ss": list(sim_result.steady_state_measurements[pcc_id]["i_mags"])
+                    "v_mags_ss": list(sim_result.steady_state_measurements[parent_trans_pcc_id]["v_mags"]),
+                    "i_mags_ss": list(sim_result.steady_state_measurements[parent_trans_pcc_id]["i_mags"])
                 },
                 "raw_transient_waveform": {
                     "time": list(sim_result.time_s),
@@ -216,6 +230,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
 
             gt_2 = {
                 "scenario_id": scenario_id,
+                "feeder_id": f"feeder_{f_id}",
                 "simulated_event": event_type,
                 "switching_timestamp_s": float(t_event.start_time_s)
             }
