@@ -244,20 +244,20 @@ The plant model contains strictly distribution network elements and local source
 
 #### 3. Measurement Architecture
 
-Measurements are obtained from two sensing layers: feeder monitoring and transformer edge monitoring.
+Measurements are obtained strictly from PCC edge monitoring.
 
-**A. Feeder Measurements**
+**PCC Smart-Meter Measurements**
 
-Each outgoing feeder is instrumented to acquire
+Selected candidate PCCs are instrumented with smart meters to acquire:
 
 ##### Electrical Quantities
 
 * Three-phase voltage magnitude and phase angle
 * Three-phase current magnitude and phase angle
-* Active power ((P))
-* Reactive power ((Q))
-* Apparent power ((S))
-* Power factor
+* Active power (P)
+* Reactive power (Q)
+* Apparent power (S)
+* Power factor (PF)
 
 ##### Network Quality Metrics
 
@@ -266,42 +266,6 @@ Each outgoing feeder is instrumented to acquire
 * Voltage unbalance
 * Current unbalance
 * Positive-, negative-, and zero-sequence components
-
-##### Dynamic Measurements
-
-Where transient simulation is available
-
-* Harmonic distortion (THD)
-* Voltage waveform samples
-* Current waveform samples
-* Switching event timestamps
-
----
-
-**B. Transformer Measurements**
-
-Each distribution transformer serves as an edge measurement node representing the interface to an unknown downstream network.
-
-Measurements include
-
-##### Primary Electrical Measurements
-
-* High-voltage terminal voltage magnitude and phase angle
-* High-voltage terminal current magnitude and phase angle
-* Active power
-* Reactive power
-* Apparent power
-* Power factor
-
-##### Dynamic Quantities
-
-Where supported
-
-* Loading rate
-* Overload duration
-* Load recovery characteristics
-* Transformer temperature 
-* Transient voltage and current waveforms
 
 ---
 
@@ -326,7 +290,7 @@ The code generates scenario datasets by:
 For each scenario, `CoSimulationRunner.run_scenario`:
 
 * solves the OpenDSS operating point for the known upstream plant plus the hidden downstream network
-* collects boundary measurements from feeder and transformer terminals via `get_boundary_measurements()`
+* collects PCC measurements via `get_pcc_measurements()`
 * builds an ATP event case with `ATPCaseBuilder`
 * currently falls back to synchronized operating-point values when EMT waveform output is unavailable
 
