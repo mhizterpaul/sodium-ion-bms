@@ -32,7 +32,7 @@ class CoSimulationRunner:
 
     def run_scenario(self, sim_scenario) -> SimulationResult:
         """
-        Coordinates full co-simulation run: DSS operating point + EMT transient waveform simulation.
+        Coordinates full co-simulation run: DSS operating point + ATP transient waveform simulation.
         Returns a structured SimulationResult object.
         """
         initialize_known_plant()
@@ -88,17 +88,17 @@ class CoSimulationRunner:
         # 2. Get OpenDSS power flow measurements (meter-informed network representation)
         pcc_measurements = get_pcc_measurements(metered_pccs)
 
-        # 3. Simulate High-Fidelity physical EMT transient waveforms
+        # 3. Simulate High-Fidelity physical EMT transient waveforms using ATP adapter
         event = sim_scenario.events[0] if sim_scenario.events else None
         if event is None:
             raise RuntimeError(f"No transient event specified for scenario {scenario_id}")
 
-        self.atp_builder.build(op, h_net, event, f"src/simulation/atp_cases/{scenario_id}_{event.event_type}.ATP")
+        atp_case_path = f"src/simulation/atp_cases/{scenario_id}_{event.event_type}.ATP"
+        # Build ATP case card (NetworkRealization is passed as h_net)
+        self.atp_builder.build(h_net, op, event, atp_case_path)
 
-        # EMT Simulator producing actual waveforms
-        # Pass actual lines' specifications to the solver
-        lines_specs = topo.get("lines", [])
-        emt_waveforms = run_atp_case(metered_pccs, pcc_measurements, event, lines_specs, fs=10000.0, duration=0.1)
+        # Actual ATP-EMTP execution and waveform extraction
+        emt_waveforms = run_atp_case(atp_case_path, metered_pccs, event)
 
         # Waveform Integrity Assertions (complying with Rule 21)
         assert emt_waveforms is not None, f"EMT waveform generation failed for {scenario_id}"
