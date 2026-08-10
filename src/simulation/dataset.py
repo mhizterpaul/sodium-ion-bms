@@ -11,8 +11,8 @@ from src.hidden_network.topology import (
 from src.hidden_network.loads import distribute_loads
 from src.hidden_network.perturbations import apply_topology_reconfiguration
 from src.transient.events import TransientEvent
-from src.power_plant.measurements import get_pcc_measurements
-from src.transient.synchronization import synchronize_measurements
+from src.power_plant.plant import get_pcc_measurements
+from src.transient.synchronization import synchronize_spectrum_analyzer_measurements
 from src.transient.emt_emulator import run_atp_case
 from src.transient.atp_parser import evaluate_atp
 
@@ -153,6 +153,9 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
         # Run OpenDSS + EMT Simulation via CoSimulationRunner
         sim_result = runner.run_scenario(sim_scen)
 
+        # Synchronize spectrum analyzer measurements (high-frequency transient representations)
+        synced_spectral = synchronize_spectrum_analyzer_measurements(sim_result.processed_pccs, timestamp_s=float(t_event.start_time_s))
+
         # 3. CONSTRUCT DATASET 1 (Scenario-Based Dataset)
         for f_id in [1, 2, 3]:
             pcc_id = f"trans{f_id}_lv_pcc"
@@ -213,9 +216,10 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
 
             parent_trans_pcc_id = f"trans{f_id}_lv_pcc"
 
-            # Evaluate only if transformer secondary (which contains high-frequency transient/wavelet features)
-            processed = sim_result.processed_pccs.get(pcc_id)
-            if processed:
+            # Retrieve synchronized spectrum analyzer measurement if available
+            synced_spec = synced_spectral.get(pcc_id)
+            if synced_spec:
+                processed = sim_result.processed_pccs[pcc_id]
                 obs_2 = {
                     "scenario_id": scenario_id,
                     "feeder_id": f"feeder_{f_id}",
@@ -236,14 +240,11 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
                         "current_abc": processed.normalized_current.tolist()
                     },
                     "fft": {
-                        "voltage": [fft.tolist() for fft in processed.voltage_fft],
-                        "current": [fft.tolist() for fft in processed.current_fft]
+                        "voltage": synced_spec.voltage_fft_magnitudes,
+                        "current": synced_spec.current_fft_magnitudes
                     },
-                    "swt": {
-                        "voltage": [[[cA.tolist(), cD.tolist()] for cA, cD in p_swt] for p_swt in processed.voltage_swt],
-                        "current": [[[cA.tolist(), cD.tolist()] for cA, cD in p_swt] for p_swt in processed.current_swt]
-                    },
-                    "features": processed.features
+                    "swt": synced_spec.wavelet_coefficients,
+                    "features": synced_spec.features
                 }
             else:
                 # Customer smart meter: ONLY steady-state measurements, no transients

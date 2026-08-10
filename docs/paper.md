@@ -352,7 +352,7 @@ The simulation framework generates two distinct, decoupled datasets to evaluate 
 
 1. **Dataset 1 (Scenario-Based Dataset)**: Focuses on steady-state network realization and structural state estimation.
    - **Ground-Truth Target Variables ($X_R$):** Network parameters, number of buses, or other hidden network estimates derived from required power flow Gauss-Seidel/Newton-Raphson solutions (e.g., number of buses, branches, hidden line parameters etc.) of a single specific feeder's hidden LV network.
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Strictly limited to the associated single LV transformer monitoring device steady-state measurements and its associated transformer edge LV smart-meter measurements, completely excluding measurements from other transformers.
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Strictly limited to the associated single spectrum analyzer steady-state measurements and its associated transformer edge LV smart-meter measurements, completely excluding measurements from other transformers.
 
 2. **Dataset 2 (Event-Based Dataset)**: Focuses on transient/switching dynamic state realization.
    - **Ground-Truth Target Variables ($X_R$):** Event types, effective load, load type, and start and end timestamps.

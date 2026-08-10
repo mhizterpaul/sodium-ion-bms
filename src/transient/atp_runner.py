@@ -102,7 +102,7 @@ class ATPRunner:
         ]
 
         # We only simulate waveforms for the 3 transformer edge devices (trans1, trans2, trans3_lv_pcc)
-        # Because PCC smart meters do not measure transients, only transformer monitoring devices do!
+        # Because PCC smart meters do not measure transients, only spectrum analyzers do!
         transformer_pccs = [p for p in pccs_specs if p["branch_type"] == "transformer"]
 
         for pcc in transformer_pccs:
