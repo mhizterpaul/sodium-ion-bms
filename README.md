@@ -1,4 +1,7 @@
-# NFPP Sodium-Ion BESS Performance Benchmarking and Latent Distribution Network State Estimation Using Network Realization Signatures
+# Distribution System State Estimation Using Wavelet Decomposition with NFPP Sodium-Ion BESS Performance Evaluation
+
+Topics
+
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/mhizterpaul/sodium-ion-ess/blob/main/src/report.ipynb)
 
@@ -13,7 +16,7 @@ A hierarchical multi-stage framework for cell design enhancement:
 
 This repository implements an  plant condition–integrated, high-fidelity performance benchmarking of Sodium Iron Pyrophosphate (NFPP) battery energy storage systems (BESS). 
 
-### 2. Latent Distribution Network State Estimation & Feature Extraction (Core Contribution)
+### 2. Distribution Network State Estimation & Feature Extraction (Core Contribution)
 
 The primary research focus is the realization of latent network states in a multi-feeder distribution network using boundary measurements and sub-cycle transient realization signatures:
 
@@ -23,15 +26,15 @@ The primary research focus is the realization of latent network states in a mult
 
 *   **ATP-EMTP Transient Coupling**: Real-time coupling of sub-cycle transients (such as transformer inrush, capacitor switching, motor starting, temporary faults, and non-linear switching  to extract high-frequency spectral and waveform features).
 
-*   **Stride-Slicing Boundary Measurement**: Programmatic voltage magnitude and phase angle extraction from OpenDSS `Bus.VMagAngle()` using correct stride slicing: `[0:6:2]` for magnitudes and `[1:6:2]` for phase angles.
+*   **Boundary Measurements**: line and phase angle extraction from OpenDSS.
 
-*   **Feature Tabulation & Rendering**: Export of all steady-state and dynamic parameters directly to CSV, rendering clean HTML tabulations of transformer transient parameters and feeder parameters in `report.ipynb`.
+*   **Feature Tabulation & Rendering**: Export of all steady-state and dynamic parameters directly to CSV, rendering tabulations of transformer parameters and meter parameters in `report.ipynb`.
 
 ## Repository Structure
 
-- `src/cell_optimization/`: Material discovery engines, chemical regularization, and structural optimization scripts.
-- `src/power_plant/`: OpenDSS fixed plant model, stride-slicing measurement extraction, and ATP-EMTP dynamic transient emulator.
-- `src/simulation/`: Scenario generator, perturbed downstream line, load, and switching event modeling.
+- `src/cell_optimization/`: Material selection using the materials dataset, chemical regularization, and parameter optimization scripts.
+- `src/power_plant/`: OpenDSS fixed plant model, measurement extraction, and ATP-EMTP dynamic transient extraction.
+- `src/simulation/`: Scenario generator, perturbed downstream line, load, and switching event.
 - `nfpp_sodium_ion/`: Ready-to-be-published PyBaMM parameter set for NFPP/Hard-Carbon chemistry.
 - `src/report.ipynb`: Orchestration notebook for the complete research pipeline.
 
@@ -54,6 +57,5 @@ jupyter notebook src/report.ipynb
 
 ## References
 
-- **Paper Title**: NFPP Sodium-Ion BESS Performance Benchmarking and Latent Distribution Network State Estimation Using Network Realization Signatures
-- **Core Chemistry**: Sodium Iron Pyrophosphate (NFPP) vs. Hard Carbon
-- **Modeling Framework**: PyBaMM (Electrochemical), FEniCSx (Mechanical), OpenDSS (Distribution Power Flow)
+- **Keywords**: Sodium Iron Pyrophosphate (NFPP), Sodium-Ion Battery, Energy Storage System, Distribution System State Estimation (DSSE), Network Realization, Wavelet Decomposition, Multiresolution Analysis, Distribution Network Observability, Transient Analysis, Statistical Analysis, Microgrid.
+- **Modeling Framework**: PyBaMM (Electrochemical), FEniCSx (Mechanical), OpenDSS (Distribution Power Flow), ATP-EMTP(transformer transients)
