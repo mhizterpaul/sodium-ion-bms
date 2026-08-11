@@ -1,5 +1,6 @@
 import numpy as np
 from dataclasses import dataclass
+from typing import Optional
 from opendssdirect import dss
 from src.power_plant.sources import configure_generator, apply_generator_profile
 
@@ -13,6 +14,14 @@ class OperatingPoint:
     transformer_loading: dict
     voltage_pu: dict
     frequency_hz: float
+    transient_waveforms: Optional[object] = None # Associated ATP transient waveforms for EMT dynamics not provided in OpenDSS
+
+    def import_atp_cases(self, atp_waveforms):
+        """
+        Imports and associates high-fidelity ATP-EMTP transient cases
+        to provide the transient waveforms not supported by OpenDSS.
+        """
+        self.transient_waveforms = atp_waveforms
 
 def initialize_known_plant():
     """

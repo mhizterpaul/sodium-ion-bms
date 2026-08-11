@@ -9,7 +9,7 @@ from src.hidden_network.topology import (
     select_metered_pccs
 )
 from src.hidden_network.loads import distribute_loads
-from src.hidden_network.transformers import get_distribution_transformer_spec
+from src.power_plant.transformers import get_distribution_transformer_spec
 from src.hidden_network.perturbations import apply_topology_reconfiguration
 
 from src.transient.atp_case_builder import ATPCaseBuilder
