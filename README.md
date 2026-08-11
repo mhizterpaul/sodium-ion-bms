@@ -24,7 +24,7 @@ The primary research focus is the realization of latent network states in a mult
 
 *   **Scenario Generator**: Systematic perturbation of the unknown downstream networks connected to the feeders, featuring linear and non-linear loads, varying live loads, changing line lengths (electrical distance), switching events, and topology reconfigurations (radial vs ring/loop).
 
-*   **ATP-EMTP Transient Coupling**: Real-time coupling of sub-cycle transients (such as transformer inrush, capacitor switching, motor starting, temporary faults, and non-linear switching  to extract high-frequency spectral and waveform features).
+*   **ATP-EMTP Transient Coupling**: Coupling of sub-cycle transients (such as transformer inrush, capacitor switching, motor starting, temporary faults, and non-linear switching  to extract high-frequency spectral and waveform features).
 
 *   **Boundary Measurements**: line and phase angle extraction from OpenDSS.
 
