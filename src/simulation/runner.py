@@ -1,7 +1,8 @@
 from opendssdirect import dss
 import numpy as np
 
-from src.power_plant.plant import initialize_known_plant, solve_operating_point, get_pcc_measurements
+from src.power_plant.plant import initialize_known_plant, solve_operating_point
+from src.hidden_network.pcc_meters import get_pcc_measurements
 
 from src.hidden_network.topology import (
     generate_radial_topology,
