@@ -14,8 +14,8 @@ from src.power_plant.transformers import get_distribution_transformer_spec
 from src.hidden_network.perturbations import apply_topology_reconfiguration
 
 from src.transient.atp_case_builder import ATPCaseBuilder
-from src.transient.emt_emulator import run_atp_case
-from src.transient.atp_parser import evaluate_atp
+from src.transient.atp_runner import ATPRunner
+from src.transient.atp_parser import evaluate_atp, ATPOutputReader
 
 class SimulationResult:
     def __init__(self, time_s: np.ndarray, metered_pccs: list[dict], steady_state_measurements: dict, processed_pccs: dict):
@@ -94,8 +94,9 @@ class CoSimulationRunner:
         atp_case_path = f"src/simulation/atp_cases/{scenario_id}_{event.event_type}.ATP"
         self.atp_builder.build(h_net, op, event, atp_case_path)
 
-        # Actual ATP-EMTP execution and waveform extraction
-        emt_waveforms = run_atp_case(atp_case_path, metered_pccs, event)
+        # Actual ATP-EMTP execution and waveform extraction directly via ATPRunner/ATPOutputReader
+        atp_result = ATPRunner().run(atp_case_path)
+        emt_waveforms = ATPOutputReader().read(atp_result, metered_pccs, event)
 
         # Waveform Integrity Assertions (complying with Rule 21)
         assert emt_waveforms is not None, f"EMT waveform generation failed for {scenario_id}"

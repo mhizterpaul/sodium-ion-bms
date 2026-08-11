@@ -13,7 +13,6 @@ from src.hidden_network.perturbations import apply_topology_reconfiguration
 from src.transient.events import TransientEvent
 from src.hidden_network.pcc_meters import get_pcc_measurements
 from src.transient.synchronization import synchronize_spectrum_analyzer_measurements
-from src.transient.emt_emulator import run_atp_case
 from src.transient.atp_parser import evaluate_atp
 
 def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = False):
