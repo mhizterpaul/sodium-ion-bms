@@ -15,7 +15,7 @@ class ATPCaseBuilder:
         event_start = getattr(event, "start_time_s", 0.02)
         event_duration = getattr(event, "duration_s", 0.04)
 
-        # Build a valid ATP-EMTP card case file
+        # Build a valid ATP-EMTP card case file with perfect 8-column right-aligned integer fields
         atp_lines = [
             "BEGIN NEW DATA CASE",
             f"C  ATP Case File for {scenario_id}",
@@ -26,7 +26,7 @@ class ATPCaseBuilder:
             "$DUMMY, XYZ000",
             "C  dT  >< Tmax >< Xopt >< Copt ><Epsiln>",
             "   1.E-4    0.1     50.     50.",
-            "     1000       1       1       1       1       0       0       1       0",
+            "    1000       1       1       1       1       0       0       1       0",
             "/BRANCH",
             "C < n1 >< n2 ><ref1><ref2>< R  >< L  >< C  >",
             "  SRCA                      1.E3                                               0",

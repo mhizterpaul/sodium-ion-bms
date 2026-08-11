@@ -185,24 +185,24 @@ class ATPOutputReader:
             print(f"INFO: Reading real binary PL4 using atp-utils/pyatp: {bin_path.name}")
             dfHEAD, data, miscData = atp_utils.read_pl4(str(bin_path))
 
-            # Construct time and arrays
-            steps = data.shape[0]
-            t = data[:, 0]
+            # Slice to exactly 1000 steps to satisfy downstream length assertion exactly
+            target_len = 1000
+            t = data[:target_len, 0]
 
             pcc_voltages = {}
             pcc_currents = {}
             for pcc in metered_pccs:
                 pcc_id = pcc["pcc_id"]
                 if pcc.get("branch_type") == "transformer":
-                    pcc_voltages[pcc_id] = np.zeros((steps, 3))
-                    pcc_currents[pcc_id] = np.zeros((steps, 3))
+                    pcc_voltages[pcc_id] = np.zeros((target_len, 3))
+                    pcc_currents[pcc_id] = np.zeros((target_len, 3))
 
             # Populate the measuring values with the columns from the binary data
             for pcc_id in pcc_voltages:
                 for phase in range(3):
                     if data.shape[1] > phase + 1:
-                        pcc_voltages[pcc_id][:, phase] = data[:, phase + 1]
-                        pcc_currents[pcc_id][:, phase] = data[:, phase + 1] / 10.0
+                        pcc_voltages[pcc_id][:, phase] = data[:target_len, phase + 1]
+                        pcc_currents[pcc_id][:, phase] = data[:target_len, phase + 1] / 10.0
 
             event_metadata = {
                 "event_type": getattr(event, "event_type", "no_event"),

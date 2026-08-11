@@ -7,7 +7,7 @@ POWER FREQUENCY                      50.
 $DUMMY, XYZ000
 C  dT  >< Tmax >< Xopt >< Copt ><Epsiln>
    1.E-4    0.1     50.     50.
-     1000       1       1       1       1       0       0       1       0
+    1000       1       1       1       1       0       0       1       0
 /BRANCH
 C < n1 >< n2 ><ref1><ref2>< R  >< L  >< C  >
   SRCA                      1.E3                                               0
