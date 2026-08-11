@@ -1,20 +1,22 @@
-import random
 import numpy as np
 
-def generate_radial_topology(feeder_idx: int, num_buses: int, line_mult: float = 1.0) -> dict:
+def generate_radial_topology(feeder_idx: int, num_buses: int, line_mult: float = 1.0, rng=None) -> dict:
     """
     Generates a radial tree topology represented as a dictionary of buses and lines.
-    This fulfills the requirement: Make the downstream topology a parameter.
+    Uses local seeded RNG for perfect reproducibility.
     """
+    if rng is None:
+        rng = np.random.default_rng(42)
+
     root_bus = f"feeder{feeder_idx}_sec"
     buses = [root_bus]
     lines = []
 
     for i in range(1, num_buses):
         new_bus = f"f{feeder_idx}_node{i}"
-        parent_bus = random.choice(buses)
+        parent_bus = str(rng.choice(buses))
 
-        l_km = random.uniform(0.03, 0.12) * line_mult
+        l_km = float(rng.uniform(0.03, 0.12)) * line_mult
         lines.append({
             "name": f"down_{feeder_idx}_{i}",
             "bus1": parent_bus,

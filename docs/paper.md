@@ -1,4 +1,4 @@
-# NFPP Sodium-Ion BESS Performance Benchmarking and Latent Distribution Network State Estimation Using Network Realization Signatures
+# Distribution System State Estimation Using Wavelet Decomposition with NFPP Sodium-Ion BESS Performance Evaluation
 
 ## Methodology
 
@@ -348,16 +348,17 @@ Measurements captured in each result include:
 * active power (`P`), reactive power (`Q`), and apparent power (`S`) at boundary nodes
 * derived steady-state features, sequence features, transient features, and spectral features
 
-The simulation framework generates two distinct, decoupled datasets to evaluate the latent observability problem under different operating conditions:
+The simulation framework generates two distinct, decoupled datasets to evaluate the latent observability problem under different operating conditions. Critically, to align with the decentralized physical architecture, measurements are not synchronized across transformers, and each dataset element strictly references exactly one transformer's measurements to prevent any inter-transformer leakage:
 
 1. **Dataset 1 (Scenario-Based Dataset)**: Focuses on steady-state network realization and structural state estimation.
-   - **Ground-Truth Target Variables ($X_R$):** Network line parameter multiplier (`line_parameter_multiplier`), topology class (`topology_type`), and network size (`hidden_total_buses`).
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Strictly limited to the LV transformer monitoring device steady-state measurements and transformer edge smart-meter readings.
+   - **Ground-Truth Target Variables ($X_R$):** Network parameters, number of buses, or other hidden network estimates derived from required power flow Gauss-Seidel/Newton-Raphson solutions (e.g., number of buses, branches, hidden line parameters etc.) of a single specific feeder's hidden LV network.
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Strictly limited to the associated single spectrum analyzer steady-state measurements and its associated transformer edge LV smart-meter measurements, completely excluding measurements from other transformers.
 
 2. **Dataset 2 (Event-Based Dataset)**: Focuses on transient/switching dynamic state realization.
-   - **Ground-Truth Target Variables ($X_R$):** Event type (`simulated_event`) and event occurrence timestamp (`switching_timestamp_s`).
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Synchronized readings from the edge transformer devices and the configured fraction of selected branch smart-meters.
-Each perturbed network is simulated to produce these decoupled datasets, linking hidden network states and events to observable PCC-level signatures without any target label leakage.
+   - **Ground-Truth Target Variables ($X_R$):** Event types, effective load, load type, and start and end timestamps.
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Synchronized readings of a single selected branch smart-meter and its associated single parent edge transformer device. Measurements are strictly localized and synced across the meter-transformer nodes of the same unknown LV network only.
+
+Each perturbed network is simulated to produce these decoupled datasets, linking hidden network states and events to observable PCC-level signatures without any target label leakage or cross-transformer data contamination.
 
 ---
 
@@ -406,58 +407,57 @@ More importantly we report:
 
 PERMANOVA can confound location differences with dispersion differences. Therefore, we pair it with a dispersion test rather than reporting it alone.
 
-Brown–Forsythe: does network state change measurement variability?
+Multivariate Homogeneity of Dispersion (PERMDISP): does network state change joint wavelet representation variability?
 
-For each measurement feature \(Y_j\), test:
-\[ H_0: \sigma^2_{G_1} = \sigma^2_{G_2} = \cdots = \sigma^2_{G_K}. \] Brown–Forsythe is specifically designed as a robust test for equality of variances, making it less sensitive to non-normality than the classical variance-ratio approach.
+We test whether different hidden network states generate significantly different multivariate dispersion on the joint wavelet and spectral representations:
+\[ H_0: \Sigma_{G_1} = \Sigma_{G_2} = \cdots = \Sigma_{G_K}. \]
 
 For example:
-Network A and B may have similar mean voltage/current responses, but Network B produces substantially greater variability.
+Network A and B may have similar mean joint wavelet responses, but Network B produces substantially greater variability in its transient representations.
 
 That variability itself can carry information about the hidden network.
-So we investigate: \[ E[Y|G]. \] and \[ Var(Y|G). \]
+So we investigate the joint expectation and variance: \[ E[Y_{\mathrm{joint}}|G] \] and \[ Var(Y_{\mathrm{joint}}|G). \]
 
 * Test 4 — Noise robustness: 
-we don't merely add Gaussian noise and report correlation coefficients.
-we Construct controlled noise levels.
+we don't merely add Gaussian noise to features and report correlation coefficients. Instead, we construct controlled noise levels directly on the waveforms.
 
-For example:
-\[ Y^{(\sigma)} = Y+\epsilon, \] with \[ \epsilon\sim\mathcal N(0,\sigma^2). \]
-Or
-\[ Y_j^{(\sigma)} = Y_j+\epsilon_j, \] where
-\[ \epsilon_j\sim \mathcal N(0,\sigma_j^2). \]
+For example, for actual raw waveforms, we add controlled noise corresponding to specific signal-to-noise ratios (SNR):
+\[ Y^{(\sigma)} = Y+\epsilon \]
+where the noise variance is derived from the waveform's own signal power across a defined sweep (SNR $\in \{5, 10, 20, 30, 40\}$ dB).
 
-Then repeat the same statistical tests.
-Now you can define an empirical statistical observability threshold.
+Then we pass the noisy waveforms through normalization, FFT, and SWT to repeat the same statistical tests.
+Now you can define an empirical statistical observability threshold under realistic sensor noise.
 
 * Test 5 — TOST for practical equivalence
 
-Suppose two different hidden networks produce almost indistinguishable measurement responses.
-formulate an equivalence margin for a measurement feature:
+Suppose two different hidden networks produce almost indistinguishable joint wavelet responses.
+We formulate an equivalence margin for a joint wavelet feature representation:
 
 \[ \Delta_L=-\delta,\qquad \Delta_U=+\delta. \]
-Then perform the Two One-Sided Tests procedure:
+Then perform the Two One-Sided Tests procedure on the joint wavelet data:
 \[ H_{01}:\Delta\leq-\delta \]and\[ H_{02}:\Delta\geq+\delta. \]
-Rejecting both means the difference lies within the pre-specified practically negligible interval.
+Rejecting both means the difference in wavelet signatures lies within the pre-specified practically negligible interval.
 
 
-That gives a principled way of identifying observationally indistinguishable network classes
+That gives a principled way of identifying observationally indistinguishable network classes.
 HSIC is another kernel-based independence test.
-we test: \[ H_0:X\perp Y. \] HSIC measures dependence through the Hilbert–Schmidt norm of the cross-covariance operator.
+we test: \[ H_0:X\perp Y_{\mathrm{joint}}. \] HSIC measures dependence through the Hilbert–Schmidt norm of the cross-covariance operator of joint wavelet features.
 
-* Test 6 — Is hidden network configuration statistically observable?
+* Test 6 — Observability of Hidden State and Perturbations from Joint Wavelet and Spectral Representations
 
 This is important for your eventual operator design.
 
-For each measurement channel \(Y_j\), test which classes of downstream perturbations—including topology changes, network size, load redistribution, switching events, transformer loading, and line parameter variations—produce measurable changes at the distribution station boundary:
+We test if the joint wavelet and spectral representations produce statistically significant and observable dependency with the hidden network configuration and perturbations (including topology changes, network size, load redistribution, switching events, transformer loading, and line parameter variations):
 
-\[ H_0:X\perp Y_j. \]
-Tests:
-distance correlation
-permutation test
-HSIC as secondary confirmation
+\[ H_0:X \perp Y_{\mathrm{joint}} \]
+where $Y_{\mathrm{joint}}$ represents the actual joint wavelet-domain and spectral-domain observable representations.
 
-This is directly useful for the question: Which hidden network properties are electrically observable at the station interface?
+Tests applied:
+- Distance correlation
+- Permutation test on joint wavelet/spectral data
+- HSIC as secondary confirmation of nonlinear dependency on joint data
+
+This is directly useful for answering the central research question: Are hidden network state and perturbations observable from the joint wavelet and spectral representations at the station boundary?
 
 ##### validation architecture
 

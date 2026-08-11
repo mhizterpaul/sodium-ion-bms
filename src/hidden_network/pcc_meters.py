@@ -4,7 +4,6 @@ from opendssdirect import dss
 def compute_symmetrical_components(mags, angles_deg):
     """
     Computes symmetrical components (zero, positive, and negative sequence) from three-phase complex phasor inputs.
-    T_inv = 1/3 * [[1, 1, 1], [1, a, a^2], [1, a^2, a]] where a = e^(j * 120 deg)
     """
     if len(mags) < 3 or len(angles_deg) < 3:
         return {
@@ -15,7 +14,6 @@ def compute_symmetrical_components(mags, angles_deg):
     rad = np.radians(angles_deg)
     phasors = [m * (np.cos(r) + 1j * np.sin(r)) for m, r in zip(mags, rad)]
 
-    # operator a
     a = np.cos(2.0*np.pi/3.0) + 1j * np.sin(2.0*np.pi/3.0)
     a_sq = a * a
 
@@ -31,8 +29,7 @@ def compute_symmetrical_components(mags, angles_deg):
 
 def extract_bus_voltages(bus_name: str):
     """
-    Extracts magnitude and phase angles from Bus.VMagAngle() using correct stride slicing:
-    [0:6:2] for magnitudes, [1:6:2] for phase angles.
+    Extracts magnitude and phase angles from Bus.VMagAngle() using correct stride slicing.
     """
     dss.Circuit.SetActiveBus(bus_name)
     v_mag_angle = dss.Bus.VMagAngle()
@@ -66,11 +63,11 @@ def extract_element_currents(element_name: str, terminal: int = 1):
 def extract_pcc_data(pcc: dict) -> dict:
     """
     Extracts the electrical measurements at a given PCC from OpenDSS.
+    The PCC smart meter is instantiated in the unknown LV network.
     """
     branch_id = pcc["branch_id"] # e.g. "down_1_1" or "transformer.trans1"
     bus_name = pcc["bus"]        # e.g. "f1_node1" or "feeder1_sec"
 
-    # 1. Determine active element name
     if branch_id.startswith("transformer.") or branch_id.startswith("line."):
         element_name = branch_id
     else:
@@ -78,16 +75,16 @@ def extract_pcc_data(pcc: dict) -> dict:
 
     dss.Circuit.SetActiveElement(element_name)
 
-    # 2. Extract voltages
+    # Extract voltages
     v_mags, v_angs = extract_bus_voltages(bus_name)
     v_seq = compute_symmetrical_components(v_mags, v_angs)
 
-    # 3. Extract currents (use terminal=2 for transformers/lines)
+    # Extract currents (use terminal=2 for transformers)
     terminal = 2 if branch_id.startswith("transformer.") else 1
     i_mags, i_angs = extract_element_currents(element_name, terminal=terminal)
     i_seq = compute_symmetrical_components(i_mags, i_angs)
 
-    # 4. Extract Powers
+    # Extract Powers
     powers = dss.CktElement.Powers()
     offset = 6 * (terminal - 1)
     if powers and len(powers) >= offset + 6:
@@ -125,7 +122,8 @@ def extract_pcc_data(pcc: dict) -> dict:
 
 def get_pcc_measurements(metered_pccs: list[dict]) -> dict:
     """
-    Extracts electrical measurements from OpenDSS for the metered PCCs only.
+    Extracts electrical measurements from OpenDSS for the metered PCCs only,
+    instantiated inside the unknown LV network.
     """
     pcc_measurements = {}
     for pcc in metered_pccs:

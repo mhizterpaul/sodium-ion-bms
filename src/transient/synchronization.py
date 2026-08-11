@@ -16,22 +16,24 @@ class PCCMeasurement:
     rocof_hz_s: float
     v_sequence: tuple   # (v_pos, v_neg, v_zero)
     i_sequence: tuple   # (i_pos, i_neg, i_zero)
-    thd_v: Optional[float] = 0.0
-    thd_i: Optional[float] = 0.0
-    event: Optional[str] = None
 
-def synchronize_measurements(pcc_data_dict: dict, emt_waveforms: Optional[object] = None, timestamp_s: float = 0.0) -> dict[str, PCCMeasurement]:
+@dataclass
+class SpectrumAnalyzerMeasurement:
+    pcc_id: str
+    timestamp_s: float
+    voltage_fft_magnitudes: list
+    current_fft_magnitudes: list
+    wavelet_coefficients: dict
+    features: dict
+
+def synchronize_measurements(pcc_data_dict: dict, timestamp_s: float = 0.0) -> dict[str, PCCMeasurement]:
     """
-    Synchronizes the steady-state measurements and EMT high-frequency waveforms
-    into canonical PCCMeasurement records.
+    Synchronizes the steady-state measurements into canonical PCCMeasurement records.
     """
     synced = {}
     for pcc_id, data in pcc_data_dict.items():
         v_rms_abc = tuple(data["v_mags"])
         i_rms_abc = tuple(data["i_mags"])
-
-        # We use steady-state values or EMT waveforms if present.
-        # But EMT waveforms are None, so we always use the steady-state values.
 
         synced[pcc_id] = PCCMeasurement(
             pcc_id=pcc_id,
@@ -45,9 +47,25 @@ def synchronize_measurements(pcc_data_dict: dict, emt_waveforms: Optional[object
             frequency_hz=data.get("frequency_hz", 50.0),
             rocof_hz_s=0.0,
             v_sequence=(data["v_pos_mag"], data["v_neg_mag"], data["v_zero_mag"]),
-            i_sequence=(data["i_pos_mag"], data["i_neg_mag"], data["i_zero_mag"]),
-            thd_v=0.01 if emt_waveforms is None else 0.04,
-            thd_i=0.02 if emt_waveforms is None else 0.12,
-            event=emt_waveforms.event_metadata.get("event_type") if emt_waveforms is not None else None
+            i_sequence=(data["i_pos_mag"], data["i_neg_mag"], data["i_zero_mag"])
         )
     return synced
+
+def synchronize_spectrum_analyzer_measurements(processed_pccs_dict: dict, timestamp_s: float = 0.0) -> dict[str, SpectrumAnalyzerMeasurement]:
+    """
+    Synchronizes and aligns the spectrum analyzer (high-frequency wavelet/spectral) measurements.
+    """
+    synced_spectral = {}
+    for pcc_id, processed in processed_pccs_dict.items():
+        synced_spectral[pcc_id] = SpectrumAnalyzerMeasurement(
+            pcc_id=pcc_id,
+            timestamp_s=timestamp_s,
+            voltage_fft_magnitudes=processed.voltage_fft.tolist(),
+            current_fft_magnitudes=processed.current_fft.tolist(),
+            wavelet_coefficients={
+                "voltage_swt": [[[cA.tolist(), cD.tolist()] for cA, cD in p_swt] for p_swt in processed.voltage_swt],
+                "current_swt": [[[cA.tolist(), cD.tolist()] for cA, cD in p_swt] for p_swt in processed.current_swt]
+            },
+            features=processed.features
+        )
+    return synced_spectral
