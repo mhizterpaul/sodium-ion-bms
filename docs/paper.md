@@ -173,7 +173,7 @@ where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered
   
 
 ---
-### Distributed Dynamic State Estimation Using Lantent Network Realization Signatures (core contribution)
+### Distributed System State Estimation Using Wavelet Decomposition (core contribution)
 
 Unlike conventional Distribution System State Estimation (DSSE), where the complete network topology and bus model are assumed known, this research considers a partially observable network in which only the upstream distribution station is known while the downstream network remains hidden.
 
@@ -362,7 +362,7 @@ Each perturbed network is simulated to produce these decoupled datasets, linking
 
 ---
 
-##### statistical tests for state estimation
+##### Statistical Tests of State Observability Using Steady-State-Normalized Decomposed Transformer Waveforms
 
 * Test 1 — Distance correlation: does the measurement contain information about hidden state?
 
