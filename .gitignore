@@ -15,4 +15,6 @@ __mocks__/
 *.pl4
 *.pl4.bin
 *.json
+*.csv
 src/simulation/*.json
+src/simulation/*.csv
