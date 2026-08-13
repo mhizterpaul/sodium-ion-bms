@@ -14,3 +14,5 @@ __mocks__/
 *.dbg
 *.pl4
 *.pl4.bin
+*.json
+src/simulation/*.json

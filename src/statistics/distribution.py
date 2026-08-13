@@ -65,3 +65,48 @@ def permutation_test_mmd(X, Y, n_permutations=100, seed=42):
         "n_permutations": n_permutations,
         "null_distribution": perm_mmds
     }
+
+
+def run_distribution_analysis():
+    import json
+    from pathlib import Path
+    data_path = Path(__file__).parent.parent / "simulation" / "dataset_1.json"
+    if not data_path.exists():
+        raise FileNotFoundError(f"Dataset 1 not found at {data_path}. Run dataset generation first.")
+
+    with open(data_path, "r") as f:
+        dataset_1 = json.load(f)
+
+    Y_radial = []
+    Y_ring = []
+    for item in dataset_1:
+        gt = item["ground_truth"]
+        obs = item["observations"]["features"]
+        f_num = gt["feeder_id"].split("_")[-1]
+        pcc_id = f"trans{f_num}_lv_pcc"
+        y_val = [
+            obs.get(f"{pcc_id}_voltage_mag_avg", 0.0),
+            obs.get(f"{pcc_id}_current_mag_avg", 0.0),
+            obs.get(f"{pcc_id}_p_kw", 0.0)
+        ]
+        if gt["topology_type"] == "radial":
+            Y_radial.append(y_val)
+        else:
+            Y_ring.append(y_val)
+
+    Y_radial = np.array(Y_radial)
+    Y_ring = np.array(Y_ring)
+
+    print("--- Running Maximum Mean Discrepancy (MMD) Two-Sample Test ---")
+    if len(Y_ring) > 0 and len(Y_radial) > 0:
+        res_mmd = permutation_test_mmd(Y_radial, Y_ring, n_permutations=99, seed=42)
+        print(f"MMD^2 Statistic:       {res_mmd['statistic']:.6f}")
+        print(f"MMD Permutation p-val: {res_mmd['p_value']:.4f}")
+        return res_mmd
+    else:
+        print("Skip: Not enough samples for both Radial and Ring topologies to execute MMD test.")
+        return None
+
+
+if __name__ == "__main__":
+    run_distribution_analysis()

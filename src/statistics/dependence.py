@@ -144,3 +144,54 @@ def benjamini_hochberg_correction(p_values):
     # Restore original order
     rev_sort_idx = np.argsort(sort_idx)
     return list(adjusted_p[rev_sort_idx])
+
+
+def run_dependence_analysis():
+    import json
+    from pathlib import Path
+    data_path = Path(__file__).parent.parent / "simulation" / "dataset_1.json"
+    if not data_path.exists():
+        raise FileNotFoundError(f"Dataset 1 not found at {data_path}. Run dataset generation first.")
+
+    with open(data_path, "r") as f:
+        dataset_1 = json.load(f)
+
+    X = []
+    Y_list = []
+    for item in dataset_1:
+        gt = item["ground_truth"]
+        obs = item["observations"]["features"]
+        f_num = gt["feeder_id"].split("_")[-1]
+        pcc_id = f"trans{f_num}_lv_pcc"
+        X.append([gt["line_parameter_multiplier"], gt["hidden_total_buses"]])
+        Y_list.append([
+            obs.get(f"{pcc_id}_voltage_mag_avg", 0.0),
+            obs.get(f"{pcc_id}_current_mag_avg", 0.0),
+            obs.get(f"{pcc_id}_p_kw", 0.0)
+        ])
+    X = np.array(X)
+    Y = np.array(Y_list)
+
+    print("--- Running Distance Correlation Test ---")
+    res_dcor = permutation_test_dcor(X, Y, n_permutations=99, seed=42)
+    raw_p = res_dcor["p_value"]
+    adjusted_p = benjamini_hochberg_correction([raw_p])[0]
+
+    print(f"Distance Correlation Statistic: {res_dcor['statistic']:.4f}")
+    print(f"Raw Permutation p-value:        {raw_p:.4f}")
+    print(f"Adjusted p-value (FDR):         {adjusted_p:.4f}")
+
+    print("\n--- Running HSIC Nonlinear Confirmation Test ---")
+    res_hsic = permutation_test_hsic(X, Y, n_permutations=99, seed=42)
+    print(f"HSIC Statistic:        {res_hsic['statistic']:.6f}")
+    print(f"HSIC Permutation p-val: {res_hsic['p_value']:.4f}")
+
+    return {
+        "dcor": res_dcor,
+        "hsic": res_hsic,
+        "adjusted_p": adjusted_p
+    }
+
+
+if __name__ == "__main__":
+    run_dependence_analysis()

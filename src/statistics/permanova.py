@@ -79,3 +79,49 @@ def permanova(Y, groups, blocks=None, n_permutations=100, seed=42):
         "r_squared": r_squared,
         "n_permutations": n_permutations
     }
+
+
+def run_permanova_analysis():
+    import json
+    from pathlib import Path
+    from src.statistics.dispersion import dispersion_test
+
+    data_path = Path(__file__).parent.parent / "simulation" / "dataset_2.json"
+    if not data_path.exists():
+        raise FileNotFoundError(f"Dataset 2 not found at {data_path}. Run dataset generation first.")
+
+    with open(data_path, "r") as f:
+        dataset_2 = json.load(f)
+
+    Y_wavelet_list = []
+    groups = []
+    for item in dataset_2:
+        features = item["observations"]["features"]
+        pcc_id = item["observations"]["pcc_id"]
+        groups.append(item["ground_truth"]["simulated_event"])
+        Y_wavelet_list.append([
+            features.get(f"{pcc_id}_v_0_cD1_std", 0.0),
+            features.get(f"{pcc_id}_v_0_cD2_std", 0.0),
+            features.get(f"{pcc_id}_v_0_cD1_energy", 0.0),
+            features.get(f"{pcc_id}_v_0_cD2_energy", 0.0)
+        ])
+    Y_wavelet = np.array(Y_wavelet_list)
+
+    print("--- Running PERMANOVA and dispersion tests ---")
+    res_perm = permanova(Y_wavelet, groups, n_permutations=99, seed=42)
+    print(f"PERMANOVA F-pseudo:   {res_perm['F_pseudo']:.4f}")
+    print(f"PERMANOVA p-value:    {res_perm['p_value']:.4f}")
+    print(f"PERMANOVA R2:         {res_perm['r_squared']:.4f}")
+
+    res_disp = dispersion_test(Y_wavelet, groups, n_permutations=99, seed=42)
+    print(f"Dispersion F-stat:    {res_disp['F_dispersion']:.4f}")
+    print(f"Dispersion p-value:   {res_disp['p_value']:.4f}")
+
+    return {
+        "permanova": res_perm,
+        "dispersion": res_disp
+    }
+
+
+if __name__ == "__main__":
+    run_permanova_analysis()

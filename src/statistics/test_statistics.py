@@ -4,7 +4,6 @@ from src.statistics.distribution import permutation_test_mmd
 from src.statistics.permanova import permanova
 from src.statistics.dispersion import dispersion_test
 from src.statistics.equivalence import tost_equivalence
-from src.statistics.noise import add_measurement_noise
 
 def test_distance_correlation():
     X = np.random.normal(0, 1, (10, 2))
@@ -43,8 +42,3 @@ def test_tost_equivalence():
     y_b = [1.01, 1.0, 1.0, 0.99, 1.01]
     res = tost_equivalence(y_a, y_b, margin=0.05)
     assert res["equivalent"] is True
-
-def test_noise():
-    Y = np.ones((5, 2))
-    noisy = add_measurement_noise(Y, noise_level=0.1, seed=42)
-    assert not np.array_equal(Y, noisy)

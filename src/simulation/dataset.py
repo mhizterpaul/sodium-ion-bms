@@ -273,6 +273,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
                 "scenario_id": scenario_id,
                 "feeder_id": f"feeder_{f_id}",
                 "event_type": event_type,
+                "simulated_event": event_type,
                 "effective_load_kw": float(sim_result.steady_state_measurements[pcc_id]["p_kw"]) if pcc_id in sim_result.steady_state_measurements else 0.0,
                 "load_type": config["load_comp"],
                 "start_timestamp_s": float(t_event.start_time_s),
@@ -281,6 +282,29 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
             dataset_2.append({"ground_truth": gt_2, "observations": obs_2})
 
     print(f"INFO: Generated Dataset 1 and Dataset 2 of {n_scenarios} scenarios in-memory successfully.")
+
+    # Persist the two datasets generated to disk
+    import json
+    from pathlib import Path
+
+    class NumpyEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, (np.float32, np.float64)):
+                return float(obj)
+            if isinstance(obj, (np.int32, np.int64)):
+                return int(obj)
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            return super().default(obj)
+
+    dir_path = Path("src/simulation")
+    dir_path.mkdir(parents=True, exist_ok=True)
+    with open(dir_path / "dataset_1.json", "w") as f:
+        json.dump(dataset_1, f, indent=2, cls=NumpyEncoder)
+    with open(dir_path / "dataset_2.json", "w") as f:
+        json.dump(dataset_2, f, indent=2, cls=NumpyEncoder)
+    print(f"INFO: Decoupled datasets successfully written to {dir_path / 'dataset_1.json'} and {dir_path / 'dataset_2.json'}")
+
     return dataset_1, dataset_2
 
 if __name__ == "__main__":
