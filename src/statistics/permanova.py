@@ -82,30 +82,32 @@ def permanova(Y, groups, blocks=None, n_permutations=100, seed=42):
 
 
 def run_permanova_analysis():
-    import json
+    import pandas as pd
     from pathlib import Path
     from src.statistics.dispersion import dispersion_test
 
-    data_path = Path(__file__).parent.parent / "simulation" / "dataset_2.json"
+    data_path = Path(__file__).parent.parent / "simulation" / "dataset_2.csv"
     if not data_path.exists():
-        raise FileNotFoundError(f"Dataset 2 not found at {data_path}. Run dataset generation first.")
+        raise FileNotFoundError(f"Dataset 2 CSV not found at {data_path}. Run dataset generation first.")
 
-    with open(data_path, "r") as f:
-        dataset_2 = json.load(f)
+    df = pd.read_csv(data_path)
+    groups = df["gt_simulated_event"].values
 
-    Y_wavelet_list = []
-    groups = []
-    for item in dataset_2:
-        features = item["observations"]["features"]
-        pcc_id = item["observations"]["pcc_id"]
-        groups.append(item["ground_truth"]["simulated_event"])
-        Y_wavelet_list.append([
-            features.get(f"{pcc_id}_v_0_cD1_std", 0.0),
-            features.get(f"{pcc_id}_v_0_cD2_std", 0.0),
-            features.get(f"{pcc_id}_v_0_cD1_energy", 0.0),
-            features.get(f"{pcc_id}_v_0_cD2_energy", 0.0)
-        ])
-    Y_wavelet = np.array(Y_wavelet_list)
+    # Extract cD1_std, cD2_std, cD1_energy, cD2_energy columns for the active measuring node
+    col_std1 = []
+    col_std2 = []
+    col_en1 = []
+    col_en2 = []
+    for idx, row in df.iterrows():
+        pcc_id = row.get("obs_pcc_id")
+        if not pcc_id or pd.isna(pcc_id):
+            pcc_id = "trans1_lv_pcc"
+        col_std1.append(row[f"obs_{pcc_id}_v_0_cD1_std"] if f"obs_{pcc_id}_v_0_cD1_std" in row and not pd.isna(row[f"obs_{pcc_id}_v_0_cD1_std"]) else 0.0)
+        col_std2.append(row[f"obs_{pcc_id}_v_0_cD2_std"] if f"obs_{pcc_id}_v_0_cD2_std" in row and not pd.isna(row[f"obs_{pcc_id}_v_0_cD2_std"]) else 0.0)
+        col_en1.append(row[f"obs_{pcc_id}_v_0_cD1_energy"] if f"obs_{pcc_id}_v_0_cD1_energy" in row and not pd.isna(row[f"obs_{pcc_id}_v_0_cD1_energy"]) else 0.0)
+        col_en2.append(row[f"obs_{pcc_id}_v_0_cD2_energy"] if f"obs_{pcc_id}_v_0_cD2_energy" in row and not pd.isna(row[f"obs_{pcc_id}_v_0_cD2_energy"]) else 0.0)
+
+    Y_wavelet = np.column_stack([col_std1, col_std2, col_en1, col_en2])
 
     print("--- Running PERMANOVA and dispersion tests ---")
     res_perm = permanova(Y_wavelet, groups, n_permutations=99, seed=42)

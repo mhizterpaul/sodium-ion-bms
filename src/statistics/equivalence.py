@@ -53,26 +53,30 @@ def tost_equivalence(y_a, y_b, margin=0.05):
 
 
 def run_equivalence_analysis():
-    import json
+    import pandas as pd
     from pathlib import Path
 
-    data_path = Path(__file__).parent.parent / "simulation" / "dataset_2.json"
+    data_path = Path(__file__).parent.parent / "simulation" / "dataset_2.csv"
     if not data_path.exists():
-        raise FileNotFoundError(f"Dataset 2 not found at {data_path}. Run dataset generation first.")
+        raise FileNotFoundError(f"Dataset 2 CSV not found at {data_path}. Run dataset generation first.")
 
-    with open(data_path, "r") as f:
-        dataset_2 = json.load(f)
+    df = pd.read_csv(data_path)
 
-    y_a_wavelet = []
-    y_b_wavelet = []
-    for item in dataset_2:
-        event = item["ground_truth"]["simulated_event"]
-        pcc_id = item["observations"]["pcc_id"]
-        val = item["observations"]["features"].get(f"{pcc_id}_v_0_cD1_std", 0.0)
-        if event == "transformer_inrush":
-            y_a_wavelet.append(val)
-        elif event == "capacitor_switching":
-            y_b_wavelet.append(val)
+    df_inrush = df[df["gt_simulated_event"] == "transformer_inrush"]
+    df_switching = df[df["gt_simulated_event"] == "capacitor_switching"]
+
+    def extract_std1(sub_df):
+        vals = []
+        for idx, row in sub_df.iterrows():
+            pcc_id = row.get("obs_pcc_id")
+            if not pcc_id or pd.isna(pcc_id):
+                pcc_id = "trans1_lv_pcc"
+            val = row[f"obs_{pcc_id}_v_0_cD1_std"] if f"obs_{pcc_id}_v_0_cD1_std" in row and not pd.isna(row[f"obs_{pcc_id}_v_0_cD1_std"]) else 0.0
+            vals.append(val)
+        return vals
+
+    y_a_wavelet = extract_std1(df_inrush)
+    y_b_wavelet = extract_std1(df_switching)
 
     print("--- Running TOST Practical Equivalence Testing ---")
     if len(y_a_wavelet) > 1 and len(y_b_wavelet) > 1:

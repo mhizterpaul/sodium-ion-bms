@@ -147,30 +147,27 @@ def benjamini_hochberg_correction(p_values):
 
 
 def run_dependence_analysis():
-    import json
+    import pandas as pd
     from pathlib import Path
-    data_path = Path(__file__).parent.parent / "simulation" / "dataset_1.json"
+    data_path = Path(__file__).parent.parent / "simulation" / "dataset_1.csv"
     if not data_path.exists():
-        raise FileNotFoundError(f"Dataset 1 not found at {data_path}. Run dataset generation first.")
+        raise FileNotFoundError(f"Dataset 1 CSV not found at {data_path}. Run dataset generation first.")
 
-    with open(data_path, "r") as f:
-        dataset_1 = json.load(f)
+    df = pd.read_csv(data_path)
+    X = df[["gt_line_parameter_multiplier", "gt_hidden_total_buses"]].values
 
-    X = []
-    Y_list = []
-    for item in dataset_1:
-        gt = item["ground_truth"]
-        obs = item["observations"]["features"]
-        f_num = gt["feeder_id"].split("_")[-1]
+    # We want to extract average voltage, current, and active power for the active feeder row
+    v_vals = []
+    i_vals = []
+    p_vals = []
+    for idx, row in df.iterrows():
+        f_num = row["gt_feeder_id"].split("_")[-1]
         pcc_id = f"trans{f_num}_lv_pcc"
-        X.append([gt["line_parameter_multiplier"], gt["hidden_total_buses"]])
-        Y_list.append([
-            obs.get(f"{pcc_id}_voltage_mag_avg", 0.0),
-            obs.get(f"{pcc_id}_current_mag_avg", 0.0),
-            obs.get(f"{pcc_id}_p_kw", 0.0)
-        ])
-    X = np.array(X)
-    Y = np.array(Y_list)
+        v_vals.append(row[f"obs_{pcc_id}_voltage_mag_avg"] if f"obs_{pcc_id}_voltage_mag_avg" in row and not pd.isna(row[f"obs_{pcc_id}_voltage_mag_avg"]) else 0.0)
+        i_vals.append(row[f"obs_{pcc_id}_current_mag_avg"] if f"obs_{pcc_id}_current_mag_avg" in row and not pd.isna(row[f"obs_{pcc_id}_current_mag_avg"]) else 0.0)
+        p_vals.append(row[f"obs_{pcc_id}_p_kw"] if f"obs_{pcc_id}_p_kw" in row and not pd.isna(row[f"obs_{pcc_id}_p_kw"]) else 0.0)
+
+    Y = np.column_stack([v_vals, i_vals, p_vals])
 
     print("--- Running Distance Correlation Test ---")
     res_dcor = permutation_test_dcor(X, Y, n_permutations=99, seed=42)
