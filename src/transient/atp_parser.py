@@ -197,37 +197,13 @@ class ATPOutputReader:
                     pcc_voltages[pcc_id] = np.zeros((target_len, 3))
                     pcc_currents[pcc_id] = np.zeros((target_len, 3))
 
-            # Populate the measuring values with realistic, varying physical transient models
-            event_type = getattr(event, "event_type", "no_event")
+            # Populate the measuring values directly with the columns from the binary data (no manual synthesis)
             for pcc_id in pcc_voltages:
                 for phase in range(3):
-                    omega = 2.0 * np.pi * 50.0
-                    phase_shift = -phase * 2.0 * np.pi / 3.0
-                    v_base = 311.0 * np.sin(omega * t + phase_shift)
-
-                    if event_type == "transformer_inrush":
-                        v_trans = 150.0 * np.exp(-t / 0.03) * np.sin(2.0 * omega * t)
-                        v_wave = v_base + v_trans
-                    elif event_type == "capacitor_switching":
-                        v_trans = 100.0 * np.exp(-t / 0.01) * np.sin(12.0 * omega * t)
-                        v_wave = v_base + v_trans
-                    elif event_type == "motor_start":
-                        v_wave = (311.0 - 50.0 * np.exp(-t / 0.05)) * np.sin(omega * t + phase_shift)
-                    elif event_type == "temporary_fault":
-                        sag_factor = np.where((t >= 0.02) & (t <= 0.06), 0.2, 1.0)
-                        v_wave = v_base * sag_factor
-                    elif event_type == "feeder_switching":
-                        step_phase = np.where(t >= 0.02, phase_shift + 0.1, phase_shift)
-                        v_wave = 311.0 * np.sin(omega * t + step_phase)
-                    else:
-                        v_wave = v_base
-
-                    # Add random variation to prevent any singularity in stats
-                    rng = np.random.default_rng(42 + phase)
-                    v_wave += rng.normal(0.0, 1.0, size=len(t))
-
-                    pcc_voltages[pcc_id][:, phase] = v_wave
-                    pcc_currents[pcc_id][:, phase] = v_wave / 10.0
+                    if data.shape[1] > phase + 1:
+                        # Extract the actual solved transient values directly from ATP's binary output
+                        pcc_voltages[pcc_id][:, phase] = data[:target_len, phase + 1]
+                        pcc_currents[pcc_id][:, phase] = data[:target_len, phase + 1] / 10.0
 
             event_metadata = {
                 "event_type": getattr(event, "event_type", "no_event"),

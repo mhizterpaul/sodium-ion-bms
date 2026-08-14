@@ -15,7 +15,34 @@ class ATPCaseBuilder:
         event_start = getattr(event, "start_time_s", 0.02)
         event_duration = getattr(event, "duration_s", 0.04)
 
-        # Build a valid ATP-EMTP card case file with perfect 8-column right-aligned integer fields
+        # Select physically real R, L, C values based on scenario multiplier and event
+        R = 0.5 * realization.line_parameters.get("mult", 1.0)
+        L = 20.0 if event_type == "transformer_inrush" else (5.0 if event_type == "motor_start" else 10.0)
+        C = 4.0 if event_type == "capacitor_switching" else 0.8
+
+        R_str = f"{R:.4f}".rjust(10)
+        L_str = f"{L:.4f}".rjust(10)
+        C_str = f"{C:.4f}".rjust(10)
+
+        v_pu = operating_point.voltage_pu.get("transformer1", 1.0)
+        amp = v_pu * 311.13
+
+        # Build 7E10.0 format source parameters
+        amp_str = f"{amp:.2f}".rjust(10)
+        freq_str = f"50.00".rjust(10)
+        a1_str = " ".rjust(10)
+        t1_str = " ".rjust(10)
+        tstart_str = f"-1.00".rjust(10)
+        tstop_str = f"100.00".rjust(10)
+
+        src_a = "14SRCA  -1" + amp_str + freq_str + f"0.00".rjust(10) + a1_str + t1_str + tstart_str + tstop_str
+        src_b = "14SRCB  -1" + amp_str + freq_str + f"-120.00".rjust(10) + a1_str + t1_str + tstart_str + tstop_str
+        src_c = "14SRCC  -1" + amp_str + freq_str + f"-240.00".rjust(10) + a1_str + t1_str + tstart_str + tstop_str
+
+        # Format event start time for switch closing
+        start_str = f"{event_start:.4f}".rjust(10)
+
+        # Build a valid ATP-EMTP card file
         atp_lines = [
             "BEGIN NEW DATA CASE",
             f"C  ATP Case File for {scenario_id}",
@@ -29,22 +56,24 @@ class ATPCaseBuilder:
             "    1000       1       1       1       1       0       0       1       0",
             "/BRANCH",
             "C < n1 >< n2 ><ref1><ref2>< R  >< L  >< C  >",
-            "  SRCA                      1.E3                                               0",
-            "  SRCB                      1.E3                                               0",
-            "  SRCC                      1.E3                                               0",
+            # High-resistance paths to ground to prevent open-source/open-switch singularity errors
+            "  SRCA                      1.E8                                               0",
+            "  SRCB                      1.E8                                               0",
+            "  SRCC                      1.E8                                               0",
+            # Standard physical branch cards
+            f"  S0A                       {R_str}{L_str}{C_str}                                     0",
+            f"  S0B                       {R_str}{L_str}{C_str}                                     0",
+            f"  S0C                       {R_str}{L_str}{C_str}                                     0",
             "/SWITCH",
             "C < n 1>< n 2>< Tclose ><Top/Tde ><   Ie   ><Vf/CLOP ><  type  >",
-            "  SRCA  S0A                                           MEASURING                0",
-            "  SRCB  S0B                                           MEASURING                0",
-            "  SRCC  S0C                                           MEASURING                0",
-            "  S1A             -7.654      1.E3                                             0",
-            "  S1B             -7.654      1.E3                                             0",
-            "  S1C             -7.654      1.E3                                             0",
+            f"  SRCA  S0A       {start_str}      1.E3                                             0",
+            f"  SRCB  S0B       {start_str}      1.E3                                             0",
+            f"  SRCC  S0C       {start_str}      1.E3                                             0",
             "/SOURCE",
             "C < n 1><>< Ampl.  >< Freq.  ><Phase/T0><   A1   ><   T1   >< TSTART >< TSTOP  >",
-            "14SRCA  -1    311.13       50.                                     -1.      100.",
-            "14SRCB  -1    311.13       50.     -120.                           -1.      100.",
-            "14SRCC  -1    311.13       50.     -240.                           -1.      100.",
+            src_a,
+            src_b,
+            src_c,
             "/OUTPUT",
             "  S0A   S0B   S0C",
             "BLANK BRANCH",
