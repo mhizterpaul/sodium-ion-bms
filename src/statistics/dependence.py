@@ -149,25 +149,24 @@ def benjamini_hochberg_correction(p_values):
 def run_dependence_analysis():
     import pandas as pd
     from pathlib import Path
-    data_path = Path(__file__).parent.parent / "simulation" / "dataset_1.csv"
+    data_path = Path(__file__).parent.parent / "simulation" / "dataset_2.csv"
     if not data_path.exists():
-        raise FileNotFoundError(f"Dataset 1 CSV not found at {data_path}. Run dataset generation first.")
+        raise FileNotFoundError(f"Dataset 2 CSV not found at {data_path}. Run dataset generation first.")
 
     df = pd.read_csv(data_path)
-    X = df[["gt_line_parameter_multiplier", "gt_hidden_total_buses"]].values
+    X = df[["gt_effective_load_kw"]].values
 
-    # We want to extract average voltage, current, and active power for the active feeder row
-    v_vals = []
-    i_vals = []
-    p_vals = []
+    # Extract cD1_std, cD2_std columns for the active measuring node from Dataset 2
+    col_std1 = []
+    col_std2 = []
     for idx, row in df.iterrows():
-        f_num = row["gt_feeder_id"].split("_")[-1]
-        pcc_id = f"trans{f_num}_lv_pcc"
-        v_vals.append(row[f"obs_{pcc_id}_voltage_mag_avg"] if f"obs_{pcc_id}_voltage_mag_avg" in row and not pd.isna(row[f"obs_{pcc_id}_voltage_mag_avg"]) else 0.0)
-        i_vals.append(row[f"obs_{pcc_id}_current_mag_avg"] if f"obs_{pcc_id}_current_mag_avg" in row and not pd.isna(row[f"obs_{pcc_id}_current_mag_avg"]) else 0.0)
-        p_vals.append(row[f"obs_{pcc_id}_p_kw"] if f"obs_{pcc_id}_p_kw" in row and not pd.isna(row[f"obs_{pcc_id}_p_kw"]) else 0.0)
+        pcc_id = row.get("obs_pcc_id")
+        if not pcc_id or pd.isna(pcc_id):
+            pcc_id = "trans1_lv_pcc"
+        col_std1.append(row[f"obs_{pcc_id}_v_0_cD1_std"] if f"obs_{pcc_id}_v_0_cD1_std" in row and not pd.isna(row[f"obs_{pcc_id}_v_0_cD1_std"]) else 0.0)
+        col_std2.append(row[f"obs_{pcc_id}_v_0_cD2_std"] if f"obs_{pcc_id}_v_0_cD2_std" in row and not pd.isna(row[f"obs_{pcc_id}_v_0_cD2_std"]) else 0.0)
 
-    Y = np.column_stack([v_vals, i_vals, p_vals])
+    Y = np.column_stack([col_std1, col_std2])
 
     print("--- Running Distance Correlation Test ---")
     res_dcor = permutation_test_dcor(X, Y, n_permutations=99, seed=42)

@@ -70,31 +70,30 @@ def permutation_test_mmd(X, Y, n_permutations=100, seed=42):
 def run_distribution_analysis():
     import pandas as pd
     from pathlib import Path
-    data_path = Path(__file__).parent.parent / "simulation" / "dataset_1.csv"
+    data_path = Path(__file__).parent.parent / "simulation" / "dataset_2.csv"
     if not data_path.exists():
-        raise FileNotFoundError(f"Dataset 1 CSV not found at {data_path}. Run dataset generation first.")
+        raise FileNotFoundError(f"Dataset 2 CSV not found at {data_path}. Run dataset generation first.")
 
     df = pd.read_csv(data_path)
 
-    df_radial = df[df["gt_topology_type"] == "radial"]
-    df_ring = df[df["gt_topology_type"] == "ring"]
+    df_linear = df[df["gt_load_type"] == "linear"]
+    df_nonlinear = df[df["gt_load_type"] != "linear"]
 
     def extract_Y(sub_df):
         if len(sub_df) == 0:
-            return np.empty((0, 3))
-        v_vals = []
-        i_vals = []
-        p_vals = []
+            return np.empty((0, 2))
+        col_std1 = []
+        col_std2 = []
         for idx, row in sub_df.iterrows():
-            f_num = row["gt_feeder_id"].split("_")[-1]
-            pcc_id = f"trans{f_num}_lv_pcc"
-            v_vals.append(row[f"obs_{pcc_id}_voltage_mag_avg"] if f"obs_{pcc_id}_voltage_mag_avg" in row and not pd.isna(row[f"obs_{pcc_id}_voltage_mag_avg"]) else 0.0)
-            i_vals.append(row[f"obs_{pcc_id}_current_mag_avg"] if f"obs_{pcc_id}_current_mag_avg" in row and not pd.isna(row[f"obs_{pcc_id}_current_mag_avg"]) else 0.0)
-            p_vals.append(row[f"obs_{pcc_id}_p_kw"] if f"obs_{pcc_id}_p_kw" in row and not pd.isna(row[f"obs_{pcc_id}_p_kw"]) else 0.0)
-        return np.column_stack([v_vals, i_vals, p_vals])
+            pcc_id = row.get("obs_pcc_id")
+            if not pcc_id or pd.isna(pcc_id):
+                pcc_id = "trans1_lv_pcc"
+            col_std1.append(row[f"obs_{pcc_id}_v_0_cD1_std"] if f"obs_{pcc_id}_v_0_cD1_std" in row and not pd.isna(row[f"obs_{pcc_id}_v_0_cD1_std"]) else 0.0)
+            col_std2.append(row[f"obs_{pcc_id}_v_0_cD2_std"] if f"obs_{pcc_id}_v_0_cD2_std" in row and not pd.isna(row[f"obs_{pcc_id}_v_0_cD2_std"]) else 0.0)
+        return np.column_stack([col_std1, col_std2])
 
-    Y_radial = extract_Y(df_radial)
-    Y_ring = extract_Y(df_ring)
+    Y_radial = extract_Y(df_linear)
+    Y_ring = extract_Y(df_nonlinear)
 
     print("--- Running Maximum Mean Discrepancy (MMD) Two-Sample Test ---")
     if len(Y_ring) > 0 and len(Y_radial) > 0:
