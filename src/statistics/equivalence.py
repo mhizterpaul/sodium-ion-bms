@@ -50,3 +50,46 @@ def tost_equivalence(y_a, y_b, margin=0.05):
         "equivalent": equivalent,
         "margin": float(margin)
     }
+
+
+def run_equivalence_analysis():
+    import pandas as pd
+    from pathlib import Path
+
+    data_path = Path(__file__).parent.parent / "simulation" / "dataset_2.csv"
+    if not data_path.exists():
+        raise FileNotFoundError(f"Dataset 2 CSV not found at {data_path}. Run dataset generation first.")
+
+    df = pd.read_csv(data_path)
+
+    df_inrush = df[df["gt_simulated_event"] == "transformer_inrush"]
+    df_switching = df[df["gt_simulated_event"] == "capacitor_switching"]
+
+    def extract_std1(sub_df):
+        vals = []
+        for idx, row in sub_df.iterrows():
+            pcc_id = row.get("obs_pcc_id")
+            if not pcc_id or pd.isna(pcc_id):
+                pcc_id = "trans1_lv_pcc"
+            val = row[f"obs_{pcc_id}_v_0_cD1_std"] if f"obs_{pcc_id}_v_0_cD1_std" in row and not pd.isna(row[f"obs_{pcc_id}_v_0_cD1_std"]) else 0.0
+            vals.append(val)
+        return vals
+
+    y_a_wavelet = extract_std1(df_inrush)
+    y_b_wavelet = extract_std1(df_switching)
+
+    print("--- Running TOST Practical Equivalence Testing ---")
+    if len(y_a_wavelet) > 1 and len(y_b_wavelet) > 1:
+        res_tost = tost_equivalence(y_a_wavelet, y_b_wavelet, margin=0.15)
+        print(f"Mean Diff:            {res_tost['difference']:.6f}")
+        print(f"Equivalence Margin:   {res_tost['margin']:.4f}")
+        print(f"TOST p-value:         {res_tost['p_equivalence']:.4f}")
+        print(f"Practically Equiv?:   {res_tost['equivalent']}")
+        return res_tost
+    else:
+        print("Skip: Not enough samples for TOST equivalence testing.")
+        return None
+
+
+if __name__ == "__main__":
+    run_equivalence_analysis()

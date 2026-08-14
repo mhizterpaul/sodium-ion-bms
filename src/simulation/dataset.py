@@ -273,6 +273,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
                 "scenario_id": scenario_id,
                 "feeder_id": f"feeder_{f_id}",
                 "event_type": event_type,
+                "simulated_event": event_type,
                 "effective_load_kw": float(sim_result.steady_state_measurements[pcc_id]["p_kw"]) if pcc_id in sim_result.steady_state_measurements else 0.0,
                 "load_type": config["load_comp"],
                 "start_timestamp_s": float(t_event.start_time_s),
@@ -281,6 +282,71 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
             dataset_2.append({"ground_truth": gt_2, "observations": obs_2})
 
     print(f"INFO: Generated Dataset 1 and Dataset 2 of {n_scenarios} scenarios in-memory successfully.")
+
+    # Persist the two datasets generated to disk in CSV format
+    import json
+    import pandas as pd
+    from pathlib import Path
+
+    dir_path = Path("src/simulation")
+    dir_path.mkdir(parents=True, exist_ok=True)
+
+    def to_std(obj):
+        if isinstance(obj, dict):
+            return {k: to_std(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [to_std(x) for x in obj]
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, (np.float32, np.float64)):
+            return float(obj)
+        elif isinstance(obj, (np.int32, np.int64)):
+            return int(obj)
+        return obj
+
+    # Flatten and convert Dataset 1
+    rows_1 = []
+    for item in dataset_1:
+        item_std = to_std(item)
+        row = {}
+        for k, v in item_std["ground_truth"].items():
+            row[f"gt_{k}"] = v
+        for k, v in item_std["observations"]["features"].items():
+            row[f"obs_{k}"] = v
+        rows_1.append(row)
+    pd.DataFrame(rows_1).to_csv(dir_path / "dataset_1.csv", index=False)
+
+    # Flatten and convert Dataset 2
+    rows_2 = []
+    for item in dataset_2:
+        item_std = to_std(item)
+        row = {}
+        for k, v in item_std["ground_truth"].items():
+            row[f"gt_{k}"] = v
+        obs = item_std["observations"]
+        row["obs_scenario_id"] = obs["scenario_id"]
+        row["obs_feeder_id"] = obs["feeder_id"]
+        row["obs_network_state_id"] = obs["network_state_id"]
+        row["obs_event_id"] = obs["event_id"]
+        row["obs_pcc_id"] = obs["pcc_id"]
+
+        row["obs_v_mags_ss"] = json.dumps(obs["steady_state_reference"]["v_mags_ss"])
+        row["obs_i_mags_ss"] = json.dumps(obs["steady_state_reference"]["i_mags_ss"])
+        row["obs_raw_transient_time"] = json.dumps(obs["raw_transient_waveform"].get("time", []))
+        row["obs_raw_transient_v"] = json.dumps(obs["raw_transient_waveform"].get("voltage_abc", []))
+        row["obs_raw_transient_i"] = json.dumps(obs["raw_transient_waveform"].get("current_abc", []))
+        row["obs_norm_transient_v"] = json.dumps(obs["normalized_transient_waveform"].get("voltage_abc", []))
+        row["obs_norm_transient_i"] = json.dumps(obs["normalized_transient_waveform"].get("current_abc", []))
+        row["obs_fft_v"] = json.dumps(obs["fft"].get("voltage", []))
+        row["obs_fft_i"] = json.dumps(obs["fft"].get("current", []))
+        row["obs_swt"] = json.dumps(obs.get("swt", {}))
+
+        for k, v in obs["features"].items():
+            row[f"obs_{k}"] = v
+        rows_2.append(row)
+    pd.DataFrame(rows_2).to_csv(dir_path / "dataset_2.csv", index=False)
+    print(f"INFO: Decoupled datasets successfully written to {dir_path / 'dataset_1.csv'} and {dir_path / 'dataset_2.csv'}")
+
     return dataset_1, dataset_2
 
 if __name__ == "__main__":

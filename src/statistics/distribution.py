@@ -65,3 +65,46 @@ def permutation_test_mmd(X, Y, n_permutations=100, seed=42):
         "n_permutations": n_permutations,
         "null_distribution": perm_mmds
     }
+
+
+def run_distribution_analysis():
+    import pandas as pd
+    from pathlib import Path
+    data_path = Path(__file__).parent.parent / "simulation" / "dataset_2.csv"
+    if not data_path.exists():
+        raise FileNotFoundError(f"Dataset 2 CSV not found at {data_path}. Run dataset generation first.")
+
+    df = pd.read_csv(data_path)
+
+    df_linear = df[df["gt_load_type"] == "linear"]
+    df_nonlinear = df[df["gt_load_type"] != "linear"]
+
+    def extract_Y(sub_df):
+        if len(sub_df) == 0:
+            return np.empty((0, 2))
+        col_std1 = []
+        col_std2 = []
+        for idx, row in sub_df.iterrows():
+            pcc_id = row.get("obs_pcc_id")
+            if not pcc_id or pd.isna(pcc_id):
+                pcc_id = "trans1_lv_pcc"
+            col_std1.append(row[f"obs_{pcc_id}_v_0_cD1_std"] if f"obs_{pcc_id}_v_0_cD1_std" in row and not pd.isna(row[f"obs_{pcc_id}_v_0_cD1_std"]) else 0.0)
+            col_std2.append(row[f"obs_{pcc_id}_v_0_cD2_std"] if f"obs_{pcc_id}_v_0_cD2_std" in row and not pd.isna(row[f"obs_{pcc_id}_v_0_cD2_std"]) else 0.0)
+        return np.column_stack([col_std1, col_std2])
+
+    Y_radial = extract_Y(df_linear)
+    Y_ring = extract_Y(df_nonlinear)
+
+    print("--- Running Maximum Mean Discrepancy (MMD) Two-Sample Test ---")
+    if len(Y_ring) > 0 and len(Y_radial) > 0:
+        res_mmd = permutation_test_mmd(Y_radial, Y_ring, n_permutations=99, seed=42)
+        print(f"MMD^2 Statistic:       {res_mmd['statistic']:.6f}")
+        print(f"MMD Permutation p-val: {res_mmd['p_value']:.4f}")
+        return res_mmd
+    else:
+        print("Skip: Not enough samples for both Radial and Ring topologies to execute MMD test.")
+        return None
+
+
+if __name__ == "__main__":
+    run_distribution_analysis()

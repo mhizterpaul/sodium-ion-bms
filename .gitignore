@@ -10,3 +10,11 @@ material_cache.json
 final_validation.json
 *.egg-info/
 __mocks__/
+*.lis
+*.dbg
+*.pl4
+*.pl4.bin
+*.json
+*.csv
+src/simulation/*.json
+src/simulation/*.csv

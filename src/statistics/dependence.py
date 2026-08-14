@@ -144,3 +144,50 @@ def benjamini_hochberg_correction(p_values):
     # Restore original order
     rev_sort_idx = np.argsort(sort_idx)
     return list(adjusted_p[rev_sort_idx])
+
+
+def run_dependence_analysis():
+    import pandas as pd
+    from pathlib import Path
+    data_path = Path(__file__).parent.parent / "simulation" / "dataset_2.csv"
+    if not data_path.exists():
+        raise FileNotFoundError(f"Dataset 2 CSV not found at {data_path}. Run dataset generation first.")
+
+    df = pd.read_csv(data_path)
+    X = df[["gt_effective_load_kw"]].values
+
+    # Extract cD1_std, cD2_std columns for the active measuring node from Dataset 2
+    col_std1 = []
+    col_std2 = []
+    for idx, row in df.iterrows():
+        pcc_id = row.get("obs_pcc_id")
+        if not pcc_id or pd.isna(pcc_id):
+            pcc_id = "trans1_lv_pcc"
+        col_std1.append(row[f"obs_{pcc_id}_v_0_cD1_std"] if f"obs_{pcc_id}_v_0_cD1_std" in row and not pd.isna(row[f"obs_{pcc_id}_v_0_cD1_std"]) else 0.0)
+        col_std2.append(row[f"obs_{pcc_id}_v_0_cD2_std"] if f"obs_{pcc_id}_v_0_cD2_std" in row and not pd.isna(row[f"obs_{pcc_id}_v_0_cD2_std"]) else 0.0)
+
+    Y = np.column_stack([col_std1, col_std2])
+
+    print("--- Running Distance Correlation Test ---")
+    res_dcor = permutation_test_dcor(X, Y, n_permutations=99, seed=42)
+    raw_p = res_dcor["p_value"]
+    adjusted_p = benjamini_hochberg_correction([raw_p])[0]
+
+    print(f"Distance Correlation Statistic: {res_dcor['statistic']:.4f}")
+    print(f"Raw Permutation p-value:        {raw_p:.4f}")
+    print(f"Adjusted p-value (FDR):         {adjusted_p:.4f}")
+
+    print("\n--- Running HSIC Nonlinear Confirmation Test ---")
+    res_hsic = permutation_test_hsic(X, Y, n_permutations=99, seed=42)
+    print(f"HSIC Statistic:        {res_hsic['statistic']:.6f}")
+    print(f"HSIC Permutation p-val: {res_hsic['p_value']:.4f}")
+
+    return {
+        "dcor": res_dcor,
+        "hsic": res_hsic,
+        "adjusted_p": adjusted_p
+    }
+
+
+if __name__ == "__main__":
+    run_dependence_analysis()

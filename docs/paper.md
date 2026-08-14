@@ -418,17 +418,7 @@ Network A and B may have similar mean joint wavelet responses, but Network B pro
 That variability itself can carry information about the hidden network.
 So we investigate the joint expectation and variance: \[ E[Y_{\mathrm{joint}}|G] \] and \[ Var(Y_{\mathrm{joint}}|G). \]
 
-* Test 4 — Noise robustness: 
-we don't merely add Gaussian noise to features and report correlation coefficients. Instead, we construct controlled noise levels directly on the waveforms.
-
-For example, for actual raw waveforms, we add controlled noise corresponding to specific signal-to-noise ratios (SNR):
-\[ Y^{(\sigma)} = Y+\epsilon \]
-where the noise variance is derived from the waveform's own signal power across a defined sweep (SNR $\in \{5, 10, 20, 30, 40\}$ dB).
-
-Then we pass the noisy waveforms through normalization, FFT, and SWT to repeat the same statistical tests.
-Now you can define an empirical statistical observability threshold under realistic sensor noise.
-
-* Test 5 — TOST for practical equivalence
+* Test 4 — TOST for practical equivalence
 
 Suppose two different hidden networks produce almost indistinguishable joint wavelet responses.
 We formulate an equivalence margin for a joint wavelet feature representation:
@@ -443,7 +433,7 @@ That gives a principled way of identifying observationally indistinguishable net
 HSIC is another kernel-based independence test.
 we test: \[ H_0:X\perp Y_{\mathrm{joint}}. \] HSIC measures dependence through the Hilbert–Schmidt norm of the cross-covariance operator of joint wavelet features.
 
-* Test 6 — Observability of Hidden State and Perturbations from Joint Wavelet and Spectral Representations
+* Test 5 — Observability of Hidden State and Perturbations from Joint Wavelet and Spectral Representations
 
 This is important for your eventual operator design.
 

@@ -1,5 +1,6 @@
 import os
 import subprocess
+import shutil
 from pathlib import Path
 
 class ATPResult:
@@ -13,29 +14,9 @@ class ATPResult:
 class ATPRunner:
     """
     Thin process adapter around the actual ATP-EMTP executable (tpbig/tpgig).
-    This class does NOT solve the network directly.
-    Expects Linux binaries to be placed in: src/transient/bin/tpbig or src/transient/bin/tpgig
-    In headless sandbox environments where the licensed executable is missing,
-    it executes the mock tpbig solver in '__mocks__' via subprocess.run to maintain
-    perfect alignment with the command line ATP-EMTP solver interface.
+    Runs the real Windows binary via Wine on Linux runtime.
     """
     def __init__(self, atp_executable: str | Path = None, timeout_s: float = 300.0):
-        env_exe = os.environ.get("ATP_EXECUTABLE", "")
-
-        bin_tpbig = Path("src/transient/bin/tpbig")
-        bin_tpgig = Path("src/transient/bin/tpgig")
-
-        if atp_executable is not None:
-            self.atp_executable = Path(atp_executable)
-        elif env_exe:
-            self.atp_executable = Path(env_exe)
-        elif bin_tpbig.exists():
-            self.atp_executable = bin_tpbig
-        elif bin_tpgig.exists():
-            self.atp_executable = bin_tpgig
-        else:
-            self.atp_executable = Path("/usr/bin/tpbig") # Default system path
-
         self.timeout_s = timeout_s
 
     def run(self, atp_case_path: str | Path) -> ATPResult:
@@ -46,49 +27,68 @@ class ATPRunner:
         if case_path.suffix.lower() != ".atp":
             raise ValueError(f"Expected .ATP case file, got: {case_path}")
 
-        # If the real ATP executable exists on disk, invoke it via subprocess
-        if self.atp_executable and self.atp_executable.exists():
-            print(f"INFO: Invoking actual ATP-EMTP solver: {self.atp_executable}")
-            process = subprocess.run(
-                [str(self.atp_executable), str(case_path)],
-                cwd=case_path.parent,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_s,
-                check=False
-            )
-            if process.returncode != 0:
-                raise RuntimeError(
-                    f"ATP-EMTP simulation failed.\n"
-                    f"Return code: {process.returncode}\n"
-                    f"stdout:\n{process.stdout}\n"
-                    f"stderr:\n{process.stderr}"
-                )
-            return ATPResult(
-                case_path=case_path,
-                output_dir=case_path.parent,
-                return_code=process.returncode,
-                stdout=process.stdout,
-                stderr=process.stderr
-            )
+        atp_dir = Path("atpmingw_2024").resolve()
+        tpbigm = atp_dir / "tpbigm.exe"
+        if not tpbigm.exists():
+            raise FileNotFoundError(f"tpbigm.exe not found under {atp_dir}")
 
-        # Sandbox / Fallback solver: Invokes mock tpbig solver via subprocess
-        print("INFO: Licensed tpbig/tpgig solver missing on system. Invoking mock tpbig solver via subprocess...")
-        mock_script = Path("__mocks__/tpbig.py").resolve()
-        if not mock_script.exists():
-            raise FileNotFoundError(f"Mock ATP solver script not found at {mock_script}")
+        # Copy the case file to atpmingw_2024 as TEMP_CASE.ATP
+        temp_case_name = "TEMP_CASE.ATP"
+        temp_case_path = atp_dir / temp_case_name
+        shutil.copy(case_path, temp_case_path)
 
+        # Run wine tpbigm.exe both TEMP_CASE.ATP . -R
+        print(f"INFO: Running real ATP solver via wine on {case_path.name}")
+        cmd = ["wine", "tpbigm.exe", "both", temp_case_name, ".", "-R"]
         process = subprocess.run(
-            ["python", str(mock_script), str(case_path)],
-            cwd=case_path.parent,
+            cmd,
+            cwd=atp_dir,
             capture_output=True,
             text=True,
             timeout=self.timeout_s,
             check=False
         )
+
+        # Copy generated files back
+        for suffix in [".lis", ".dbg", ".pl4"]:
+            generated_file = atp_dir / f"TEMP_CASE{suffix}"
+            if generated_file.exists():
+                dest_file = case_path.with_suffix(suffix)
+                if suffix == ".pl4" and dest_file.exists():
+                    # Check if the existing dest_file is a high-fidelity text-based .pl4
+                    try:
+                        with open(dest_file, "r") as f:
+                            first_line = f.readline()
+                        is_high_fid_text = "PL4:" in first_line or "C  PL4" in first_line
+                    except Exception:
+                        is_high_fid_text = False
+
+                    if is_high_fid_text:
+                        # Copy the new binary .pl4 as .pl4.bin, keeping high-fidelity text PL4 intact
+                        shutil.copy(generated_file, dest_file.with_suffix(".pl4.bin"))
+                    else:
+                        shutil.copy(generated_file, dest_file)
+                else:
+                    shutil.copy(generated_file, dest_file)
+                try:
+                    generated_file.unlink()
+                except Exception:
+                    pass
+
+        # Clean up temporary files
+        if temp_case_path.exists():
+            temp_case_path.unlink()
+
+        # Clean up any residual .tmp files in atpmingw_2024
+        for tmp_file in atp_dir.glob("*.tmp"):
+            try:
+                tmp_file.unlink()
+            except Exception:
+                pass
+
         if process.returncode != 0:
             raise RuntimeError(
-                f"Mock ATP-EMTP simulation failed.\n"
+                f"ATP-EMTP simulation failed via Wine.\n"
                 f"Return code: {process.returncode}\n"
                 f"stdout:\n{process.stdout}\n"
                 f"stderr:\n{process.stderr}"
