@@ -1,5 +1,34 @@
 import numpy as np
 
+def run_permutation_loop(statistic_func, X, Y, n_permutations=100, seed=42):
+    """
+    In-line permutation test helper.
+    """
+    rng = np.random.default_rng(seed)
+    X = np.atleast_2d(X)
+    Y = np.atleast_2d(Y)
+
+    obs_stat = float(statistic_func(X, Y))
+    count = 0
+    perm_stats = []
+    n = X.shape[0]
+
+    for _ in range(n_permutations):
+        perm_indices = rng.permutation(n)
+        perm_Y = Y[perm_indices]
+        p_stat = float(statistic_func(X, perm_Y))
+        perm_stats.append(p_stat)
+        if p_stat >= obs_stat:
+            count += 1
+
+    p_value = float((count + 1) / (n_permutations + 1))
+    return {
+        "statistic": obs_stat,
+        "p_value": p_value,
+        "n_permutations": n_permutations,
+        "null_distribution": perm_stats
+    }
+
 def dist_matrix(X):
     """
     Computes pairwise Euclidean distance matrix for X.
@@ -46,8 +75,7 @@ def permutation_test_dcor(X, Y, n_permutations=100, seed=42):
     """
     Permutation test for Distance Correlation.
     """
-    from src.statistics.permutation import run_permutation_test
-    return run_permutation_test(distance_correlation, X, Y, n_permutations=n_permutations, seed=seed)
+    return run_permutation_loop(distance_correlation, X, Y, n_permutations=n_permutations, seed=seed)
 
 def rbf_kernel(X, sigma=None):
     D2 = dist_matrix(X)**2
@@ -75,8 +103,7 @@ def permutation_test_hsic(X, Y, n_permutations=100, seed=42):
     """
     Permutation test for HSIC.
     """
-    from src.statistics.permutation import run_permutation_test
-    return run_permutation_test(hsic_statistic, X, Y, n_permutations=n_permutations, seed=seed)
+    return run_permutation_loop(hsic_statistic, X, Y, n_permutations=n_permutations, seed=seed)
 
 def benjamini_hochberg_correction(p_values):
     """
