@@ -1,34 +1,5 @@
 import numpy as np
 
-def run_permutation_loop(statistic_func, X, Y, n_permutations=100, seed=42):
-    """
-    In-line permutation test helper.
-    """
-    rng = np.random.default_rng(seed)
-    X = np.atleast_2d(X)
-    Y = np.atleast_2d(Y)
-
-    obs_stat = float(statistic_func(X, Y))
-    count = 0
-    perm_stats = []
-    n = X.shape[0]
-
-    for _ in range(n_permutations):
-        perm_indices = rng.permutation(n)
-        perm_Y = Y[perm_indices]
-        p_stat = float(statistic_func(X, perm_Y))
-        perm_stats.append(p_stat)
-        if p_stat >= obs_stat:
-            count += 1
-
-    p_value = float((count + 1) / (n_permutations + 1))
-    return {
-        "statistic": obs_stat,
-        "p_value": p_value,
-        "n_permutations": n_permutations,
-        "null_distribution": perm_stats
-    }
-
 def dist_matrix(X):
     """
     Computes pairwise Euclidean distance matrix for X.
@@ -53,7 +24,7 @@ def distance_covariance(A, B):
 
 def distance_correlation(X, Y):
     """
-    Computes distance correlation between X and Y.
+    Computes distance correlation between X and Y directly.
     """
     X = np.atleast_2d(X)
     Y = np.atleast_2d(Y)
@@ -70,12 +41,6 @@ def distance_correlation(X, Y):
     if dcov_XX == 0 or dcov_YY == 0:
         return 0.0
     return float(dcov_XY / np.sqrt(dcov_XX * dcov_YY))
-
-def permutation_test_dcor(X, Y, n_permutations=100, seed=42):
-    """
-    Permutation test for Distance Correlation.
-    """
-    return run_permutation_loop(distance_correlation, X, Y, n_permutations=n_permutations, seed=seed)
 
 def rbf_kernel(X, sigma=None):
     D2 = dist_matrix(X)**2
@@ -98,12 +63,6 @@ def hsic_statistic(X, Y):
     HL = H @ L
     statistic = np.trace(HK @ HL) / ((n - 1) ** 2) if n > 1 else 0.0
     return max(0.0, float(statistic))
-
-def permutation_test_hsic(X, Y, n_permutations=100, seed=42):
-    """
-    Permutation test for HSIC.
-    """
-    return run_permutation_loop(hsic_statistic, X, Y, n_permutations=n_permutations, seed=seed)
 
 def benjamini_hochberg_correction(p_values):
     """
@@ -133,7 +92,7 @@ def benjamini_hochberg_correction(p_values):
 
 def run_dependence_analysis():
     """
-    Runs dependence analysis (Distance Correlation + HSIC) on joint FFT/SWT representation
+    Runs dependence analysis (Distance Correlation + HSIC) directly on joint representation
     extracted from normalized waveforms in Dataset 2.
     """
     from src.statistics.data import load_dataset_2, extract_joint_representation
@@ -141,24 +100,18 @@ def run_dependence_analysis():
     df = load_dataset_2()
     X, Y_joint = extract_joint_representation(df)
 
-    print("--- Running Distance Correlation Test on Joint Wavelet/Spectral Representation ---")
-    res_dcor = permutation_test_dcor(X, Y_joint, n_permutations=99, seed=42)
-    raw_p = res_dcor["p_value"]
-    adjusted_p = benjamini_hochberg_correction([raw_p])[0]
+    dcor_stat = distance_correlation(X, Y_joint)
+    hsic_stat = hsic_statistic(X, Y_joint)
 
-    print(f"Distance Correlation Statistic: {res_dcor['statistic']:.4f}")
-    print(f"Raw Permutation p-value:        {raw_p:.4f}")
-    print(f"Adjusted p-value (FDR):         {adjusted_p:.4f}")
+    print("--- Running Distance Correlation Test on Joint Wavelet/Spectral Representation ---")
+    print(f"Distance Correlation Statistic: {dcor_stat:.6f}")
 
     print("\n--- Running HSIC Nonlinear Confirmation Test on Joint Wavelet/Spectral Representation ---")
-    res_hsic = permutation_test_hsic(X, Y_joint, n_permutations=99, seed=42)
-    print(f"HSIC Statistic:        {res_hsic['statistic']:.6f}")
-    print(f"HSIC Permutation p-val: {res_hsic['p_value']:.4f}")
+    print(f"HSIC Statistic:                 {hsic_stat:.6f}")
 
     return {
-        "dcor": res_dcor,
-        "hsic": res_hsic,
-        "adjusted_p": adjusted_p
+        "dcor": dcor_stat,
+        "hsic": hsic_stat
     }
 
 

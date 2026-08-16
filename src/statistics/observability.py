@@ -1,5 +1,5 @@
 import numpy as np
-from src.statistics.dependence import permutation_test_dcor, permutation_test_hsic
+from src.statistics.dependence import distance_correlation, hsic_statistic
 
 def run_observability_analysis():
     """
@@ -12,15 +12,15 @@ def run_observability_analysis():
     X, Y_joint = extract_joint_representation(df)
 
     print("--- Test 5: Observability of Hidden State and Perturbations from Joint Wavelet/Spectral Representations ---")
-    res_dcor = permutation_test_dcor(X, Y_joint, n_permutations=99, seed=42)
-    res_hsic = permutation_test_hsic(X, Y_joint, n_permutations=99, seed=42)
+    dcor_val = distance_correlation(X, Y_joint)
+    hsic_val = hsic_statistic(X, Y_joint)
 
-    print(f"Joint dCor Statistic: {res_dcor['statistic']:.4f} (p-value: {res_dcor['p_value']:.4f})")
-    print(f"Joint HSIC Statistic: {res_hsic['statistic']:.6f} (p-value: {res_hsic['p_value']:.4f})")
+    print(f"Joint dCor Statistic: {dcor_val:.6f}")
+    print(f"Joint HSIC Statistic: {hsic_val:.6f}")
 
     return {
-        "dcor": res_dcor,
-        "hsic": res_hsic
+        "dcor": dcor_val,
+        "hsic": hsic_val
     }
 
 if __name__ == "__main__":

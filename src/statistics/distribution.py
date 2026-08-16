@@ -34,41 +34,6 @@ def mmd_statistic(X, Y, sigma=None):
     mmd2 = term_xx + term_yy - 2 * term_xy
     return float(mmd2)
 
-def permutation_test_mmd(X, Y, n_permutations=100, seed=42):
-    """
-    Permutation test for MMD.
-    """
-    rng = np.random.default_rng(seed)
-    X = np.atleast_2d(X)
-    Y = np.atleast_2d(Y)
-    obs_mmd = mmd_statistic(X, Y)
-
-    n_x = X.shape[0]
-    combined = np.vstack([X, Y])
-    n_total = combined.shape[0]
-
-    count = 0
-    perm_mmds = []
-    for _ in range(n_permutations):
-        perm_indices = rng.permutation(n_total)
-        perm_combined = combined[perm_indices]
-        perm_X = perm_combined[:n_x]
-        perm_Y = perm_combined[n_x:]
-
-        p_mmd = mmd_statistic(perm_X, perm_Y)
-        perm_mmds.append(p_mmd)
-        if p_mmd >= obs_mmd:
-            count += 1
-
-    p_value = float((count + 1) / (n_permutations + 1))
-    return {
-        "statistic": obs_mmd,
-        "p_value": p_value,
-        "n_permutations": n_permutations,
-        "null_distribution": perm_mmds
-    }
-
-
 def run_distribution_analysis():
     """
     Runs MMD two-sample test comparing joint representations between explicit hidden load groups (linear vs non-linear).
@@ -86,10 +51,9 @@ def run_distribution_analysis():
     print(f"Comparison groups: Linear loads (N={len(Y_linear)}) vs Non-linear/Heavy-duty loads (N={len(Y_nonlinear)})")
 
     if len(Y_linear) > 0 and len(Y_nonlinear) > 0:
-        res_mmd = permutation_test_mmd(Y_linear, Y_nonlinear, n_permutations=99, seed=42)
-        print(f"MMD^2 Statistic:       {res_mmd['statistic']:.6f}")
-        print(f"MMD Permutation p-val: {res_mmd['p_value']:.4f}")
-        return res_mmd
+        mmd_val = mmd_statistic(Y_linear, Y_nonlinear)
+        print(f"MMD^2 Statistic: {mmd_val:.6f}")
+        return {"statistic": mmd_val}
     else:
         print("Skip: Insufficient samples across comparison groups.")
         return None

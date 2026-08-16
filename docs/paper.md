@@ -382,7 +382,7 @@ Calculate \[ dCor(X,Y). \]
 
 the hypothesis becomes:
 \[ H_0:X\perp Y \] versus \[ H_1:X\not\perp Y. \]
-Evaluated via permutation tests and Benjamini-Hochberg FDR correction.
+Evaluated with Benjamini-Hochberg FDR correction.
 
 * Test 2 — MMD: do two hidden networks generate different measurement distributions?
 
@@ -403,12 +403,12 @@ This is extremely appropriate for the dataset because we don't need to assume th
 
 Evaluates multivariate separation of joint spectral/wavelet representations $Y_{\mathrm{joint}}$ across categorical switching event types ($X = \mathrm{gt\_event\_type}$).
 
-Anderson's PERMANOVA provides a non-parametric multivariate analogue of ANOVA based on distances and permutations.
+Anderson's PERMANOVA provides a non-parametric multivariate analogue of ANOVA based on distances.
 
 The model can be: \[ D_{ij}=d(Y_i,Y_j) \]
 where \(d\) is Euclidean distance over $Y_{\mathrm{joint}}$.
 
-Then test: \[ H_0: \text{measurement distributions do not differ by network realization}. \] The resulting pseudo-\(F\) statistic and permutation \(p\)-value tell you whether the groups differ.
+Then test: \[ H_0: \text{measurement distributions do not differ by network realization}. \] The resulting pseudo-\(F\) statistic tells you whether the groups differ.
 
 More importantly we report:
 \[ R^2_{\rm network} = \frac{SS_{\rm network}}{SS_{\rm total}}. \]
@@ -453,7 +453,6 @@ where $Y_{\mathrm{joint}}$ represents the actual joint wavelet-domain and spectr
 
 Tests applied:
 - Distance correlation
-- Permutation test on joint wavelet/spectral data
 - HSIC as secondary confirmation of nonlinear dependency on joint data
 
 This is directly useful for answering the central research question: Are hidden network state and perturbations observable from the joint wavelet and spectral representations at the station boundary?
