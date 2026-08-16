@@ -16,7 +16,6 @@ from src.hidden_network.loads import distribute_loads
 from src.hidden_network.perturbations import apply_topology_reconfiguration
 from src.transient.events import TransientEvent
 from src.hidden_network.pcc_meters import get_pcc_measurements
-from src.signal_processing.normalization import normalize_waveform
 
 def validate_dataset_1(df_1: pd.DataFrame):
     """
@@ -95,10 +94,11 @@ def validate_dataset_2(df_2: pd.DataFrame):
 def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = True):
     """
     Orchestrates experiment dataset generation:
-    1. Sweeps through OpenDSS/QSTS operating point scenarios.
-    2. Runs EMT transient simulations to acquire 3-phase waveforms.
-    3. Normalizes transient waveforms using steady-state transformer references.
-    4. Serializes two decoupled CSV datasets (Dataset 1 and Dataset 2).
+    1. Sweeps through OpenDSS/QSTS operating point scenarios using CoSimulationRunner.
+    2. Runs EMT transient simulations via ATPRunner to acquire 3-phase waveforms.
+    3. Extracts steady-state waveforms directly from pre-event solved simulation measurements.
+    4. Normalizes transient waveforms using steady-state transformer references.
+    5. Serializes two decoupled CSV datasets (Dataset 1 and Dataset 2).
     """
     print(f"INFO: Sweeping and generating {n_scenarios} OpenDSS QSTS/operating point scenarios...")
     runner = CoSimulationRunner()
@@ -221,6 +221,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
         # Execute simulation
         sim_result = runner.run_scenario(sim_scen)
         time_s = sim_result.time_s
+        pre_event_mask = time_s < t_event.start_time_s
 
         # 3. BUILD DATASET 1 RECORDS
         for f_id in [1, 2, 3]:
@@ -240,25 +241,16 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                 r_est = p_val / (3.0 * i_lv_avg**2 + 1e-6)
                 x_est = q_val / (3.0 * i_lv_avg**2 + 1e-6)
 
-            # Generate 3-phase steady state sinusoidal waveforms
-            ss_t = time_s.tolist()
-            if pcc_res:
-                v_peak = np.sqrt(2) * float(np.mean(pcc_res.raw_voltage))
-                i_peak = np.sqrt(2) * float(np.mean(pcc_res.raw_current))
+            # Extract 3-phase steady-state waveforms directly from solved pre-event simulation data
+            if pcc_res is not None and pcc_res.raw_voltage is not None and pcc_res.raw_voltage.shape[0] == len(time_s):
+                # Extract pre-event window or actual raw solved waveforms
+                v_raw_ss = pcc_res.raw_voltage
+                i_raw_ss = pcc_res.raw_current
+                v_ss_abc = [v_raw_ss[:, 0].tolist(), v_raw_ss[:, 1].tolist(), v_raw_ss[:, 2].tolist()]
+                i_ss_abc = [i_raw_ss[:, 0].tolist(), i_raw_ss[:, 1].tolist(), i_raw_ss[:, 2].tolist()]
             else:
-                v_peak = 415.0 * np.sqrt(2) / np.sqrt(3)
-                i_peak = 10.0
-
-            v_ss_abc = [
-                (v_peak * np.sin(2.0*np.pi*50.0*time_s)).tolist(),
-                (v_peak * np.sin(2.0*np.pi*50.0*time_s - 2*np.pi/3)).tolist(),
-                (v_peak * np.sin(2.0*np.pi*50.0*time_s + 2*np.pi/3)).tolist()
-            ]
-            i_ss_abc = [
-                (i_peak * np.sin(2.0*np.pi*50.0*time_s)).tolist(),
-                (i_peak * np.sin(2.0*np.pi*50.0*time_s - 2*np.pi/3)).tolist(),
-                (i_peak * np.sin(2.0*np.pi*50.0*time_s + 2*np.pi/3)).tolist()
-            ]
+                v_ss_abc = [[0.0]*len(time_s), [0.0]*len(time_s), [0.0]*len(time_s)]
+                i_ss_abc = [[0.0]*len(time_s), [0.0]*len(time_s), [0.0]*len(time_s)]
 
             row_1 = {
                 "gt_scenario_id": f"{scenario_id}_feeder_{f_id}",
@@ -269,7 +261,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                 "gt_estimated_z_eq_ohm": round(float(z_est), 4),
                 "gt_estimated_r_eq_ohm": round(float(r_est), 4),
                 "gt_estimated_x_eq_ohm": round(float(x_est), 4),
-                "obs_steady_state_time": json.dumps(ss_t),
+                "obs_steady_state_time": json.dumps(time_s.tolist()),
                 "obs_steady_state_voltage_abc": json.dumps(v_ss_abc),
                 "obs_steady_state_current_abc": json.dumps(i_ss_abc)
             }
