@@ -10,6 +10,9 @@ def mmd_statistic(X, Y, sigma=None):
     n_x = X.shape[0]
     n_y = Y.shape[0]
 
+    if n_x == 0 or n_y == 0:
+        return 0.0
+
     if sigma is None:
         xy = np.vstack([X, Y])
         D2 = dist_matrix(xy)**2
@@ -20,7 +23,6 @@ def mmd_statistic(X, Y, sigma=None):
     K_XX = np.exp(-dist_matrix(X)**2 / (2 * sigma**2))
     K_YY = np.exp(-dist_matrix(Y)**2 / (2 * sigma**2))
 
-    # Compute pairwise distance between X and Y
     diff = X[:, np.newaxis, :] - Y[np.newaxis, :, :]
     D2_XY = np.sum(diff**2, axis=-1)
     K_XY = np.exp(-D2_XY / (2 * sigma**2))
@@ -58,7 +60,7 @@ def permutation_test_mmd(X, Y, n_permutations=100, seed=42):
         if p_mmd >= obs_mmd:
             count += 1
 
-    p_value = (count + 1) / (n_permutations + 1)
+    p_value = float((count + 1) / (n_permutations + 1))
     return {
         "statistic": obs_mmd,
         "p_value": p_value,
@@ -68,41 +70,28 @@ def permutation_test_mmd(X, Y, n_permutations=100, seed=42):
 
 
 def run_distribution_analysis():
-    import pandas as pd
-    from pathlib import Path
-    data_path = Path(__file__).parent.parent / "simulation" / "dataset_2.csv"
-    if not data_path.exists():
-        raise FileNotFoundError(f"Dataset 2 CSV not found at {data_path}. Run dataset generation first.")
+    """
+    Runs MMD two-sample test comparing joint representations between explicit hidden load groups (linear vs non-linear).
+    """
+    from src.statistics.data import load_dataset_2, extract_joint_representation
 
-    df = pd.read_csv(data_path)
+    df = load_dataset_2()
+    _, Y_joint = extract_joint_representation(df)
 
-    df_linear = df[df["gt_load_type"] == "linear"]
-    df_nonlinear = df[df["gt_load_type"] != "linear"]
+    is_linear = (df["gt_load_type"] == "linear").values
+    Y_linear = Y_joint[is_linear]
+    Y_nonlinear = Y_joint[~is_linear]
 
-    def extract_Y(sub_df):
-        if len(sub_df) == 0:
-            return np.empty((0, 2))
-        col_std1 = []
-        col_std2 = []
-        for idx, row in sub_df.iterrows():
-            pcc_id = row.get("obs_pcc_id")
-            if not pcc_id or pd.isna(pcc_id):
-                pcc_id = "trans1_lv_pcc"
-            col_std1.append(row[f"obs_{pcc_id}_v_0_cD1_std"] if f"obs_{pcc_id}_v_0_cD1_std" in row and not pd.isna(row[f"obs_{pcc_id}_v_0_cD1_std"]) else 0.0)
-            col_std2.append(row[f"obs_{pcc_id}_v_0_cD2_std"] if f"obs_{pcc_id}_v_0_cD2_std" in row and not pd.isna(row[f"obs_{pcc_id}_v_0_cD2_std"]) else 0.0)
-        return np.column_stack([col_std1, col_std2])
+    print("--- Running Maximum Mean Discrepancy (MMD) Two-Sample Distribution Test ---")
+    print(f"Comparison groups: Linear loads (N={len(Y_linear)}) vs Non-linear/Heavy-duty loads (N={len(Y_nonlinear)})")
 
-    Y_radial = extract_Y(df_linear)
-    Y_ring = extract_Y(df_nonlinear)
-
-    print("--- Running Maximum Mean Discrepancy (MMD) Two-Sample Test ---")
-    if len(Y_ring) > 0 and len(Y_radial) > 0:
-        res_mmd = permutation_test_mmd(Y_radial, Y_ring, n_permutations=99, seed=42)
+    if len(Y_linear) > 0 and len(Y_nonlinear) > 0:
+        res_mmd = permutation_test_mmd(Y_linear, Y_nonlinear, n_permutations=99, seed=42)
         print(f"MMD^2 Statistic:       {res_mmd['statistic']:.6f}")
         print(f"MMD Permutation p-val: {res_mmd['p_value']:.4f}")
         return res_mmd
     else:
-        print("Skip: Not enough samples for both Radial and Ring topologies to execute MMD test.")
+        print("Skip: Insufficient samples across comparison groups.")
         return None
 
 

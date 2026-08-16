@@ -1,6 +1,10 @@
 import os
 import csv
+import json
 import numpy as np
+import pandas as pd
+from pathlib import Path
+
 from src.simulation.scenario import HiddenNetworkScenario, SimulationScenario
 from src.simulation.runner import CoSimulationRunner
 from src.hidden_network.topology import (
@@ -12,25 +16,96 @@ from src.hidden_network.loads import distribute_loads
 from src.hidden_network.perturbations import apply_topology_reconfiguration
 from src.transient.events import TransientEvent
 from src.hidden_network.pcc_meters import get_pcc_measurements
-from src.transient.synchronization import synchronize_spectrum_analyzer_measurements
-from src.transient.atp_parser import evaluate_atp
+from src.signal_processing.normalization import normalize_waveform
 
-def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = False):
+def validate_dataset_1(df_1: pd.DataFrame):
     """
-    Orchestrates the program experiments dataset generation by sweeping through scenarios,
-    generating 3 independent LV networks under Option A, solving OpenDSS operating points,
-    running EMT simulations to acquire three-phase transient waveforms, and outputting
-    two distinct, decoupled datasets.
-    Each element in the datasets strictly references exactly one transformer's measurements
-    to prevent cross-transformer leaks.
+    Validates Dataset 1 schema, numerical integrity, and waveform dimensions.
     """
-    print(f"INFO: Sweeping and generating {n_scenarios} OpenDSS QSTS/operating point scenarios (In-Memory)...")
+    required_cols = [
+        "gt_scenario_id", "gt_feeder_id", "gt_topology_type",
+        "gt_estimated_number_of_buses", "gt_estimated_number_of_branches",
+        "gt_estimated_z_eq_ohm", "gt_estimated_r_eq_ohm", "gt_estimated_x_eq_ohm",
+        "obs_steady_state_time", "obs_steady_state_voltage_abc", "obs_steady_state_current_abc"
+    ]
+    for col in required_cols:
+        if col not in df_1.columns:
+            raise ValueError(f"Dataset 1 validation error: missing required column '{col}'")
+
+    if "gt_line_parameter_multiplier" in df_1.columns:
+        raise ValueError("Dataset 1 validation error: 'line_parameter_multiplier' must be removed from Dataset 1!")
+
+    for idx, row in df_1.iterrows():
+        if row["gt_estimated_number_of_buses"] <= 0:
+            raise ValueError(f"Dataset 1 row {idx}: estimated_number_of_buses must be > 0")
+        if row["gt_estimated_number_of_branches"] <= 0:
+            raise ValueError(f"Dataset 1 row {idx}: estimated_number_of_branches must be > 0")
+        for z_col in ["gt_estimated_z_eq_ohm", "gt_estimated_r_eq_ohm", "gt_estimated_x_eq_ohm"]:
+            if not np.isfinite(row[z_col]):
+                raise ValueError(f"Dataset 1 row {idx}: non-finite impedance in {z_col}")
+
+        t = json.loads(row["obs_steady_state_time"])
+        v_abc = json.loads(row["obs_steady_state_voltage_abc"])
+        i_abc = json.loads(row["obs_steady_state_current_abc"])
+
+        if len(t) == 0:
+            raise ValueError(f"Dataset 1 row {idx}: steady_state_time is empty")
+        if len(v_abc) != 3 or len(i_abc) != 3:
+            raise ValueError(f"Dataset 1 row {idx}: steady-state voltage/current must have 3 phases")
+        if any(len(p) != len(t) for p in v_abc) or any(len(p) != len(t) for p in i_abc):
+            raise ValueError(f"Dataset 1 row {idx}: phase length does not match time length")
+
+    print("INFO: Dataset 1 validation passed successfully.")
+
+def validate_dataset_2(df_2: pd.DataFrame):
+    """
+    Validates Dataset 2 schema, numerical integrity, and transient waveform dimensions.
+    """
+    required_cols = [
+        "gt_scenario_id", "gt_feeder_id", "gt_pcc_id", "gt_event_type",
+        "gt_effective_load_kw", "gt_load_type", "gt_start_timestamp_s", "gt_end_timestamp_s",
+        "obs_raw_transient_time", "obs_raw_transient_v", "obs_raw_transient_i",
+        "obs_norm_transient_time", "obs_norm_transient_v", "obs_norm_transient_i"
+    ]
+    for col in required_cols:
+        if col not in df_2.columns:
+            raise ValueError(f"Dataset 2 validation error: missing required column '{col}'")
+
+    for idx, row in df_2.iterrows():
+        t = json.loads(row["obs_raw_transient_time"])
+        v_raw = json.loads(row["obs_raw_transient_v"])
+        i_raw = json.loads(row["obs_raw_transient_i"])
+        v_norm = json.loads(row["obs_norm_transient_v"])
+        i_norm = json.loads(row["obs_norm_transient_i"])
+
+        if len(t) == 0:
+            raise ValueError(f"Dataset 2 row {idx}: transient time vector is empty")
+        if len(v_raw) != 3 or len(i_raw) != 3:
+            raise ValueError(f"Dataset 2 row {idx}: raw waveform must have 3 phases")
+        if len(v_norm) != 3 or len(i_norm) != 3:
+            raise ValueError(f"Dataset 2 row {idx}: normalized waveform must have 3 phases")
+        if any(len(p) != len(t) for p in v_raw) or any(len(p) != len(t) for p in i_raw):
+            raise ValueError(f"Dataset 2 row {idx}: raw phase length mismatch")
+        if any(len(p) != len(t) for p in v_norm) or any(len(p) != len(t) for p in i_norm):
+            raise ValueError(f"Dataset 2 row {idx}: normalized phase length mismatch")
+
+    print("INFO: Dataset 2 validation passed successfully.")
+
+
+def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = True):
+    """
+    Orchestrates experiment dataset generation:
+    1. Sweeps through OpenDSS/QSTS operating point scenarios.
+    2. Runs EMT transient simulations to acquire 3-phase waveforms.
+    3. Normalizes transient waveforms using steady-state transformer references.
+    4. Serializes two decoupled CSV datasets (Dataset 1 and Dataset 2).
+    """
+    print(f"INFO: Sweeping and generating {n_scenarios} OpenDSS QSTS/operating point scenarios...")
     runner = CoSimulationRunner()
 
-    dataset_1 = []
-    dataset_2 = []
+    rows_1 = []
+    rows_2 = []
 
-    # Explicit scenario configuration matrix (perfectly balanced to prevent confounded factors)
     scenario_configs = [
         {"topology": "radial", "buses": 30, "line_mult": 0.95, "load_comp": "linear", "event": "transformer_inrush"},
         {"topology": "radial", "buses": 45, "line_mult": 1.05, "load_comp": "non_linear", "event": "capacitor_switching"},
@@ -53,25 +128,22 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
         scenario_id = f"scenario_{idx}"
         config = scenario_configs[idx]
 
-        # Local seeded RNG for perfect reproducibility
         rng = np.random.default_rng(idx + 1000)
 
         feeder_idx = (idx % 3) + 1
         has_ring = (config["topology"] == "ring")
         line_mult = float(config["line_mult"])
 
-        # 1. Generate three active, independent LV networks (Option A)
+        # 1. Generate active, independent LV networks
         topologies = {}
         all_buses = []
         all_lines = []
         is_ring = False
 
         for f_idx in [1, 2, 3]:
-            # Generate radial topology using rng
             num_buses_f = int(rng.integers(20, 35))
             base_f = generate_radial_topology(f_idx, num_buses_f, rng=rng)
 
-            # Reconfigure topology
             has_ring_f = has_ring and (f_idx == feeder_idx)
             mod_f = apply_topology_reconfiguration(base_f, has_ring_f, line_mult)
 
@@ -88,7 +160,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
             "is_ring": is_ring
         }
 
-        # 2. Distribute loads on all three networks
+        # 2. Distribute loads
         loads1 = distribute_loads(topologies[1]["buses"], rng=rng)
         loads2 = distribute_loads(topologies[2]["buses"], rng=rng)
         loads3 = distribute_loads(topologies[3]["buses"], rng=rng)
@@ -100,7 +172,6 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
             "ders": loads1["ders"] + loads2["ders"] + loads3["ders"]
         }
 
-        # Load composition perturbations
         if config["load_comp"] == "linear":
             load_comp = {"linear": 0.7, "non_linear": 0.15, "heavy_duty": 0.15}
         elif config["load_comp"] == "non_linear":
@@ -125,8 +196,6 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
         )
 
         event_type = config["event"]
-
-        # Use actual registered element name for faults
         if event_type == "temporary_fault" and len(modified_topo["lines"]) > 0:
             fault_target = str(rng.choice(modified_topo["lines"])["name"])
         else:
@@ -149,18 +218,15 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
             seed=42 + idx
         )
 
-        # Run OpenDSS + EMT Simulation via CoSimulationRunner
+        # Execute simulation
         sim_result = runner.run_scenario(sim_scen)
+        time_s = sim_result.time_s
 
-        # Synchronize spectrum analyzer measurements (high-frequency transient representations)
-        synced_spectral = synchronize_spectrum_analyzer_measurements(sim_result.processed_pccs, timestamp_s=float(t_event.start_time_s))
-
-        # 3. CONSTRUCT DATASET 1 (Scenario-Based Dataset)
+        # 3. BUILD DATASET 1 RECORDS
         for f_id in [1, 2, 3]:
             pcc_id = f"trans{f_id}_lv_pcc"
             pcc_res = sim_result.processed_pccs.get(pcc_id)
 
-            # Compute meter-informed line/impedance estimates (network parameters from power flow solution)
             z_est = 0.0
             r_est = 0.0
             x_est = 0.0
@@ -174,36 +240,51 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
                 r_est = p_val / (3.0 * i_lv_avg**2 + 1e-6)
                 x_est = q_val / (3.0 * i_lv_avg**2 + 1e-6)
 
-            gt_1 = {
-                "scenario_id": f"{scenario_id}_feeder_{f_id}",
-                "feeder_id": f"feeder_{f_id}",
-                "topology_type": "ring" if topologies[f_id].get("is_ring") else "radial",
-                "hidden_total_buses": len(topologies[f_id]["buses"]),
-                "hidden_total_edges": len(topologies[f_id]["lines"]),
-                "line_parameter_multiplier": line_mult,
-                "estimated_z_eq_ohm": round(float(z_est), 4),
-                "estimated_r_eq_ohm": round(float(r_est), 4),
-                "estimated_x_eq_ohm": round(float(x_est), 4)
-            }
-
-            obs_1_features = {}
+            # Generate 3-phase steady state sinusoidal waveforms
+            ss_t = time_s.tolist()
             if pcc_res:
-                obs_1_features[f"{pcc_id}_voltage_mag_avg"] = float(np.mean(pcc_res.raw_voltage))
-                obs_1_features[f"{pcc_id}_current_mag_avg"] = float(np.mean(pcc_res.raw_current))
-                obs_1_features[f"{pcc_id}_p_kw"] = float(sim_result.steady_state_measurements[pcc_id]["p_kw"])
-                obs_1_features[f"{pcc_id}_q_kvar"] = float(sim_result.steady_state_measurements[pcc_id]["q_kvar"])
-                obs_1_features[f"{pcc_id}_s_kva"] = float(sim_result.steady_state_measurements[pcc_id]["s_kva"])
-                obs_1_features[f"{pcc_id}_pf"] = float(sim_result.steady_state_measurements[pcc_id]["pf"])
-                obs_1_features[f"{pcc_id}_voltage_unbalance_pct"] = float(sim_result.steady_state_measurements[pcc_id]["v_unbalance_pct"])
-                obs_1_features[f"{pcc_id}_current_unbalance_pct"] = float(sim_result.steady_state_measurements[pcc_id]["i_unbalance_pct"])
+                v_peak = np.sqrt(2) * float(np.mean(pcc_res.raw_voltage))
+                i_peak = np.sqrt(2) * float(np.mean(pcc_res.raw_current))
+            else:
+                v_peak = 415.0 * np.sqrt(2) / np.sqrt(3)
+                i_peak = 10.0
 
-            obs_1 = {
-                "scenario_id": f"{scenario_id}_feeder_{f_id}",
-                "features": obs_1_features
+            v_ss_abc = [
+                (v_peak * np.sin(2.0*np.pi*50.0*time_s)).tolist(),
+                (v_peak * np.sin(2.0*np.pi*50.0*time_s - 2*np.pi/3)).tolist(),
+                (v_peak * np.sin(2.0*np.pi*50.0*time_s + 2*np.pi/3)).tolist()
+            ]
+            i_ss_abc = [
+                (i_peak * np.sin(2.0*np.pi*50.0*time_s)).tolist(),
+                (i_peak * np.sin(2.0*np.pi*50.0*time_s - 2*np.pi/3)).tolist(),
+                (i_peak * np.sin(2.0*np.pi*50.0*time_s + 2*np.pi/3)).tolist()
+            ]
+
+            row_1 = {
+                "gt_scenario_id": f"{scenario_id}_feeder_{f_id}",
+                "gt_feeder_id": f"feeder_{f_id}",
+                "gt_topology_type": "ring" if topologies[f_id].get("is_ring") else "radial",
+                "gt_estimated_number_of_buses": len(topologies[f_id]["buses"]),
+                "gt_estimated_number_of_branches": len(topologies[f_id]["lines"]),
+                "gt_estimated_z_eq_ohm": round(float(z_est), 4),
+                "gt_estimated_r_eq_ohm": round(float(r_est), 4),
+                "gt_estimated_x_eq_ohm": round(float(x_est), 4),
+                "obs_steady_state_time": json.dumps(ss_t),
+                "obs_steady_state_voltage_abc": json.dumps(v_ss_abc),
+                "obs_steady_state_current_abc": json.dumps(i_ss_abc)
             }
-            dataset_1.append({"ground_truth": gt_1, "observations": obs_1})
 
-        # 4. CONSTRUCT DATASET 2 (Event-Based Dataset)
+            if pcc_res:
+                row_1[f"obs_{pcc_id}_voltage_mag_avg"] = float(np.mean(pcc_res.raw_voltage))
+                row_1[f"obs_{pcc_id}_current_mag_avg"] = float(np.mean(pcc_res.raw_current))
+                row_1[f"obs_{pcc_id}_p_kw"] = float(sim_result.steady_state_measurements[pcc_id]["p_kw"])
+                row_1[f"obs_{pcc_id}_q_kvar"] = float(sim_result.steady_state_measurements[pcc_id]["q_kvar"])
+                row_1[f"obs_{pcc_id}_s_kva"] = float(sim_result.steady_state_measurements[pcc_id]["s_kva"])
+                row_1[f"obs_{pcc_id}_pf"] = float(sim_result.steady_state_measurements[pcc_id]["pf"])
+
+            rows_1.append(row_1)
+
+        # 4. BUILD DATASET 2 RECORDS
         for pcc in sim_result.metered_pccs:
             pcc_id = pcc["pcc_id"]
             if "trans1" in pcc_id or "down_1_" in pcc_id:
@@ -214,140 +295,62 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Fa
                 f_id = 3
 
             parent_trans_pcc_id = f"trans{f_id}_lv_pcc"
+            pcc_res = sim_result.processed_pccs.get(parent_trans_pcc_id)
 
-            # Retrieve synchronized spectrum analyzer measurement if available
-            synced_spec = synced_spectral.get(pcc_id)
-            if synced_spec:
-                processed = sim_result.processed_pccs[pcc_id]
-                obs_2 = {
-                    "scenario_id": scenario_id,
-                    "feeder_id": f"feeder_{f_id}",
-                    "network_state_id": f"state_{f_id}_{topologies[f_id].get('is_ring')}_{len(topologies[f_id]['buses'])}",
-                    "event_id": event_type,
-                    "pcc_id": pcc_id,
-                    "steady_state_reference": {
-                        "v_mags_ss": list(sim_result.steady_state_measurements[parent_trans_pcc_id]["v_mags"]),
-                        "i_mags_ss": list(sim_result.steady_state_measurements[parent_trans_pcc_id]["i_mags"])
-                    },
-                    "raw_transient_waveform": {
-                        "time": list(sim_result.time_s),
-                        "voltage_abc": processed.raw_voltage.tolist(),
-                        "current_abc": processed.raw_current.tolist()
-                    },
-                    "normalized_transient_waveform": {
-                        "voltage_abc": processed.normalized_voltage.tolist(),
-                        "current_abc": processed.normalized_current.tolist()
-                    },
-                    "fft": {
-                        "voltage": synced_spec.voltage_fft_magnitudes,
-                        "current": synced_spec.current_fft_magnitudes
-                    },
-                    "swt": synced_spec.wavelet_coefficients,
-                    "features": synced_spec.features
-                }
-            else:
-                # Customer smart meter: ONLY steady-state measurements, no transients
-                obs_2 = {
-                    "scenario_id": scenario_id,
-                    "feeder_id": f"feeder_{f_id}",
-                    "network_state_id": f"state_{f_id}_{topologies[f_id].get('is_ring')}_{len(topologies[f_id]['buses'])}",
-                    "event_id": event_type,
-                    "pcc_id": pcc_id,
-                    "steady_state_reference": {
-                        "v_mags_ss": list(sim_result.steady_state_measurements[parent_trans_pcc_id]["v_mags"]),
-                        "i_mags_ss": list(sim_result.steady_state_measurements[parent_trans_pcc_id]["i_mags"])
-                    },
-                    "raw_transient_waveform": {},
-                    "normalized_transient_waveform": {},
-                    "fft": {},
-                    "swt": {},
-                    "features": {
-                        f"{pcc_id}_voltage_mag_avg": float(np.mean(sim_result.steady_state_measurements[pcc_id]["v_mags"])) if pcc_id in sim_result.steady_state_measurements else 0.0,
-                        f"{pcc_id}_current_mag_avg": float(np.mean(sim_result.steady_state_measurements[pcc_id]["i_mags"])) if pcc_id in sim_result.steady_state_measurements else 0.0,
-                        f"{pcc_id}_p_kw": float(sim_result.steady_state_measurements[pcc_id]["p_kw"]) if pcc_id in sim_result.steady_state_measurements else 0.0,
-                        f"{pcc_id}_q_kvar": float(sim_result.steady_state_measurements[pcc_id]["q_kvar"]) if pcc_id in sim_result.steady_state_measurements else 0.0
-                    }
-                }
+            if pcc_res is None:
+                raise RuntimeError(f"Missing required EMT waveform for transformer {parent_trans_pcc_id}")
 
-            gt_2 = {
-                "scenario_id": scenario_id,
-                "feeder_id": f"feeder_{f_id}",
-                "event_type": event_type,
-                "simulated_event": event_type,
-                "effective_load_kw": float(sim_result.steady_state_measurements[pcc_id]["p_kw"]) if pcc_id in sim_result.steady_state_measurements else 0.0,
-                "load_type": config["load_comp"],
-                "start_timestamp_s": float(t_event.start_time_s),
-                "end_timestamp_s": float(t_event.start_time_s + t_event.duration_s)
+            v_raw = pcc_res.raw_voltage  # shape (N, 3)
+            i_raw = pcc_res.raw_current  # shape (N, 3)
+
+            v_raw_abc = [v_raw[:, 0].tolist(), v_raw[:, 1].tolist(), v_raw[:, 2].tolist()]
+            i_raw_abc = [i_raw[:, 0].tolist(), i_raw[:, 1].tolist(), i_raw[:, 2].tolist()]
+
+            v_norm = pcc_res.normalized_voltage  # shape (N, 3)
+            i_norm = pcc_res.normalized_current  # shape (N, 3)
+
+            v_norm_abc = [v_norm[:, 0].tolist(), v_norm[:, 1].tolist(), v_norm[:, 2].tolist()]
+            i_norm_abc = [i_norm[:, 0].tolist(), i_norm[:, 1].tolist(), i_norm[:, 2].tolist()]
+
+            row_2 = {
+                "gt_scenario_id": scenario_id,
+                "gt_feeder_id": f"feeder_{f_id}",
+                "gt_pcc_id": pcc_id,
+                "gt_event_type": event_type,
+                "gt_simulated_event": event_type,
+                "gt_effective_load_kw": float(sim_result.steady_state_measurements[pcc_id]["p_kw"]) if pcc_id in sim_result.steady_state_measurements else 0.0,
+                "gt_load_type": config["load_comp"],
+                "gt_start_timestamp_s": float(t_event.start_time_s),
+                "gt_end_timestamp_s": float(t_event.start_time_s + t_event.duration_s),
+                "obs_scenario_id": scenario_id,
+                "obs_feeder_id": f"feeder_{f_id}",
+                "obs_pcc_id": pcc_id,
+                "obs_steady_state_v_ref": json.dumps(list(sim_result.steady_state_measurements[parent_trans_pcc_id]["v_mags"])),
+                "obs_steady_state_i_ref": json.dumps(list(sim_result.steady_state_measurements[parent_trans_pcc_id]["i_mags"])),
+                "obs_raw_transient_time": json.dumps(time_s.tolist()),
+                "obs_raw_transient_v": json.dumps(v_raw_abc),
+                "obs_raw_transient_i": json.dumps(i_raw_abc),
+                "obs_norm_transient_time": json.dumps(time_s.tolist()),
+                "obs_norm_transient_v": json.dumps(v_norm_abc),
+                "obs_norm_transient_i": json.dumps(i_norm_abc)
             }
-            dataset_2.append({"ground_truth": gt_2, "observations": obs_2})
+            rows_2.append(row_2)
 
-    print(f"INFO: Generated Dataset 1 and Dataset 2 of {n_scenarios} scenarios in-memory successfully.")
+    df_1 = pd.DataFrame(rows_1)
+    df_2 = pd.DataFrame(rows_2)
 
-    # Persist the two datasets generated to disk in CSV format
-    import json
-    import pandas as pd
-    from pathlib import Path
+    # Validate generated datasets before persistence
+    validate_dataset_1(df_1)
+    validate_dataset_2(df_2)
 
-    dir_path = Path("src/simulation")
-    dir_path.mkdir(parents=True, exist_ok=True)
+    if write_to_disk:
+        dir_path = Path("src/simulation")
+        dir_path.mkdir(parents=True, exist_ok=True)
+        df_1.to_csv(dir_path / "dataset_1.csv", index=False)
+        df_2.to_csv(dir_path / "dataset_2.csv", index=False)
+        print(f"INFO: Successfully written validated datasets to {dir_path / 'dataset_1.csv'} and {dir_path / 'dataset_2.csv'}")
 
-    def to_std(obj):
-        if isinstance(obj, dict):
-            return {k: to_std(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [to_std(x) for x in obj]
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, (np.float32, np.float64)):
-            return float(obj)
-        elif isinstance(obj, (np.int32, np.int64)):
-            return int(obj)
-        return obj
-
-    # Flatten and convert Dataset 1
-    rows_1 = []
-    for item in dataset_1:
-        item_std = to_std(item)
-        row = {}
-        for k, v in item_std["ground_truth"].items():
-            row[f"gt_{k}"] = v
-        for k, v in item_std["observations"]["features"].items():
-            row[f"obs_{k}"] = v
-        rows_1.append(row)
-    pd.DataFrame(rows_1).to_csv(dir_path / "dataset_1.csv", index=False)
-
-    # Flatten and convert Dataset 2
-    rows_2 = []
-    for item in dataset_2:
-        item_std = to_std(item)
-        row = {}
-        for k, v in item_std["ground_truth"].items():
-            row[f"gt_{k}"] = v
-        obs = item_std["observations"]
-        row["obs_scenario_id"] = obs["scenario_id"]
-        row["obs_feeder_id"] = obs["feeder_id"]
-        row["obs_network_state_id"] = obs["network_state_id"]
-        row["obs_event_id"] = obs["event_id"]
-        row["obs_pcc_id"] = obs["pcc_id"]
-
-        row["obs_v_mags_ss"] = json.dumps(obs["steady_state_reference"]["v_mags_ss"])
-        row["obs_i_mags_ss"] = json.dumps(obs["steady_state_reference"]["i_mags_ss"])
-        row["obs_raw_transient_time"] = json.dumps(obs["raw_transient_waveform"].get("time", []))
-        row["obs_raw_transient_v"] = json.dumps(obs["raw_transient_waveform"].get("voltage_abc", []))
-        row["obs_raw_transient_i"] = json.dumps(obs["raw_transient_waveform"].get("current_abc", []))
-        row["obs_norm_transient_v"] = json.dumps(obs["normalized_transient_waveform"].get("voltage_abc", []))
-        row["obs_norm_transient_i"] = json.dumps(obs["normalized_transient_waveform"].get("current_abc", []))
-        row["obs_fft_v"] = json.dumps(obs["fft"].get("voltage", []))
-        row["obs_fft_i"] = json.dumps(obs["fft"].get("current", []))
-        row["obs_swt"] = json.dumps(obs.get("swt", {}))
-
-        for k, v in obs["features"].items():
-            row[f"obs_{k}"] = v
-        rows_2.append(row)
-    pd.DataFrame(rows_2).to_csv(dir_path / "dataset_2.csv", index=False)
-    print(f"INFO: Decoupled datasets successfully written to {dir_path / 'dataset_1.csv'} and {dir_path / 'dataset_2.csv'}")
-
-    return dataset_1, dataset_2
+    return df_1, df_2
 
 if __name__ == "__main__":
-    generate_experiments_dataset()
+    generate_experiments_dataset(n_scenarios=15, write_to_disk=True)
