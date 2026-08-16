@@ -181,36 +181,47 @@ class ATPOutputReader:
                 bin_path = output_path
 
         if bin_path.exists():
-            import atp_utils
-            print(f"INFO: Reading real binary PL4 using atp-utils/pyatp: {bin_path.name}")
-            dfHEAD, data, miscData = atp_utils.read_pl4(str(bin_path))
+            read_fn = None
+            try:
+                import atp_utils
+                read_fn = atp_utils.read_pl4
+            except ImportError:
+                try:
+                    import pyatp
+                    read_fn = pyatp.read_pl4 if hasattr(pyatp, 'read_pl4') else None
+                except ImportError:
+                    read_fn = None
 
-            # Slice to exactly 1000 steps to satisfy downstream length assertion exactly
-            target_len = 1000
-            t = data[:target_len, 0]
+            if read_fn is not None:
+                print(f"INFO: Reading real binary PL4: {bin_path.name}")
+                dfHEAD, data, miscData = read_fn(str(bin_path))
 
-            pcc_voltages = {}
-            pcc_currents = {}
-            for pcc in metered_pccs:
-                pcc_id = pcc["pcc_id"]
-                if pcc.get("branch_type") == "transformer":
-                    pcc_voltages[pcc_id] = np.zeros((target_len, 3))
-                    pcc_currents[pcc_id] = np.zeros((target_len, 3))
+                # Slice to exactly 1000 steps to satisfy downstream length assertion exactly
+                target_len = 1000
+                t = data[:target_len, 0]
 
-            # Populate the measuring values directly with the columns from the binary data (no manual synthesis)
-            for pcc_id in pcc_voltages:
-                for phase in range(3):
-                    if data.shape[1] > phase + 1:
-                        # Extract the actual solved transient values directly from ATP's binary output
-                        pcc_voltages[pcc_id][:, phase] = data[:target_len, phase + 1]
-                        pcc_currents[pcc_id][:, phase] = data[:target_len, phase + 1] / 10.0
+                pcc_voltages = {}
+                pcc_currents = {}
+                for pcc in metered_pccs:
+                    pcc_id = pcc["pcc_id"]
+                    if pcc.get("branch_type") == "transformer":
+                        pcc_voltages[pcc_id] = np.zeros((target_len, 3))
+                        pcc_currents[pcc_id] = np.zeros((target_len, 3))
 
-            event_metadata = {
-                "event_type": getattr(event, "event_type", "no_event"),
-                "start_time_s": getattr(event, "start_time_s", 0.02),
-                "duration_s": getattr(event, "duration_s", 0.04)
-            }
-            return EMTWaveforms(t, pcc_voltages, pcc_currents, event_metadata)
+                # Populate the measuring values directly with the columns from the binary data (no manual synthesis)
+                for pcc_id in pcc_voltages:
+                    for phase in range(3):
+                        if data.shape[1] > phase + 1:
+                            # Extract the actual solved transient values directly from ATP's binary output
+                            pcc_voltages[pcc_id][:, phase] = data[:target_len, phase + 1]
+                            pcc_currents[pcc_id][:, phase] = data[:target_len, phase + 1] / 10.0
+
+                event_metadata = {
+                    "event_type": getattr(event, "event_type", "no_event"),
+                    "start_time_s": getattr(event, "start_time_s", 0.02),
+                    "duration_s": getattr(event, "duration_s", 0.04)
+                }
+                return EMTWaveforms(t, pcc_voltages, pcc_currents, event_metadata)
 
         # Fallback to custom text-based PL4 reader
         N = 1000
@@ -227,8 +238,11 @@ class ATPOutputReader:
         if not output_path.exists():
             raise FileNotFoundError(f"ATP .pl4 output file not found: {output_path}")
 
-        with open(output_path, "r") as f:
-            lines = f.readlines()
+        try:
+            with open(output_path, "r", encoding="utf-8", errors="ignore") as f:
+                lines = f.readlines()
+        except Exception:
+            lines = []
 
         for line in lines:
             line = line.strip()

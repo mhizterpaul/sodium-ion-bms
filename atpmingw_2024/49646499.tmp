@@ -1,0 +1,15 @@
+  GUTATP successfully connects unit 46.
+         The file name = CLIKL2 =49646499.tmp
+          Consider next param pair.  J, name =   1  BOTH
+  GNU RFUNL1 ready to connect STARTUP.
+      SPY132(1:LENSPY) =startup
+      Successful open of STARTUP.
+  Exit  LOWCAS  with  TEXT(1:K2) =.lis
+  Exit  LOWCAS  with  TEXT(1:K2) =.pch
+  Exit  LOWCAS  with  TEXT(1:K2) =.pl4
+  RFUNL1 sets final  LINUSE = -1
+ RFUNL1 after RSTART.  KTRPL4, LUNIT6, NCHAIN, KILL = -6666     6     0     0
+  Continuous window backup?   KJUNKS, KJUNKE = 0 0
+  After RFUNL1 initialize.   KMAXS, KMAXE = 0 0
+  Back in RFUNL1 after RSTART. lunt10 = 10
+  GUTATP closes randomly-named file of unit 46.

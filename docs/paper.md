@@ -364,7 +364,15 @@ Each perturbed network is simulated to produce these decoupled datasets, linking
 
 ##### Statistical Tests of State Observability Using Steady-State-Normalized Decomposed Transformer Waveforms
 
+Prior to statistical testing, the 3-phase transient waveforms from Dataset 2 (`obs_raw_transient_v`, `obs_raw_transient_i`) are normalized using their corresponding steady-state references (`obs_steady_state_v_ref`, `obs_steady_state_i_ref`) to yield normalized transient waveforms (`obs_norm_transient_v`, `obs_norm_transient_i`). Signal processing is then performed directly on these normalized representations:
+1. **Real Fast Fourier Transform (FFT)** via `scipy.fft` computes the frequency-domain spectral magnitude representations across the 3 phases.
+2. **Stationary Wavelet Transform (SWT)** via `pywt.swt` (Level 2 `db1` wavelet) extracts multi-resolution time-frequency approximation and detail coefficients ($cA_2, cD_2, cA_1, cD_1$) across all 3 phases.
+
+The resulting joint feature representation vector $Y_{\mathrm{joint}} = [\mathrm{FFT\_Summary}, \mathrm{SWT\_Coefficients}]$ concatenates spectral magnitudes and wavelet energy/dispersion statistics. The statistical validation suite evaluates observability by testing dependencies and distributional properties between each column/element of $Y_{\mathrm{joint}}$ and the hidden state targets $X$.
+
 * Test 1 — Distance correlation: does the measurement contain information about hidden state?
+
+Evaluates global time-frequency dependency between hidden network states $X = [\mathrm{gt\_effective\_load\_kw}]$ and the multivariate joint representation $Y_{\mathrm{joint}}$.
 
 Distance correlation was specifically developed to detect dependence between random vectors and has the important property that population distance correlation is zero iff the variables are independent.
 
@@ -374,11 +382,11 @@ Calculate \[ dCor(X,Y). \]
 
 the hypothesis becomes:
 \[ H_0:X\perp Y \] versus \[ H_1:X\not\perp Y. \]
-But we do not rely on the asymptotic p-value. we use a permutation test.
+Evaluated via permutation tests and Benjamini-Hochberg FDR correction.
 
 * Test 2 — MMD: do two hidden networks generate different measurement distributions?
 
-This is particularly useful because the hidden networks are discrete realizations.
+Evaluates whether distinct hidden network load structures (e.g., linear vs. non-linear/heavy-duty load classes in $X$) produce significantly different probability distributions in the joint spectral-wavelet domain $Y_{\mathrm{joint}}$.
 
 Take two hidden network states: \[ G_a,\;G_b. \]
 Their corresponding measurement distributions are: \[ P_a(Y) \]and\[ P_b(Y). \]
@@ -393,12 +401,12 @@ This is extremely appropriate for the dataset because we don't need to assume th
 
 * Test 3 — PERMANOVA: are measurement vectors separated by hidden network state?
 
+Evaluates multivariate separation of joint spectral/wavelet representations $Y_{\mathrm{joint}}$ across categorical switching event types ($X = \mathrm{gt\_event\_type}$).
+
 Anderson's PERMANOVA provides a non-parametric multivariate analogue of ANOVA based on distances and permutations.
 
 The model can be: \[ D_{ij}=d(Y_i,Y_j) \]
-where \(d\) might be: Euclidean distance, standardized Euclidean distance,
-Mahalanobis distance,
-or another appropriate distance.
+where \(d\) is Euclidean distance over $Y_{\mathrm{joint}}$.
 
 Then test: \[ H_0: \text{measurement distributions do not differ by network realization}. \] The resulting pseudo-\(F\) statistic and permutation \(p\)-value tell you whether the groups differ.
 
@@ -420,7 +428,8 @@ So we investigate the joint expectation and variance: \[ E[Y_{\mathrm{joint}}|G]
 
 * Test 4 — TOST for practical equivalence
 
-Suppose two different hidden networks produce almost indistinguishable joint wavelet responses.
+Evaluates practical equivalence of joint spectral-wavelet representations $Y_{\mathrm{joint}}$ between transient switching events (e.g., transformer inrush vs. capacitor switching) within a defined equivalence margin $\Delta = \pm \delta$.
+
 We formulate an equivalence margin for a joint wavelet feature representation:
 
 \[ \Delta_L=-\delta,\qquad \Delta_U=+\delta. \]
@@ -435,7 +444,7 @@ we test: \[ H_0:X\perp Y_{\mathrm{joint}}. \] HSIC measures dependence through t
 
 * Test 5 — Observability of Hidden State and Perturbations from Joint Wavelet and Spectral Representations
 
-This is important for your eventual operator design.
+Evaluates non-linear dependence between the full joint representation vector $Y_{\mathrm{joint}} = [\mathrm{FFT} + \mathrm{SWT}]$ and hidden network perturbation variables.
 
 We test if the joint wavelet and spectral representations produce statistically significant and observable dependency with the hidden network configuration and perturbations (including topology changes, network size, load redistribution, switching events, transformer loading, and line parameter variations):
 
