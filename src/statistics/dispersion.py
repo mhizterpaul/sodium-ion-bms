@@ -47,19 +47,34 @@ def dispersion_statistic(Y, groups):
 
 def run_dispersion_analysis():
     """
-    Runs multivariate homogeneity of dispersion test (PERMDISP) on Dataset 2.
+    Runs multivariate homogeneity of dispersion test (PERMDISP) across 3 subgroups (feeder_1, feeder_2, feeder_3)
+    and reports average values across subgroups.
     """
     from src.statistics.data import load_dataset_2, extract_joint_representation
 
     df = load_dataset_2()
-    _, Y_joint = extract_joint_representation(df)
-    groups = df["gt_event_type"].values
+    subgroups = ["feeder_1", "feeder_2", "feeder_3"]
+    f_disp_list = []
 
-    print("--- Running Multivariate Homogeneity of Dispersion Test (PERMDISP) ---")
-    res_disp = dispersion_statistic(Y_joint, groups)
-    print(f"Dispersion F-stat: {res_disp['F_dispersion']:.6f}")
+    print("--- Running Multivariate Homogeneity of Dispersion Test Across 3 Subgroups ---")
+    for sg in subgroups:
+        sub_df = df[df["gt_feeder_id"] == sg]
+        if len(sub_df) > 0:
+            _, Y_sg = extract_joint_representation(sub_df)
+            groups_sg = sub_df["gt_event_type"].values
+            res_sg = dispersion_statistic(Y_sg, groups_sg)
+            f_val = res_sg["F_dispersion"]
+            f_disp_list.append(f_val)
+            print(f"Subgroup {sg} (N={len(sub_df)}): Dispersion F-stat = {f_val:.6f}")
 
-    return res_disp
+    avg_f_disp = float(np.mean(f_disp_list)) if f_disp_list else 0.0
+    print(f"\nAverage Dispersion F-statistic across 3 subgroups: {avg_f_disp:.6f}")
+
+    return {
+        "subgroups": subgroups,
+        "f_disp_per_subgroup": f_disp_list,
+        "avg_f_disp": avg_f_disp
+    }
 
 if __name__ == "__main__":
     run_dispersion_analysis()

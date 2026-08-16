@@ -5,10 +5,6 @@ def tost_equivalence(y_a, y_b, margin=0.15):
     """
     Two One-Sided Tests (TOST) for practical equivalence of two independent groups
     evaluated on joint normalized transient representations.
-
-    H01: difference <= -margin
-    H02: difference >= +margin
-    Only if both nulls are rejected do we conclude practical equivalence.
     """
     y_a = np.asarray(y_a, dtype=float)
     y_b = np.asarray(y_b, dtype=float)
@@ -70,33 +66,47 @@ def tost_equivalence(y_a, y_b, margin=0.15):
 
 def run_equivalence_analysis():
     """
-    Runs TOST practical equivalence test on joint normalized transient representations from Dataset 2.
+    Runs TOST practical equivalence test across 3 subgroups (feeder_1, feeder_2, feeder_3)
+    and reports average values across subgroups.
     """
     from src.statistics.data import load_dataset_2, extract_joint_representation
 
     df = load_dataset_2()
-    _, Y_joint = extract_joint_representation(df)
+    subgroups = ["feeder_1", "feeder_2", "feeder_3"]
+    diff_list = []
+    p_eq_list = []
 
-    event_a_mask = (df["gt_event_type"] == "transformer_inrush").values
-    event_b_mask = (df["gt_event_type"] == "capacitor_switching").values
+    print("--- Running TOST Practical Equivalence Testing Across 3 Subgroups ---")
+    margin = 0.15
+    for sg in subgroups:
+        sub_df = df[df["gt_feeder_id"] == sg]
+        if len(sub_df) > 0:
+            _, Y_sg = extract_joint_representation(sub_df)
+            event_a_mask = (sub_df["gt_event_type"] == "transformer_inrush").values
+            event_b_mask = (sub_df["gt_event_type"] == "capacitor_switching").values
 
-    Y_a = Y_joint[event_a_mask]
-    Y_b = Y_joint[event_b_mask]
+            Y_a = Y_sg[event_a_mask]
+            Y_b = Y_sg[event_b_mask]
 
-    print("--- Running TOST Practical Equivalence Testing ---")
-    print(f"Comparing events: Transformer Inrush (N={len(Y_a)}) vs Capacitor Switching (N={len(Y_b)})")
+            if len(Y_a) >= 2 and len(Y_b) >= 2:
+                res_tost = tost_equivalence(Y_a, Y_b, margin=margin)
+                diff_list.append(res_tost["difference"])
+                p_eq_list.append(res_tost["p_equivalence"])
+                print(f"Subgroup {sg} (Inrush N={len(Y_a)}, Cap Switch N={len(Y_b)}): Mean Diff = {res_tost['difference']:.6f}, p-equiv = {res_tost['p_equivalence']:.4f}")
 
-    if len(Y_a) >= 2 and len(Y_b) >= 2:
-        margin = 0.15
-        res_tost = tost_equivalence(Y_a, Y_b, margin=margin)
-        print(f"Mean Difference:      {res_tost['difference']:.6f}")
-        print(f"Equivalence Margin:   {res_tost['margin']:.4f}")
-        print(f"TOST p-value:         {res_tost['p_equivalence']:.4f}")
-        print(f"Practically Equivalent?: {res_tost['equivalent']}")
-        return res_tost
-    else:
-        print("Skip: Insufficient samples for TOST equivalence testing.")
-        return None
+    avg_diff = float(np.mean(diff_list)) if diff_list else 0.0
+    avg_p_eq = float(np.mean(p_eq_list)) if p_eq_list else 1.0
+
+    print(f"\nAverage Mean Difference across 3 subgroups: {avg_diff:.6f}")
+    print(f"Average TOST p-value across 3 subgroups:     {avg_p_eq:.4f}")
+
+    return {
+        "subgroups": subgroups,
+        "diff_per_subgroup": diff_list,
+        "p_eq_per_subgroup": p_eq_list,
+        "avg_diff": avg_diff,
+        "avg_p_eq": avg_p_eq
+    }
 
 
 if __name__ == "__main__":

@@ -368,11 +368,17 @@ Prior to statistical testing, the 3-phase transient waveforms from Dataset 2 (`o
 1. **Real Fast Fourier Transform (FFT)** via `scipy.fft` computes the frequency-domain spectral magnitude representations across the 3 phases.
 2. **Stationary Wavelet Transform (SWT)** via `pywt.swt` (Level 2 `db1` wavelet) extracts multi-resolution time-frequency approximation and detail coefficients ($cA_2, cD_2, cA_1, cD_1$) across all 3 phases.
 
-The resulting joint feature representation vector $Y_{\mathrm{joint}} = [\mathrm{FFT\_Summary}, \mathrm{SWT\_Coefficients}]$ concatenates spectral magnitudes and wavelet energy/dispersion statistics. The statistical validation suite evaluates observability by testing dependencies and distributional properties between each column/element of $Y_{\mathrm{joint}}$ and the hidden state targets $X$.
+The resulting joint feature representation vector $Y_{\mathrm{joint}} = [\mathrm{FFT\_Summary}, \mathrm{SWT\_Coefficients}]$ concatenates spectral magnitudes and wavelet energy/dispersion statistics.
+
+To evaluate spatial consistency and robustness across the distribution architecture, **each statistical test is evaluated across at least 3 distinct network subgroups** ($k=1, 2, 3$, corresponding to `feeder_1`, `feeder_2`, and `feeder_3`). The statistical metrics are calculated independently per subgroup and the **average values across all subgroups** are reported as the primary observability indicators:
+
+\[
+\overline{\mathrm{Metric}} = \frac{1}{K} \sum_{k=1}^K \mathrm{Metric}_k
+\]
 
 * Test 1 — Distance correlation: does the measurement contain information about hidden state?
 
-Evaluates global time-frequency dependency between hidden network states $X = [\mathrm{gt\_effective\_load\_kw}]$ and the multivariate joint representation $Y_{\mathrm{joint}}$.
+Evaluates global time-frequency dependency between hidden network states $X = [\mathrm{gt\_effective\_load\_kw}]$ and the multivariate joint representation $Y_{\mathrm{joint}}$ across 3 subgroups (`feeder_1`, `feeder_2`, `feeder_3`), reporting average Distance Correlation and average HSIC statistics.
 
 Distance correlation was specifically developed to detect dependence between random vectors and has the important property that population distance correlation is zero iff the variables are independent.
 
@@ -382,11 +388,10 @@ Calculate \[ dCor(X,Y). \]
 
 the hypothesis becomes:
 \[ H_0:X\perp Y \] versus \[ H_1:X\not\perp Y. \]
-Evaluated with Benjamini-Hochberg FDR correction.
 
 * Test 2 — MMD: do two hidden networks generate different measurement distributions?
 
-Evaluates whether distinct hidden network load structures (e.g., linear vs. non-linear/heavy-duty load classes in $X$) produce significantly different probability distributions in the joint spectral-wavelet domain $Y_{\mathrm{joint}}$.
+Evaluates whether distinct hidden network load structures (e.g., linear vs. non-linear/heavy-duty load classes in $X$) produce significantly different probability distributions in the joint spectral-wavelet domain $Y_{\mathrm{joint}}$ across the 3 subgroups, reporting the average $MMD^2$ statistic.
 
 Take two hidden network states: \[ G_a,\;G_b. \]
 Their corresponding measurement distributions are: \[ P_a(Y) \]and\[ P_b(Y). \]
@@ -401,7 +406,7 @@ This is extremely appropriate for the dataset because we don't need to assume th
 
 * Test 3 — PERMANOVA: are measurement vectors separated by hidden network state?
 
-Evaluates multivariate separation of joint spectral/wavelet representations $Y_{\mathrm{joint}}$ across categorical switching event types ($X = \mathrm{gt\_event\_type}$).
+Evaluates multivariate separation of joint spectral/wavelet representations $Y_{\mathrm{joint}}$ across categorical switching event types ($X = \mathrm{gt\_event\_type}$) across the 3 subgroups, reporting average pseudo-$F$ statistics, average $R^2_{\mathrm{network}}$, and average PERMDISP dispersion $F$-statistics.
 
 Anderson's PERMANOVA provides a non-parametric multivariate analogue of ANOVA based on distances.
 
@@ -428,7 +433,7 @@ So we investigate the joint expectation and variance: \[ E[Y_{\mathrm{joint}}|G]
 
 * Test 4 — TOST for practical equivalence
 
-Evaluates practical equivalence of joint spectral-wavelet representations $Y_{\mathrm{joint}}$ between transient switching events (e.g., transformer inrush vs. capacitor switching) within a defined equivalence margin $\Delta = \pm \delta$.
+Evaluates practical equivalence of joint spectral-wavelet representations $Y_{\mathrm{joint}}$ between transient switching events (e.g., transformer inrush vs. capacitor switching) within a defined equivalence margin $\Delta = \pm \delta$ across the 3 subgroups, reporting average mean differences and average TOST $p$-values.
 
 We formulate an equivalence margin for a joint wavelet feature representation:
 
@@ -444,7 +449,7 @@ we test: \[ H_0:X\perp Y_{\mathrm{joint}}. \] HSIC measures dependence through t
 
 * Test 5 — Observability of Hidden State and Perturbations from Joint Wavelet and Spectral Representations
 
-Evaluates non-linear dependence between the full joint representation vector $Y_{\mathrm{joint}} = [\mathrm{FFT} + \mathrm{SWT}]$ and hidden network perturbation variables.
+Evaluates non-linear dependence between the full joint representation vector $Y_{\mathrm{joint}} = [\mathrm{FFT} + \mathrm{SWT}]$ and hidden network perturbation variables across the 3 subgroups, reporting average Distance Correlation and average HSIC statistics.
 
 We test if the joint wavelet and spectral representations produce statistically significant and observable dependency with the hidden network configuration and perturbations (including topology changes, network size, load redistribution, switching events, transformer loading, and line parameter variations):
 

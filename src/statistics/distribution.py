@@ -36,27 +36,37 @@ def mmd_statistic(X, Y, sigma=None):
 
 def run_distribution_analysis():
     """
-    Runs MMD two-sample test comparing joint representations between explicit hidden load groups (linear vs non-linear).
+    Runs MMD two-sample test comparing joint representations between load groups across 3 subgroups (feeder_1, feeder_2, feeder_3)
+    and reports average values across subgroups.
     """
     from src.statistics.data import load_dataset_2, extract_joint_representation
 
     df = load_dataset_2()
-    _, Y_joint = extract_joint_representation(df)
+    subgroups = ["feeder_1", "feeder_2", "feeder_3"]
+    mmd_list = []
 
-    is_linear = (df["gt_load_type"] == "linear").values
-    Y_linear = Y_joint[is_linear]
-    Y_nonlinear = Y_joint[~is_linear]
+    print("--- Running Maximum Mean Discrepancy (MMD) Two-Sample Test Across 3 Subgroups ---")
+    for sg in subgroups:
+        sub_df = df[df["gt_feeder_id"] == sg]
+        if len(sub_df) > 0:
+            _, Y_sg = extract_joint_representation(sub_df)
+            is_linear = (sub_df["gt_load_type"] == "linear").values
+            Y_linear = Y_sg[is_linear]
+            Y_nonlinear = Y_sg[~is_linear]
 
-    print("--- Running Maximum Mean Discrepancy (MMD) Two-Sample Distribution Test ---")
-    print(f"Comparison groups: Linear loads (N={len(Y_linear)}) vs Non-linear/Heavy-duty loads (N={len(Y_nonlinear)})")
+            if len(Y_linear) > 0 and len(Y_nonlinear) > 0:
+                mmd_val = mmd_statistic(Y_linear, Y_nonlinear)
+                mmd_list.append(mmd_val)
+                print(f"Subgroup {sg} (Linear N={len(Y_linear)}, Non-linear N={len(Y_nonlinear)}): MMD^2 = {mmd_val:.6f}")
 
-    if len(Y_linear) > 0 and len(Y_nonlinear) > 0:
-        mmd_val = mmd_statistic(Y_linear, Y_nonlinear)
-        print(f"MMD^2 Statistic: {mmd_val:.6f}")
-        return {"statistic": mmd_val}
-    else:
-        print("Skip: Insufficient samples across comparison groups.")
-        return None
+    avg_mmd = float(np.mean(mmd_list)) if mmd_list else 0.0
+    print(f"\nAverage MMD^2 Statistic across 3 subgroups: {avg_mmd:.6f}")
+
+    return {
+        "subgroups": subgroups,
+        "mmd_per_subgroup": mmd_list,
+        "avg_mmd": avg_mmd
+    }
 
 
 if __name__ == "__main__":

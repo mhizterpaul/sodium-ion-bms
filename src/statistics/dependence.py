@@ -64,54 +64,44 @@ def hsic_statistic(X, Y):
     statistic = np.trace(HK @ HL) / ((n - 1) ** 2) if n > 1 else 0.0
     return max(0.0, float(statistic))
 
-def benjamini_hochberg_correction(p_values):
-    """
-    Applies Benjamini-Hochberg (FDR) multiple-comparison correction.
-    """
-    p_values = np.array(p_values)
-    n = len(p_values)
-    if n == 0:
-        return []
-
-    sort_idx = np.argsort(p_values)
-    sorted_p = p_values[sort_idx]
-
-    adjusted_p = np.zeros(n)
-    prev_adj = 1.0
-
-    for i in range(n - 1, -1, -1):
-        rank = i + 1
-        adj = sorted_p[i] * n / rank
-        adj = min(adj, prev_adj)
-        adjusted_p[i] = adj
-        prev_adj = adj
-
-    rev_sort_idx = np.argsort(sort_idx)
-    return list(adjusted_p[rev_sort_idx])
-
 
 def run_dependence_analysis():
     """
-    Runs dependence analysis (Distance Correlation + HSIC) directly on joint representation
-    extracted from normalized waveforms in Dataset 2.
+    Runs dependence analysis (Distance Correlation + HSIC) across at least 3 subgroups
+    (e.g., feeder_1, feeder_2, feeder_3) extracted from normalized waveforms in Dataset 2,
+    and reports average values across subgroups.
     """
     from src.statistics.data import load_dataset_2, extract_joint_representation
 
     df = load_dataset_2()
-    X, Y_joint = extract_joint_representation(df)
 
-    dcor_stat = distance_correlation(X, Y_joint)
-    hsic_stat = hsic_statistic(X, Y_joint)
+    subgroups = ["feeder_1", "feeder_2", "feeder_3"]
+    dcor_list = []
+    hsic_list = []
 
-    print("--- Running Distance Correlation Test on Joint Wavelet/Spectral Representation ---")
-    print(f"Distance Correlation Statistic: {dcor_stat:.6f}")
+    print("--- Running Distance Correlation & HSIC Tests Across 3 Subgroups ---")
+    for sg in subgroups:
+        sub_df = df[df["gt_feeder_id"] == sg]
+        if len(sub_df) > 0:
+            X_sg, Y_sg = extract_joint_representation(sub_df)
+            dcor_sg = distance_correlation(X_sg, Y_sg)
+            hsic_sg = hsic_statistic(X_sg, Y_sg)
+            dcor_list.append(dcor_sg)
+            hsic_list.append(hsic_sg)
+            print(f"Subgroup {sg} (N={len(sub_df)}): Distance Correlation = {dcor_sg:.6f}, HSIC = {hsic_sg:.6f}")
 
-    print("\n--- Running HSIC Nonlinear Confirmation Test on Joint Wavelet/Spectral Representation ---")
-    print(f"HSIC Statistic:                 {hsic_stat:.6f}")
+    avg_dcor = float(np.mean(dcor_list)) if dcor_list else 0.0
+    avg_hsic = float(np.mean(hsic_list)) if hsic_list else 0.0
+
+    print(f"\nAverage Distance Correlation across 3 subgroups: {avg_dcor:.6f}")
+    print(f"Average HSIC Statistic across 3 subgroups:       {avg_hsic:.6f}")
 
     return {
-        "dcor": dcor_stat,
-        "hsic": hsic_stat
+        "subgroups": subgroups,
+        "dcor_per_subgroup": dcor_list,
+        "hsic_per_subgroup": hsic_list,
+        "avg_dcor": avg_dcor,
+        "avg_hsic": avg_hsic
     }
 
 

@@ -41,26 +41,50 @@ def permanova_statistic(Y, groups):
 
 def run_permanova_analysis():
     """
-    Runs PERMANOVA and PERMDISP on joint normalized transient representation Y_joint.
+    Runs PERMANOVA and PERMDISP across 3 subgroups (feeder_1, feeder_2, feeder_3)
+    and reports average values across subgroups.
     """
     from src.statistics.data import load_dataset_2, extract_joint_representation
     from src.statistics.dispersion import dispersion_statistic
 
     df = load_dataset_2()
-    _, Y_joint = extract_joint_representation(df)
-    groups = df["gt_event_type"].values
+    subgroups = ["feeder_1", "feeder_2", "feeder_3"]
+    f_pseudo_list = []
+    r2_list = []
+    f_disp_list = []
 
-    print("--- Running PERMANOVA and Multivariate Dispersion (PERMDISP) Tests ---")
-    res_perm = permanova_statistic(Y_joint, groups)
-    print(f"PERMANOVA F-pseudo:   {res_perm['F_pseudo']:.6f}")
-    print(f"PERMANOVA R2_network: {res_perm['r_squared']:.6f}")
+    print("--- Running PERMANOVA and PERMDISP Across 3 Subgroups ---")
+    for sg in subgroups:
+        sub_df = df[df["gt_feeder_id"] == sg]
+        if len(sub_df) > 0:
+            _, Y_sg = extract_joint_representation(sub_df)
+            groups_sg = sub_df["gt_event_type"].values
 
-    res_disp = dispersion_statistic(Y_joint, groups)
-    print(f"Dispersion F-stat:    {res_disp['F_dispersion']:.6f}")
+            res_perm = permanova_statistic(Y_sg, groups_sg)
+            res_disp = dispersion_statistic(Y_sg, groups_sg)
+
+            f_pseudo_list.append(res_perm["F_pseudo"])
+            r2_list.append(res_perm["r_squared"])
+            f_disp_list.append(res_disp["F_dispersion"])
+
+            print(f"Subgroup {sg} (N={len(sub_df)}): F-pseudo = {res_perm['F_pseudo']:.6f}, R2 = {res_perm['r_squared']:.6f}, F-disp = {res_disp['F_dispersion']:.6f}")
+
+    avg_f_pseudo = float(np.mean(f_pseudo_list)) if f_pseudo_list else 0.0
+    avg_r2 = float(np.mean(r2_list)) if r2_list else 0.0
+    avg_f_disp = float(np.mean(f_disp_list)) if f_disp_list else 0.0
+
+    print(f"\nAverage PERMANOVA F-pseudo across 3 subgroups:   {avg_f_pseudo:.6f}")
+    print(f"Average PERMANOVA R2_network across 3 subgroups: {avg_r2:.6f}")
+    print(f"Average PERMDISP F-stat across 3 subgroups:       {avg_f_disp:.6f}")
 
     return {
-        "permanova": res_perm,
-        "dispersion": res_disp
+        "subgroups": subgroups,
+        "f_pseudo_per_subgroup": f_pseudo_list,
+        "r2_per_subgroup": r2_list,
+        "f_disp_per_subgroup": f_disp_list,
+        "avg_f_pseudo": avg_f_pseudo,
+        "avg_r2": avg_r2,
+        "avg_f_disp": avg_f_disp
     }
 
 
