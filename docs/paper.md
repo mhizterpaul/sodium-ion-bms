@@ -391,7 +391,8 @@ To evaluate spatial consistency and robustness across the distribution architect
 
 * Test 1 — Distance correlation: does the measurement contain information about hidden state?
 
-Evaluates global time-frequency dependency between hidden network states $X = [\mathrm{gt\_effective\_load\_kw}]$ and the multivariate joint representation $Y_{\mathrm{joint}}$ across 3 subgroups (`feeder_1`, `feeder_2`, `feeder_3`), reporting per-subgroup values and average Distance Correlation and average HSIC statistics.
+Evaluates global time-frequency dependency between hidden network states $X = [\text{gt\_effective\_load\_kw}]$
+ and the multivariate joint representation $Y_{\mathrm{joint}}$ across 3 subgroups (`feeder_1`, `feeder_2`, `feeder_3`), reporting per-subgroup values and average Distance Correlation and average HSIC statistics.
 
 Distance correlation was specifically developed to detect dependence between random vectors and has the important property that population distance correlation is zero iff the variables are independent.
 
@@ -419,7 +420,7 @@ This is extremely appropriate for the dataset because we don't need to assume th
 
 * Test 3 — PERMANOVA: are measurement vectors separated by hidden network state?
 
-Evaluates multivariate separation of joint spectral/wavelet representations $Y_{\mathrm{joint}}$ across categorical switching event types ($X = \mathrm{gt\_event\_type}$) across the 3 subgroups, reporting per-subgroup values and average pseudo-$F$ statistics, average $R^2_{\mathrm{network}}$, and average PERMDISP dispersion $F$-statistics.
+Evaluates multivariate separation of joint spectral/wavelet representations $Y_{\mathrm{joint}}$ across categorical switching event types ($X = \text{gt\_event\_type}$) across the 3 subgroups, reporting per-subgroup values and average pseudo-$F$ statistics, average $R^2_{\mathrm{network}}$, and average PERMDISP dispersion $F$-statistics.
 
 Anderson's PERMANOVA provides a non-parametric multivariate analogue of ANOVA based on distances.
 
