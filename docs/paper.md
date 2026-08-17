@@ -2,32 +2,37 @@
 
 ## Methodology
 
-Base Cell Model (Literature-Aligned NFPP Sodium-Ion Twin System)
-1. Electrochemical Core (DFN-Compatible Reaction)
+### Base Cell Model (Literature-Aligned NFPP Sodium-Ion Twin System)
+
+* 1. Electrochemical Core (DFN-Compatible Reaction)
 The sodium iron pyrophosphate (NFPP) cathode operates via reversible sodium intercalation:
 Na₂FePO₄P₂O₇ ⇌ NaₓFePO₄P₂O₇ + (2 − x)Na⁺ + (2 − x)e⁻
 Theoretical specific capacity: ~95–100 mAh g⁻¹, consistent with reported polyanionic NFPP sodium-ion cathode systems used in pouch-scale prototypes.
-2. Cathode Electrode Architecture (Composite Design)
+
+* 2. Cathode Electrode Architecture (Composite Design)
 NFPP cathodes in practical sodium-ion full cells follow a carbon–binder–domain composite structure processed using N-methyl-2-pyrrolidone (NMP)-based slurry casting.
 Fixed composition:
 	Sodium iron pyrophosphate (NFPP) active material: 85 wt% 
 	Conductive carbon additive (carbon black / acetylene black): 8 wt% 
 	Binder: polyvinylidene fluoride (PVDF): 7 wt% 
 This structure reflects standard aluminum current collector-based cathodes used in sodium-ion pouch cells with high-density electrode compaction.
-3. Anode Design (Hard Carbon System)
+
+* 3. Anode Design (Hard Carbon System)
 Hard carbon anodes are implemented as disordered carbon networks with nanopore and turbostratic domains enabling sodium storage through adsorption, intercalation, and pore filling mechanisms.
 Fixed formulation:
 	Hard carbon active material: 88 wt% 
 	Conductive carbon additive: 6 wt% 
 	Binder: polyvinylidene fluoride (PVDF): 6 wt% 
 Practical specific capacity: 250–300 mAh g⁻¹, consistent with full-cell hard carbon sodium storage behavior.
-4. Electrolyte System (Carbonate-Based Sodium Salt System)
+
+* 4. Electrolyte System (Carbonate-Based Sodium Salt System)
 The electrolyte follows a standard sodium-ion full-cell carbonate formulation:
 	Sodium hexafluorophosphate (NaPF₆): 1.0 molar concentration 
 	Sodium difluoro(oxalato)borate (NaDFOB): 0.2 molar concentration 
 	Solvent system: ethylene carbonate and propylene carbonate in 1:1 volumetric ratio 
-	Ionic conductivity: ~10 mS cm⁻¹ at 25°C 
-5. Electrolyte Additive System (Interphase Engineering)
+	Ionic conductivity: ~10 mS cm⁻¹ at 25°C
+
+* 5. Electrolyte Additive System (Interphase Engineering)
 Interfacial stability is controlled using electrolyte additives that regulate both solid electrolyte interphase and cathode electrolyte interphase formation:
 	Fluoroethylene carbonate (FEC): 3 wt%
 → promotes stable solid electrolyte interphase (SEI) formation on the hard carbon anode 
@@ -35,7 +40,8 @@ Interfacial stability is controlled using electrolyte additives that regulate bo
 → enhances SEI uniformity and suppresses continuous electrolyte decomposition 
 	Sodium difluoro(oxalato)borate (NaDFOB): functions as both co-salt and cathode electrolyte interphase (CEI) stabilizer 
 The SEI is a passivation layer formed on the anode that regulates sodium-ion transport and prevents continuous electrolyte decomposition, while the CEI stabilizes cathode surface reactions and mitigates structural degradation.
-6. Pouch Cell Mechanical Architecture (Stacked Design)
+
+* 6. Pouch Cell Mechanical Architecture (Stacked Design)
 The full cell follows a stacked pouch configuration consistent with sodium-ion prototype manufacturing systems:
 	Form factor: stacked Z-fold pouch cell architecture 
 	Nominal voltage: 3.0–3.2 volts 
@@ -47,7 +53,7 @@ Layer stack:
 	External casing: poly-based moisture barrier (no aluminum laminate)
 	Inner sealant: polypropylene-based sealing layer 
 
-#### **Design Space:**
+### **Design Space:**
    
 *   **Structural Parameters ($\theta_s$):** Electrode thickness ($L_c, L_a$), porosity ($\epsilon_c, \epsilon_a, \epsilon_{sep}$), tortuosity ($\tau$), active material loading and particle size ($r_p$).
 *   **Material Parameters ($\theta_m$):** NFPP fraction, conductive carbon fraction, and electrolyte composition (concentration/salts)
@@ -64,12 +70,10 @@ This phase resolves performance properties for chemistry modifications using a d
 *   Sensitivity-Driven Cell Parameter Optimization 
 The projected design space ($\theta = [\theta_s, \theta_m]$) is explored with a hierarchical workflow that combines sensitivity screening, objective-specific SG-CEM refinement, and expensive stability filtering. In the implementation, the design vector is first perturbed around a nominal point to estimate the Jacobian of the energy, power, and stability responses; only the most influential variables for each objective are retained for optimization instead of searching the full design space at once.
 
-#### BESS Robustness Evaluation Framework
+### BESS Robustness Evaluation Framework
 
 
-1. Electrochemical–Thermal Driver Model
-
-
+* **1. Electrochemical–Thermal Driver Model**
 
 The BESS is evaluated using the DFN electrochemical model coupled with the thermal model. The model provides the measurable simulation outputs required for performance evaluation:
 
@@ -88,13 +92,11 @@ Energy throughput
 
 The BESS is evaluated under simulated grid-outage, PV-firming, and variable C-rate dispatch profiles.
 
-2. Performance Measurements
-
-
+* **2. Performance Measurements**
 
 Each performance metric is calculated directly from the simulated measurements.
 
-Round-Trip Energy Efficiency (RTE)
+** Round-Trip Energy Efficiency (RTE)
 
 Measures the fraction of charging energy recovered during discharge:
 
@@ -105,31 +107,31 @@ Measures the fraction of charge recovered in terms of electrical charge:
 
 [\eta_C=\frac{Q_{\mathrm{dis}}}{Q_{\mathrm{chg}}}] with [Q_{\mathrm{dis}}= int_{\mathrm{discharge}} |I(t)|\,dt,\qquad Q_{\mathrm{chg}}=\int_{\mathrm{charge}} |I(t)|\,dt.]
 
-Voltage Efficiency
+** Voltage Efficiency
 
 Represents the voltage-related loss independently of charge throughput:
 
 [\eta_V=\frac{\eta_{RTE}}{\eta_C}.]
 
-Usable Energy Capacity
+** Usable Energy Capacity
 
 Measures the energy delivered over the defined operating SOC window:
 
 [E_{\mathrm{usable}}=\int_{t_0}^{t_1}|V(t)I(t)|\,dt] where \(t_0\) and \(t_1\) correspond to the specified upper and lower SOC limits.
 
-Power Capability
+** Power Capability
 
 Measures the maximum deliverable electrical power during the simulated operating window:
 
 [P_{\max}=\max_t |V(t)I(t)|.]
 
-Thermal Response
+** Thermal Response
 
 Measures the temperature excursion produced during operation:
 
 [\Delta T=T_{\max}-T_{\min}] and the maximum operating temperature is[T_{\max}=\max_t T(t).]
 
-Depth of Discharge
+** Depth of Discharge
 
 For each simulated cycle:
 
@@ -143,24 +145,24 @@ Accumulated energy throughput is converted into equivalent full cycles:
 
 The factor of \(2\) accounts for one complete charge and discharge throughput.
 
-Capacity Fade
+** Capacity Fade
 
 The loss of usable capacity relative to the initial condition is:
 
 [F_Q(t)=1-\frac{Q_{\max}(t)}{Q_{\max}(0)}.]
 
-Cycle Life
+** Cycle Life
 
 Cycle life is estimated from the simulated degradation trajectory as the point at which the battery reaches the prescribed minimum \(SoH\):
 
 [N_{\mathrm{life}}=\min\left\{N:SoH(N)\le SoH_{\mathrm{limit}}\right\}.]
 
-Calendar Life
+** Calendar Life
 
 Where calendar-aging simulations are performed, the corresponding lifetime is:
 [t_{\mathrm{life}}=\min\left\{t:SoH(t)\le SoH_{\mathrm{limit}}\right\}.]
 
-Levelized Cost of Storage
+** Levelized Cost of Storage
 
 For the economic assessment:
 
@@ -173,6 +175,7 @@ where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered
   
 
 ---
+
 ### Distributed System State Estimation Using Wavelet Decomposition (core contribution)
 
 Unlike conventional Distribution System State Estimation (DSSE), where the complete network topology and bus model are assumed known, this research considers a partially observable network in which only the upstream distribution station is known while the downstream network remains hidden.
@@ -317,7 +320,7 @@ Dynamic Quantities
 
 ---
 
-##### 4. Distribution Network Simulation And Station Modeling
+#### 4. Distribution Network Simulation And Station Modeling
 
 The simulation framework systematically perturbs the unknown downstream network while maintaining a fixed upstream distribution station.
 
@@ -363,9 +366,9 @@ Each perturbed network is simulated to produce these decoupled datasets, linking
 
 ---
 
-##### Statistical Tests of Dataset 1 Realization Accuracy and Dataset 2 Observability
+#### Statistical Tests of Dataset 1 Realization Accuracy and Dataset 2 Observability
 
-### Dataset 1 Realization Accuracy Testing
+##### Dataset 1 Realization Accuracy Testing
 Dataset 1 statistical analysis (`src/statistics/correlation.py`) evaluates the accuracy of the inverse realization solver in recovering the hidden distribution network structure and electrical parameters from boundary measurements across 3 feeder subgroups (`feeder_1`, `feeder_2`, `feeder_3`). Metrics evaluated include:
 1. **Mean Absolute Error (MAE)** for discrete structural state estimation (bus count $\hat{N}_b$ vs $N_b$, branch count $\hat{N}_l$ vs $N_l$):
    \[
@@ -376,7 +379,7 @@ Dataset 1 statistical analysis (`src/statistics/correlation.py`) evaluates the a
    \mathrm{RMSE}_{Z} = \sqrt{\frac{1}{N} \sum_{i=1}^N (\hat{Z}_{\mathrm{eq},i} - Z_{\mathrm{eq},i})^2}
    \]
 
-### Dataset 2 Wavelet-Domain Observability Testing
+##### Dataset 2 Wavelet-Domain Observability Testing
 Prior to statistical testing on Dataset 2, the 3-phase transient waveforms (`obs_raw_transient_v`, `obs_raw_transient_i`) are normalized using steady-state references (`obs_steady_state_v_ref`, `obs_steady_state_i_ref`) to yield normalized transient waveforms (`obs_norm_transient_v`, `obs_norm_transient_i`). Signal processing is then performed directly on these normalized representations:
 1. **Real Fast Fourier Transform (FFT)** via `scipy.fft` computes the frequency-domain spectral magnitude representations across the 3 phases.
 2. **Stationary Wavelet Transform (SWT)** via `pywt.swt` (Level 2 `db1` wavelet) extracts multi-resolution time-frequency approximation and detail coefficients ($cA_2, cD_2, cA_1, cD_1$) across all 3 phases.
