@@ -474,56 +474,7 @@ Tests applied:
 - Distance correlation
 - HSIC as secondary confirmation of nonlinear dependency on joint data
 
-This is directly useful for answering the central research question: Are hidden network state and perturbations observable from the joint wavelet and spectral representations at the station boundary?
-
-##### validation architecture
-
-```text
-                DATASET
-                    │
-          ┌─────────┴─────────┐
-          │                   │
-   Hidden Network State   Measurements
-          │                   │
-          └─────────┬─────────┘
-                    │
-              Statistical
-                Analysis
-                    │
-        ┌───────────┼───────────┐
-        │           │           │
-     Dependence  Distribution  Multivariate
-        │        Separation     Separation
-        │           │           │
-      dCor         MMD       PERMANOVA
-      HSIC
-        │           │           │
-        └───────────┼───────────┘
-                    │
-             Noise Injection
-                    │
-          ┌─────────┴─────────┐
-          │                   │
-       SNR sweep          Sensor noise
-          │                   │
-          └─────────┬─────────┘
-                    │
-           Repeat statistical
-               validation
-                    │
-                    ▼
-       Statistical Observability
-                    │
-        ┌───────────┴───────────┐
-        │                       │
- Distinguishable states    Equivalent states
-        │                       │
-       MMD                 TOST/equivalence
-        │                       │
-        └───────────┬───────────┘
-                    ▼
-        Operator Design Requirements
-```
+This is directly useful for answering the central research question: Are hidden network state and events observable from the joint wavelet and spectral representations at the station boundary?
 
 We decide whether the statistical unit should be the scenario trajectory, the event response, or derived window-level features. That choice determines whether these tests remain statistically valid in the presence of temporal autocorrelation and repeated measurements.
 
