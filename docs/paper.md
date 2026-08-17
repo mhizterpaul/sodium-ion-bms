@@ -351,12 +351,12 @@ Measurements captured in each result include:
 The simulation framework generates two distinct, decoupled datasets to evaluate the latent observability problem under different operating conditions. Critically, to align with the decentralized physical architecture, measurements are not synchronized across transformers, and each dataset element strictly references exactly one transformer's measurements to prevent any inter-transformer leakage:
 
 1. **Dataset 1 (Scenario-Based Dataset)**: Focuses on steady-state network realization and structural state estimation.
-   - **Ground-Truth Target Variables ($X_R$):** Network parameters, number of buses, or other hidden network estimates derived from required power flow Gauss-Seidel/Newton-Raphson solutions (e.g., number of buses, branches, hidden line parameters etc.) of a single specific feeder's hidden LV network.
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Strictly limited to the associated single spectrum analyzer steady-state measurements and its associated transformer edge LV smart-meter measurements, completely excluding measurements from other transformers.
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_feeder_id`, `gt_topology_type`, `gt_estimated_number_of_buses`, `gt_estimated_number_of_branches`, `gt_estimated_z_eq_ohm`, `gt_estimated_r_eq_ohm`, `gt_estimated_x_eq_ohm` derived from solved power-flow representations of a single specific feeder's hidden LV network.
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase steady-state time vector (`obs_steady_state_time`), voltage waveforms (`obs_steady_state_voltage_abc`), current waveforms (`obs_steady_state_current_abc`), along with meter-level summary averages (`obs_transX_lv_pcc_voltage_mag_avg`, `obs_transX_lv_pcc_current_mag_avg`, `obs_transX_lv_pcc_p_kw`, `obs_transX_lv_pcc_q_kvar`, `obs_transX_lv_pcc_s_kva`, `obs_transX_lv_pcc_pf`).
 
 2. **Dataset 2 (Event-Based Dataset)**: Focuses on transient/switching dynamic state realization.
-   - **Ground-Truth Target Variables ($X_R$):** Event types, effective load, load type, and start and end timestamps.
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Synchronized readings of a single selected branch smart-meter and its associated single parent edge transformer device. Measurements are strictly localized and synced across the meter-transformer nodes of the same unknown LV network only.
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_event_type`, `gt_simulated_event`, `gt_effective_load_kw`, `gt_load_type`, `gt_start_timestamp_s`, `gt_end_timestamp_s`.
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Localized transformer steady-state reference magnitudes (`obs_steady_state_v_ref`, `obs_steady_state_i_ref`), three-phase raw transient waveforms (`obs_raw_transient_time`, `obs_raw_transient_v`, `obs_raw_transient_i`), and three-phase steady-state-normalized transient waveforms (`obs_norm_transient_time`, `obs_norm_transient_v`, `obs_norm_transient_i`).
 
 Each perturbed network is simulated to produce these decoupled datasets, linking hidden network states and events to observable PCC-level signatures without any target label leakage or cross-transformer data contamination.
 
@@ -378,7 +378,7 @@ To evaluate spatial consistency and robustness across the distribution architect
 
 * Test 1 — Distance correlation: does the measurement contain information about hidden state?
 
-Evaluates global time-frequency dependency between hidden network states $X = [\mathrm{gt\_effective\_load\_kw}]$ and the multivariate joint representation $Y_{\mathrm{joint}}$ across 3 subgroups (`feeder_1`, `feeder_2`, `feeder_3`), reporting average Distance Correlation and average HSIC statistics.
+Evaluates global time-frequency dependency between hidden network states $X = [\mathrm{gt\_effective\_load\_kw}]$ and the multivariate joint representation $Y_{\mathrm{joint}}$ across 3 subgroups (`feeder_1`, `feeder_2`, `feeder_3`), reporting per-subgroup values and average Distance Correlation and average HSIC statistics.
 
 Distance correlation was specifically developed to detect dependence between random vectors and has the important property that population distance correlation is zero iff the variables are independent.
 
@@ -391,7 +391,7 @@ the hypothesis becomes:
 
 * Test 2 — MMD: do two hidden networks generate different measurement distributions?
 
-Evaluates whether distinct hidden network load structures (e.g., linear vs. non-linear/heavy-duty load classes in $X$) produce significantly different probability distributions in the joint spectral-wavelet domain $Y_{\mathrm{joint}}$ across the 3 subgroups, reporting the average $MMD^2$ statistic.
+Evaluates whether distinct hidden network load structures (e.g., linear vs. non-linear/heavy-duty load classes in $X$) produce significantly different probability distributions in the joint spectral-wavelet domain $Y_{\mathrm{joint}}$ across the 3 subgroups, reporting per-subgroup values and the average $MMD^2$ statistic.
 
 Take two hidden network states: \[ G_a,\;G_b. \]
 Their corresponding measurement distributions are: \[ P_a(Y) \]and\[ P_b(Y). \]
@@ -406,7 +406,7 @@ This is extremely appropriate for the dataset because we don't need to assume th
 
 * Test 3 — PERMANOVA: are measurement vectors separated by hidden network state?
 
-Evaluates multivariate separation of joint spectral/wavelet representations $Y_{\mathrm{joint}}$ across categorical switching event types ($X = \mathrm{gt\_event\_type}$) across the 3 subgroups, reporting average pseudo-$F$ statistics, average $R^2_{\mathrm{network}}$, and average PERMDISP dispersion $F$-statistics.
+Evaluates multivariate separation of joint spectral/wavelet representations $Y_{\mathrm{joint}}$ across categorical switching event types ($X = \mathrm{gt\_event\_type}$) across the 3 subgroups, reporting per-subgroup values and average pseudo-$F$ statistics, average $R^2_{\mathrm{network}}$, and average PERMDISP dispersion $F$-statistics.
 
 Anderson's PERMANOVA provides a non-parametric multivariate analogue of ANOVA based on distances.
 
@@ -433,7 +433,7 @@ So we investigate the joint expectation and variance: \[ E[Y_{\mathrm{joint}}|G]
 
 * Test 4 — TOST for practical equivalence
 
-Evaluates practical equivalence of joint spectral-wavelet representations $Y_{\mathrm{joint}}$ between transient switching events (e.g., transformer inrush vs. capacitor switching) within a defined equivalence margin $\Delta = \pm \delta$ across the 3 subgroups, reporting average mean differences and average TOST $p$-values.
+Evaluates practical equivalence of joint spectral-wavelet representations $Y_{\mathrm{joint}}$ between transient switching events (e.g., transformer inrush vs. capacitor switching) within a defined equivalence margin $\Delta = \pm \delta$ across the 3 subgroups, reporting per-subgroup values and average mean differences and average TOST $p$-values.
 
 We formulate an equivalence margin for a joint wavelet feature representation:
 
@@ -449,7 +449,7 @@ we test: \[ H_0:X\perp Y_{\mathrm{joint}}. \] HSIC measures dependence through t
 
 * Test 5 — Observability of Hidden State and Perturbations from Joint Wavelet and Spectral Representations
 
-Evaluates non-linear dependence between the full joint representation vector $Y_{\mathrm{joint}} = [\mathrm{FFT} + \mathrm{SWT}]$ and hidden network perturbation variables across the 3 subgroups, reporting average Distance Correlation and average HSIC statistics.
+Evaluates non-linear dependence between the full joint representation vector $Y_{\mathrm{joint}} = [\mathrm{FFT} + \mathrm{SWT}]$ and hidden network perturbation variables across the 3 subgroups, reporting per-subgroup values and average Distance Correlation and average HSIC statistics.
 
 We test if the joint wavelet and spectral representations produce statistically significant and observable dependency with the hidden network configuration and perturbations (including topology changes, network size, load redistribution, switching events, transformer loading, and line parameter variations):
 
