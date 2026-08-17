@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 import numpy as np
-from src.realization.kron_reduction import compute_kron_reduced_impedance
 from src.realization.impedance_solver import EquivalentImpedanceSolver
 from src.realization.network_size_solver import HiddenNetworkSizeSolver
 

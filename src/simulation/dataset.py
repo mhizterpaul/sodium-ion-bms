@@ -15,7 +15,7 @@ from src.hidden_network.topology import (
 from src.hidden_network.loads import distribute_loads
 from src.hidden_network.perturbations import apply_topology_reconfiguration
 from src.transient.events import TransientEvent
-from src.realization.kron_reduction import compute_kron_reduced_impedance
+from src.simulation.kron_reduction import compute_kron_reduced_impedance
 from src.realization.inverse_solver import LatentNetworkRealizationSolver
 
 def validate_dataset_1(df_1: pd.DataFrame):
