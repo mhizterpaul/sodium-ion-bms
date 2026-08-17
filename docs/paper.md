@@ -157,7 +157,7 @@ where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered
 
 ---
 
-### Distributed System State Estimation Using Wavelet Decomposition (core contribution)
+## Distributed System State Estimation Using Wavelet Decomposition (core contribution)
 
 Unlike conventional Distribution System State Estimation (DSSE), where the complete network topology and bus model are assumed known, this research considers a partially observable network in which only the upstream distribution station is known while the downstream network remains hidden.
 
@@ -174,7 +174,7 @@ The emphasis is therefore on discovering which hidden network properties are ele
 
 ---
 
-#### System Model
+### System Model
 
 #### 1. Known Plant for Latent Network Realization
 
