@@ -14,7 +14,7 @@ class ATPResult:
 class ATPRunner:
     """
     Thin process adapter around the actual ATP-EMTP executable (tpbig/tpgig).
-    Runs the real Windows binary via Wine on Linux runtime.
+    Executes the real Windows binary via Wine on Linux runtime without synthetic fallbacks.
     """
     def __init__(self, atp_executable: str | Path = None, timeout_s: float = 300.0):
         self.timeout_s = timeout_s
@@ -32,13 +32,14 @@ class ATPRunner:
         if not tpbigm.exists():
             raise FileNotFoundError(f"tpbigm.exe not found under {atp_dir}")
 
-        # Copy the case file to atpmingw_2024 as TEMP_CASE.ATP
+        wine_path = shutil.which("wine")
+        if wine_path is None:
+            raise RuntimeError("Wine is not installed in the execution environment. Wine is required to run ATP-EMTP binary tpbigm.exe.")
+
         temp_case_name = "TEMP_CASE.ATP"
         temp_case_path = atp_dir / temp_case_name
         shutil.copy(case_path, temp_case_path)
 
-        # Run wine tpbigm.exe both TEMP_CASE.ATP . -R
-        print(f"INFO: Running real ATP solver via wine on {case_path.name}")
         cmd = ["wine", "tpbigm.exe", "both", temp_case_name, ".", "-R"]
         process = subprocess.run(
             cmd,
@@ -49,40 +50,37 @@ class ATPRunner:
             check=False
         )
 
-        # Copy generated files back
+        # Copy generated output files back (.lis, .dbg, .pl4)
         for suffix in [".lis", ".dbg", ".pl4"]:
             generated_file = atp_dir / f"TEMP_CASE{suffix}"
             if generated_file.exists():
                 dest_file = case_path.with_suffix(suffix)
-                if suffix == ".pl4" and dest_file.exists():
-                    # Check if the existing dest_file is a high-fidelity text-based .pl4
-                    try:
-                        with open(dest_file, "r") as f:
-                            first_line = f.readline()
-                        is_high_fid_text = "PL4:" in first_line or "C  PL4" in first_line
-                    except Exception:
-                        is_high_fid_text = False
-
-                    if is_high_fid_text:
-                        # Copy the new binary .pl4 as .pl4.bin, keeping high-fidelity text PL4 intact
-                        shutil.copy(generated_file, dest_file.with_suffix(".pl4.bin"))
-                    else:
-                        shutil.copy(generated_file, dest_file)
-                else:
-                    shutil.copy(generated_file, dest_file)
+                shutil.copy(generated_file, dest_file)
                 try:
                     generated_file.unlink()
                 except Exception:
                     pass
 
-        # Clean up temporary files
-        if temp_case_path.exists():
-            temp_case_path.unlink()
-
-        # Clean up any residual .tmp files in atpmingw_2024
+        # Clean up all temporary files created in atpmingw_2024 during this run
         for tmp_file in atp_dir.glob("*.tmp"):
             try:
                 tmp_file.unlink()
+            except Exception:
+                pass
+        for bin_file in atp_dir.glob("*.bin"):
+            try:
+                bin_file.unlink()
+            except Exception:
+                pass
+        for fort_file in atp_dir.glob("fort.*"):
+            try:
+                fort_file.unlink()
+            except Exception:
+                pass
+
+        if temp_case_path.exists():
+            try:
+                temp_case_path.unlink()
             except Exception:
                 pass
 

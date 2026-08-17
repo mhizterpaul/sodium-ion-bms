@@ -351,20 +351,47 @@ Measurements captured in each result include:
 The simulation framework generates two distinct, decoupled datasets to evaluate the latent observability problem under different operating conditions. Critically, to align with the decentralized physical architecture, measurements are not synchronized across transformers, and each dataset element strictly references exactly one transformer's measurements to prevent any inter-transformer leakage:
 
 1. **Dataset 1 (Scenario-Based Dataset)**: Focuses on steady-state network realization and structural state estimation.
-   - **Ground-Truth Target Variables ($X_R$):** Network parameters, number of buses, or other hidden network estimates derived from required power flow Gauss-Seidel/Newton-Raphson solutions (e.g., number of buses, branches, hidden line parameters etc.) of a single specific feeder's hidden LV network.
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Strictly limited to the associated single spectrum analyzer steady-state measurements and its associated transformer edge LV smart-meter measurements, completely excluding measurements from other transformers.
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_feeder_id`, `gt_topology_type`, `gt_number_of_buses`, `gt_number_of_branches`, `gt_r_eq_ohm`, `gt_x_eq_ohm`, `gt_z_eq_ohm` derived from Kron network reduction of a single specific feeder's hidden LV network.
+   - **Inverse Realization Estimates ($\hat{X}_R$):** `est_number_of_buses`, `est_number_of_branches`, `est_r_eq_ohm`, `est_x_eq_ohm`, `est_z_eq_ohm` derived by the inverse solver `LatentNetworkRealizationSolver`.
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase steady-state time vector (`obs_steady_state_time`), voltage waveforms (`obs_steady_state_voltage_abc`), current waveforms (`obs_steady_state_current_abc`), along with meter-level summary averages (`obs_transX_lv_pcc_voltage_mag_avg`, `obs_transX_lv_pcc_current_mag_avg`, `obs_transX_lv_pcc_p_kw`, `obs_transX_lv_pcc_q_kvar`).
 
 2. **Dataset 2 (Event-Based Dataset)**: Focuses on transient/switching dynamic state realization.
-   - **Ground-Truth Target Variables ($X_R$):** Event types, effective load, load type, and start and end timestamps.
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Synchronized readings of a single selected branch smart-meter and its associated single parent edge transformer device. Measurements are strictly localized and synced across the meter-transformer nodes of the same unknown LV network only.
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_event_type`, `gt_simulated_event`, `gt_effective_load_kw`, `gt_load_type`, `gt_start_timestamp_s`, `gt_end_timestamp_s`.
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Localized transformer steady-state reference magnitudes (`obs_steady_state_v_ref`, `obs_steady_state_i_ref`), three-phase raw transient waveforms (`obs_raw_transient_time`, `obs_raw_transient_v`, `obs_raw_transient_i`), and three-phase steady-state-normalized transient waveforms (`obs_norm_transient_time`, `obs_norm_transient_v`, `obs_norm_transient_i`).
 
 Each perturbed network is simulated to produce these decoupled datasets, linking hidden network states and events to observable PCC-level signatures without any target label leakage or cross-transformer data contamination.
 
 ---
 
-##### Statistical Tests of State Observability Using Steady-State-Normalized Decomposed Transformer Waveforms
+##### Statistical Tests of Dataset 1 Realization Accuracy and Dataset 2 Observability
+
+### Dataset 1 Realization Accuracy Testing
+Dataset 1 statistical analysis (`src/statistics/correlation.py`) evaluates the accuracy of the inverse realization solver in recovering the hidden distribution network structure and electrical parameters from boundary measurements across 3 feeder subgroups (`feeder_1`, `feeder_2`, `feeder_3`). Metrics evaluated include:
+1. **Mean Absolute Error (MAE)** for discrete structural state estimation (bus count $\hat{N}_b$ vs $N_b$, branch count $\hat{N}_l$ vs $N_l$):
+   \[
+   \mathrm{MAE}_{N_b} = \frac{1}{N} \sum_{i=1}^N |\hat{N}_{b,i} - N_{b,i}|, \qquad \mathrm{MAE}_{N_l} = \frac{1}{N} \sum_{i=1}^N |\hat{N}_{l,i} - N_{l,i}|
+   \]
+2. **Root Mean Squared Error (RMSE)** for continuous equivalent impedance estimation ($\hat{R}_{\mathrm{eq}}$, $\hat{X}_{\mathrm{eq}}$, $\hat{Z}_{\mathrm{eq}}$):
+   \[
+   \mathrm{RMSE}_{Z} = \sqrt{\frac{1}{N} \sum_{i=1}^N (\hat{Z}_{\mathrm{eq},i} - Z_{\mathrm{eq},i})^2}
+   \]
+
+### Dataset 2 Wavelet-Domain Observability Testing
+Prior to statistical testing on Dataset 2, the 3-phase transient waveforms (`obs_raw_transient_v`, `obs_raw_transient_i`) are normalized using steady-state references (`obs_steady_state_v_ref`, `obs_steady_state_i_ref`) to yield normalized transient waveforms (`obs_norm_transient_v`, `obs_norm_transient_i`). Signal processing is then performed directly on these normalized representations:
+1. **Real Fast Fourier Transform (FFT)** via `scipy.fft` computes the frequency-domain spectral magnitude representations across the 3 phases.
+2. **Stationary Wavelet Transform (SWT)** via `pywt.swt` (Level 2 `db1` wavelet) extracts multi-resolution time-frequency approximation and detail coefficients ($cA_2, cD_2, cA_1, cD_1$) across all 3 phases.
+
+The resulting joint feature representation vector $Y_{\mathrm{joint}} = [\mathrm{FFT\_Summary}, \mathrm{SWT\_Coefficients}]$ concatenates spectral magnitudes and wavelet energy/dispersion statistics.
+
+To evaluate spatial consistency and robustness across the distribution architecture, **each statistical test is evaluated across at least 3 distinct network subgroups** ($k=1, 2, 3$, corresponding to `feeder_1`, `feeder_2`, and `feeder_3`). The statistical metrics are calculated independently per subgroup and the **average values across all subgroups** are reported as the primary observability indicators:
+
+\[
+\overline{\mathrm{Metric}} = \frac{1}{K} \sum_{k=1}^K \mathrm{Metric}_k
+\]
 
 * Test 1 — Distance correlation: does the measurement contain information about hidden state?
+
+Evaluates global time-frequency dependency between hidden network states $X = [\mathrm{gt\_effective\_load\_kw}]$ and the multivariate joint representation $Y_{\mathrm{joint}}$ across 3 subgroups (`feeder_1`, `feeder_2`, `feeder_3`), reporting per-subgroup values and average Distance Correlation and average HSIC statistics.
 
 Distance correlation was specifically developed to detect dependence between random vectors and has the important property that population distance correlation is zero iff the variables are independent.
 
@@ -374,11 +401,10 @@ Calculate \[ dCor(X,Y). \]
 
 the hypothesis becomes:
 \[ H_0:X\perp Y \] versus \[ H_1:X\not\perp Y. \]
-But we do not rely on the asymptotic p-value. we use a permutation test.
 
 * Test 2 — MMD: do two hidden networks generate different measurement distributions?
 
-This is particularly useful because the hidden networks are discrete realizations.
+Evaluates whether distinct hidden network load structures (e.g., linear vs. non-linear/heavy-duty load classes in $X$) produce significantly different probability distributions in the joint spectral-wavelet domain $Y_{\mathrm{joint}}$ across the 3 subgroups, reporting per-subgroup values and the average $MMD^2$ statistic.
 
 Take two hidden network states: \[ G_a,\;G_b. \]
 Their corresponding measurement distributions are: \[ P_a(Y) \]and\[ P_b(Y). \]
@@ -393,14 +419,14 @@ This is extremely appropriate for the dataset because we don't need to assume th
 
 * Test 3 — PERMANOVA: are measurement vectors separated by hidden network state?
 
-Anderson's PERMANOVA provides a non-parametric multivariate analogue of ANOVA based on distances and permutations.
+Evaluates multivariate separation of joint spectral/wavelet representations $Y_{\mathrm{joint}}$ across categorical switching event types ($X = \mathrm{gt\_event\_type}$) across the 3 subgroups, reporting per-subgroup values and average pseudo-$F$ statistics, average $R^2_{\mathrm{network}}$, and average PERMDISP dispersion $F$-statistics.
+
+Anderson's PERMANOVA provides a non-parametric multivariate analogue of ANOVA based on distances.
 
 The model can be: \[ D_{ij}=d(Y_i,Y_j) \]
-where \(d\) might be: Euclidean distance, standardized Euclidean distance,
-Mahalanobis distance,
-or another appropriate distance.
+where \(d\) is Euclidean distance over $Y_{\mathrm{joint}}$.
 
-Then test: \[ H_0: \text{measurement distributions do not differ by network realization}. \] The resulting pseudo-\(F\) statistic and permutation \(p\)-value tell you whether the groups differ.
+Then test: \[ H_0: \text{measurement distributions do not differ by network realization}. \] The resulting pseudo-\(F\) statistic tells you whether the groups differ.
 
 More importantly we report:
 \[ R^2_{\rm network} = \frac{SS_{\rm network}}{SS_{\rm total}}. \]
@@ -420,7 +446,8 @@ So we investigate the joint expectation and variance: \[ E[Y_{\mathrm{joint}}|G]
 
 * Test 4 — TOST for practical equivalence
 
-Suppose two different hidden networks produce almost indistinguishable joint wavelet responses.
+Evaluates practical equivalence of joint spectral-wavelet representations $Y_{\mathrm{joint}}$ between transient switching events (e.g., transformer inrush vs. capacitor switching) within a defined equivalence margin $\Delta = \pm \delta$ across the 3 subgroups, reporting per-subgroup values and average mean differences and average TOST $p$-values.
+
 We formulate an equivalence margin for a joint wavelet feature representation:
 
 \[ \Delta_L=-\delta,\qquad \Delta_U=+\delta. \]
@@ -435,7 +462,7 @@ we test: \[ H_0:X\perp Y_{\mathrm{joint}}. \] HSIC measures dependence through t
 
 * Test 5 — Observability of Hidden State and Perturbations from Joint Wavelet and Spectral Representations
 
-This is important for your eventual operator design.
+Evaluates non-linear dependence between the full joint representation vector $Y_{\mathrm{joint}} = [\mathrm{FFT} + \mathrm{SWT}]$ and hidden network perturbation variables across the 3 subgroups, reporting per-subgroup values and average Distance Correlation and average HSIC statistics.
 
 We test if the joint wavelet and spectral representations produce statistically significant and observable dependency with the hidden network configuration and perturbations (including topology changes, network size, load redistribution, switching events, transformer loading, and line parameter variations):
 
@@ -444,7 +471,6 @@ where $Y_{\mathrm{joint}}$ represents the actual joint wavelet-domain and spectr
 
 Tests applied:
 - Distance correlation
-- Permutation test on joint wavelet/spectral data
 - HSIC as secondary confirmation of nonlinear dependency on joint data
 
 This is directly useful for answering the central research question: Are hidden network state and perturbations observable from the joint wavelet and spectral representations at the station boundary?
