@@ -91,8 +91,9 @@ Each performance metric is calculated directly from the simulated measurements.
 
 * **Round-Trip Energy Efficiency (RTE):** Measures the fraction of charging energy recovered during discharge:
 [eta_{RTE}=frac{E_{\mathrm{dis}}}{E_{\mathrm{chg}}}] whereb[E_{\mathrm{dis}}=int_{\mathrm{discharge}} V(t)I(t),dt]
-and [E_{\mathrm{chg}}=\int_{\mathrm{charge}} |V(t)I(t)|\,dt.] Coulombic Efficiency
-Measures the fraction of charge recovered in terms of electrical charge:
+and [E_{\mathrm{chg}}=\int_{\mathrm{charge}} |V(t)I(t)|\,dt.] 
+
+* **Coulombic Efficiency:** Measures the fraction of charge recovered in terms of electrical charge:
 [\eta_C=\frac{Q_{\mathrm{dis}}}{Q_{\mathrm{chg}}}] with [Q_{\mathrm{dis}}= int_{\mathrm{discharge}} |I(t)|\,dt,\qquad Q_{\mathrm{chg}}=\int_{\mathrm{charge}} |I(t)|\,dt.]
 
 * **Voltage Efficiency:** Represents the voltage-related loss independently of charge throughput:
@@ -134,12 +135,7 @@ where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered
 ## Distributed System State Estimation Using Wavelet Decomposition (core contribution)
 
 Unlike conventional Distribution System State Estimation (DSSE), where the complete network topology and bus model are assumed known, this research considers a partially observable network in which only the upstream distribution station is known while the downstream network remains hidden.
-
-The realization problem is formulated as
-[
-X_R=\Phi(M)
-]
-where
+The realization problem is formulated as [X_R=\Phi(M)] where
 * (M) denotes synchronized measurements acquired at the meters and distribution transformers,
 * (X_R) is a latent realization state describing the hidden network,
 * The aim is to derive (\Phi(\cdot)) realization operator, empirically from simulated operating scenarios.
