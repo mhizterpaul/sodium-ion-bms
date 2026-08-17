@@ -364,18 +364,13 @@ Prior to statistical testing on Dataset 2, the 3-phase transient waveforms (`obs
 The resulting joint feature representation vector $Y_{\mathrm{joint}} = [\mathrm{FFT\_Summary}, \mathrm{SWT\_Coefficients}]$ concatenates spectral magnitudes and wavelet energy/dispersion statistics.
 
 To evaluate spatial consistency and robustness across the distribution architecture, **each statistical test is evaluated across at least 3 distinct network subgroups** ($k=1, 2, 3$, corresponding to `feeder_1`, `feeder_2`, and `feeder_3`). The statistical metrics are calculated independently per subgroup and the **average values across all subgroups** are reported as the primary observability indicators:
-
-\[
-\overline{\mathrm{Metric}} = \frac{1}{K} \sum_{k=1}^K \mathrm{Metric}_k
-\]
+\[\overline{\mathrm{Metric}} = \frac{1}{K} \sum_{k=1}^K \mathrm{Metric}_k\]
 
 * Test 1 — Distance correlation: does the measurement contain information about hidden state?
 
 Evaluates global time-frequency dependency between hidden network states \[ X=\text{gt_effective_load_kw} \]
- and the multivariate joint representation $Y_{\mathrm{joint}}$ across 3 subgroups (`feeder_1`, `feeder_2`, `feeder_3`), reporting per-subgroup values and average Distance Correlation and average HSIC statistics.
-
+ and the multivariate joint representation $Y_{\mathrm{joint}}$, reporting per-subgroup values and average Distance Correlation and average HSIC statistics.
 Distance correlation was specifically developed to detect dependence between random vectors and has the important property that population distance correlation is zero iff the variables are independent.
-
 Define:
 \[ X=\text{hidden network state} \] and \[ Y=\text{measurement vector}. \]
 Calculate \[ dCor(X,Y). \]
@@ -402,8 +397,6 @@ More importantly we report:
 \[ R^2_{\rm network} = \frac{SS_{\rm network}}{SS_{\rm total}}. \]
 PERMANOVA can confound location differences with dispersion differences. Therefore, we pair it with a dispersion test rather than reporting it alone.
 Multivariate Homogeneity of Dispersion (PERMDISP): does network state change joint wavelet representation variability?
-We test whether different hidden network states generate significantly different multivariate dispersion on the joint wavelet and spectral representations:
-\[ H_0: \Sigma_{G_1} = \Sigma_{G_2} = \cdots = \Sigma_{G_K}. \]
 For example:
 Network A and B may have similar mean joint wavelet responses, but Network B produces substantially greater variability in its transient representations.
 That variability itself can carry information about the hidden network.
