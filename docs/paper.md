@@ -4,12 +4,12 @@
 
 ### Base Cell Model (Literature-Aligned NFPP Sodium-Ion Twin System)
 
-* 1. Electrochemical Core (DFN-Compatible Reaction)
+1. Electrochemical Core (DFN-Compatible Reaction)
 The sodium iron pyrophosphate (NFPP) cathode operates via reversible sodium intercalation:
 Na₂FePO₄P₂O₇ ⇌ NaₓFePO₄P₂O₇ + (2 − x)Na⁺ + (2 − x)e⁻
 Theoretical specific capacity: ~95–100 mAh g⁻¹, consistent with reported polyanionic NFPP sodium-ion cathode systems used in pouch-scale prototypes.
 
-* 2. Cathode Electrode Architecture (Composite Design)
+2. Cathode Electrode Architecture (Composite Design)
 NFPP cathodes in practical sodium-ion full cells follow a carbon–binder–domain composite structure processed using N-methyl-2-pyrrolidone (NMP)-based slurry casting.
 Fixed composition:
 	Sodium iron pyrophosphate (NFPP) active material: 85 wt% 
@@ -17,7 +17,7 @@ Fixed composition:
 	Binder: polyvinylidene fluoride (PVDF): 7 wt% 
 This structure reflects standard aluminum current collector-based cathodes used in sodium-ion pouch cells with high-density electrode compaction.
 
-* 3. Anode Design (Hard Carbon System)
+3. Anode Design (Hard Carbon System)
 Hard carbon anodes are implemented as disordered carbon networks with nanopore and turbostratic domains enabling sodium storage through adsorption, intercalation, and pore filling mechanisms.
 Fixed formulation:
 	Hard carbon active material: 88 wt% 
@@ -25,14 +25,14 @@ Fixed formulation:
 	Binder: polyvinylidene fluoride (PVDF): 6 wt% 
 Practical specific capacity: 250–300 mAh g⁻¹, consistent with full-cell hard carbon sodium storage behavior.
 
-* 4. Electrolyte System (Carbonate-Based Sodium Salt System)
+4. Electrolyte System (Carbonate-Based Sodium Salt System)
 The electrolyte follows a standard sodium-ion full-cell carbonate formulation:
 	Sodium hexafluorophosphate (NaPF₆): 1.0 molar concentration 
 	Sodium difluoro(oxalato)borate (NaDFOB): 0.2 molar concentration 
 	Solvent system: ethylene carbonate and propylene carbonate in 1:1 volumetric ratio 
 	Ionic conductivity: ~10 mS cm⁻¹ at 25°C
 
-* 5. Electrolyte Additive System (Interphase Engineering)
+5. Electrolyte Additive System (Interphase Engineering)
 Interfacial stability is controlled using electrolyte additives that regulate both solid electrolyte interphase and cathode electrolyte interphase formation:
 	Fluoroethylene carbonate (FEC): 3 wt%
 → promotes stable solid electrolyte interphase (SEI) formation on the hard carbon anode 
@@ -41,7 +41,7 @@ Interfacial stability is controlled using electrolyte additives that regulate bo
 	Sodium difluoro(oxalato)borate (NaDFOB): functions as both co-salt and cathode electrolyte interphase (CEI) stabilizer 
 The SEI is a passivation layer formed on the anode that regulates sodium-ion transport and prevents continuous electrolyte decomposition, while the CEI stabilizes cathode surface reactions and mitigates structural degradation.
 
-* 6. Pouch Cell Mechanical Architecture (Stacked Design)
+6. Pouch Cell Mechanical Architecture (Stacked Design)
 The full cell follows a stacked pouch configuration consistent with sodium-ion prototype manufacturing systems:
 	Form factor: stacked Z-fold pouch cell architecture 
 	Nominal voltage: 3.0–3.2 volts 
@@ -73,7 +73,7 @@ The projected design space ($\theta = [\theta_s, \theta_m]$) is explored with a 
 ### BESS Robustness Evaluation Framework
 
 
-* **1. Electrochemical–Thermal Driver Model**
+**1. Electrochemical–Thermal Driver Model**
 
 The BESS is evaluated using the DFN electrochemical model coupled with the thermal model. The model provides the measurable simulation outputs required for performance evaluation:
 
@@ -92,11 +92,11 @@ Energy throughput
 
 The BESS is evaluated under simulated grid-outage, PV-firming, and variable C-rate dispatch profiles.
 
-* **2. Performance Measurements**
+**2. Performance Measurements**
 
 Each performance metric is calculated directly from the simulated measurements.
 
-** Round-Trip Energy Efficiency (RTE)
+* Round-Trip Energy Efficiency (RTE)
 
 Measures the fraction of charging energy recovered during discharge:
 
@@ -107,31 +107,31 @@ Measures the fraction of charge recovered in terms of electrical charge:
 
 [\eta_C=\frac{Q_{\mathrm{dis}}}{Q_{\mathrm{chg}}}] with [Q_{\mathrm{dis}}= int_{\mathrm{discharge}} |I(t)|\,dt,\qquad Q_{\mathrm{chg}}=\int_{\mathrm{charge}} |I(t)|\,dt.]
 
-** Voltage Efficiency
+* Voltage Efficiency
 
 Represents the voltage-related loss independently of charge throughput:
 
 [\eta_V=\frac{\eta_{RTE}}{\eta_C}.]
 
-** Usable Energy Capacity
+* Usable Energy Capacity
 
 Measures the energy delivered over the defined operating SOC window:
 
 [E_{\mathrm{usable}}=\int_{t_0}^{t_1}|V(t)I(t)|\,dt] where \(t_0\) and \(t_1\) correspond to the specified upper and lower SOC limits.
 
-** Power Capability
+* Power Capability
 
 Measures the maximum deliverable electrical power during the simulated operating window:
 
 [P_{\max}=\max_t |V(t)I(t)|.]
 
-** Thermal Response
+* Thermal Response
 
 Measures the temperature excursion produced during operation:
 
 [\Delta T=T_{\max}-T_{\min}] and the maximum operating temperature is[T_{\max}=\max_t T(t).]
 
-** Depth of Discharge
+* Depth of Discharge
 
 For each simulated cycle:
 
@@ -145,24 +145,24 @@ Accumulated energy throughput is converted into equivalent full cycles:
 
 The factor of \(2\) accounts for one complete charge and discharge throughput.
 
-** Capacity Fade
+* Capacity Fade
 
 The loss of usable capacity relative to the initial condition is:
 
 [F_Q(t)=1-\frac{Q_{\max}(t)}{Q_{\max}(0)}.]
 
-** Cycle Life
+* Cycle Life
 
 Cycle life is estimated from the simulated degradation trajectory as the point at which the battery reaches the prescribed minimum \(SoH\):
 
 [N_{\mathrm{life}}=\min\left\{N:SoH(N)\le SoH_{\mathrm{limit}}\right\}.]
 
-** Calendar Life
+* Calendar Life
 
 Where calendar-aging simulations are performed, the corresponding lifetime is:
 [t_{\mathrm{life}}=\min\left\{t:SoH(t)\le SoH_{\mathrm{limit}}\right\}.]
 
-** Levelized Cost of Storage
+* Levelized Cost of Storage
 
 For the economic assessment:
 
@@ -171,7 +171,7 @@ where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered
 
 ---
 
-*   **Limitations**:  While this work focuses on a foundational design space, the cell architecture remains amenable to further performance enhancement via composite electrode structuring, advanced pore network engineering, perturbing other dopant sites (beyond the Fe-site), and exploring a broader range of electrolyte systems (solvents and additives) to further enhance cycle life and energy density. The current optimization scope is intentionally streamlined to accommodate the computational constraints of the DFN solver.
+**Limitations**:  While this work focuses on a foundational design space, the cell architecture remains amenable to further performance enhancement via composite electrode structuring, advanced pore network engineering, perturbing other dopant sites (beyond the Fe-site), and exploring a broader range of electrolyte systems (solvents and additives) to further enhance cycle life and energy density. The current optimization scope is intentionally streamlined to accommodate the computational constraints of the DFN solver.
   
 
 ---
