@@ -40,7 +40,6 @@ class ATPRunner:
         temp_case_path = atp_dir / temp_case_name
         shutil.copy(case_path, temp_case_path)
 
-        print(f"INFO: Running real ATP solver via wine on {case_path.name}")
         cmd = ["wine", "tpbigm.exe", "both", temp_case_name, ".", "-R"]
         process = subprocess.run(
             cmd,
@@ -61,6 +60,23 @@ class ATPRunner:
                     generated_file.unlink()
                 except Exception:
                     pass
+
+        # Clean up all temporary files created in atpmingw_2024 during this run
+        for tmp_file in atp_dir.glob("*.tmp"):
+            try:
+                tmp_file.unlink()
+            except Exception:
+                pass
+        for bin_file in atp_dir.glob("*.bin"):
+            try:
+                bin_file.unlink()
+            except Exception:
+                pass
+        for fort_file in atp_dir.glob("fort.*"):
+            try:
+                fort_file.unlink()
+            except Exception:
+                pass
 
         if temp_case_path.exists():
             try:
