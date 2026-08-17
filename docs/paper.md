@@ -341,7 +341,7 @@ Each perturbed network is simulated to produce these decoupled datasets, linking
 
 #### 4. Statistical Tests for estimated lv network parameters and observable state
 
-* **Dataset 1 Realization Accuracy Testing**
+* ##### Dataset 1 Realization Accuracy Testing
 
 Dataset 1 statistical analysis (`src/statistics/correlation.py`) evaluates the accuracy of the inverse realization solver in recovering the hidden distribution network structure and electrical parameters from boundary measurements across 3 feeder subgroups (`feeder_1`, `feeder_2`, `feeder_3`). Metrics evaluated include:
 
@@ -354,7 +354,7 @@ Dataset 1 statistical analysis (`src/statistics/correlation.py`) evaluates the a
    \mathrm{RMSE}_{Z} = \sqrt{\frac{1}{N} \sum_{i=1}^N (\hat{Z}_{\mathrm{eq},i} - Z_{\mathrm{eq},i})^2}
    \]
 
-* **Dataset 2 Wavelet-Domain Observability Testing**
+* ##### Dataset 2 Wavelet-Domain Observability Testing
 
 Prior to statistical testing on Dataset 2, the 3-phase transient waveforms (`obs_raw_transient_v`, `obs_raw_transient_i`) are normalized using steady-state references (`obs_steady_state_v_ref`, `obs_steady_state_i_ref`) to yield normalized transient waveforms (`obs_norm_transient_v`, `obs_norm_transient_i`). Signal processing is then performed directly on these normalized representations:
 
