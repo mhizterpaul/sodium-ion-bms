@@ -89,63 +89,41 @@ The BESS is evaluated under simulated grid-outage, PV-firming, and variable C-ra
 
 Each performance metric is calculated directly from the simulated measurements.
 
-* **Round-Trip Energy Efficiency (RTE)**
-
-Measures the fraction of charging energy recovered during discharge:
+* **Round-Trip Energy Efficiency (RTE):** Measures the fraction of charging energy recovered during discharge:
 [eta_{RTE}=frac{E_{\mathrm{dis}}}{E_{\mathrm{chg}}}] whereb[E_{\mathrm{dis}}=int_{\mathrm{discharge}} V(t)I(t),dt]
 and [E_{\mathrm{chg}}=\int_{\mathrm{charge}} |V(t)I(t)|\,dt.] Coulombic Efficiency
 Measures the fraction of charge recovered in terms of electrical charge:
 [\eta_C=\frac{Q_{\mathrm{dis}}}{Q_{\mathrm{chg}}}] with [Q_{\mathrm{dis}}= int_{\mathrm{discharge}} |I(t)|\,dt,\qquad Q_{\mathrm{chg}}=\int_{\mathrm{charge}} |I(t)|\,dt.]
 
-* **Voltage Efficiency**
-
-Represents the voltage-related loss independently of charge throughput:
+* **Voltage Efficiency:** Represents the voltage-related loss independently of charge throughput:
 [\eta_V=\frac{\eta_{RTE}}{\eta_C}.]
 
-* **Usable Energy Capacity**
-
-Measures the energy delivered over the defined operating SOC window:
+* **Usable Energy Capacity:** Measures the energy delivered over the defined operating SOC window:
 [E_{\mathrm{usable}}=\int_{t_0}^{t_1}|V(t)I(t)|\,dt] where \(t_0\) and \(t_1\) correspond to the specified upper and lower SOC limits.
 
-* **Power Capability**
-
-Measures the maximum deliverable electrical power during the simulated operating window:
+* **Power Capability:** Measures the maximum deliverable electrical power during the simulated operating window:
 [P_{\max}=\max_t |V(t)I(t)|.]
 
-* **Thermal Response**
-
-Measures the temperature excursion produced during operation:
+* **Thermal Response:** Measures the temperature excursion produced during operation:
 [\Delta T=T_{\max}-T_{\min}] and the maximum operating temperature is[T_{\max}=\max_t T(t).]
 
-* **Depth of Discharge**
-
-For each simulated cycle:
+* **Depth of Discharge:** For each simulated cycle:
 [DoD=SoC_{\max}-SoC_{\min}.]
 
-* **Equivalent Full Cycles**
-
-Accumulated energy throughput is converted into equivalent full cycles:
+* **Equivalent Full Cycles:** Accumulated energy throughput is converted into equivalent full cycles:
 [EFC=\frac{\displaystyle\int |P(t)|\,dt}{2E_{\mathrm{rated}}}.]
 The factor of \(2\) accounts for one complete charge and discharge throughput.
 
-* **Capacity Fade**
-
-The loss of usable capacity relative to the initial condition is:
+* **Capacity Fade:** The loss of usable capacity relative to the initial condition is:
 [F_Q(t)=1-\frac{Q_{\max}(t)}{Q_{\max}(0)}.]
 
-* **Cycle Life**
-
-Cycle life is estimated from the simulated degradation trajectory as the point at which the battery reaches the prescribed minimum \(SoH\):
+* **Cycle Life:** cell cycle life is estimated from the simulated degradation trajectory as the point at which the battery reaches the prescribed minimum \(SoH\):
 [N_{\mathrm{life}}=\min\left\{N:SoH(N)\le SoH_{\mathrm{limit}}\right\}.]
 
-* **Calendar Life**
-
-Where calendar-aging simulations are performed, the corresponding lifetime is:
+* **Calendar Life:** Where calendar-aging simulations are performed, the corresponding lifetime is:
 [t_{\mathrm{life}}=\min\left\{t:SoH(t)\le SoH_{\mathrm{limit}}\right\}.]
 
-* **Levelized Cost of Storage**
-
-For the economic assessment:
+* **Levelized Cost of Storage:** For the economic assessment:
 [LCOS=\frac{C_{\mathrm{capital}}+C_{\mathrm{replacement}}+C_{\mathrm{operation}}}{E_{\mathrm{lifetime,dis}}}\]
 where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered by the BESS.
 
