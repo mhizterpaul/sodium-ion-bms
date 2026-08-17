@@ -146,8 +146,6 @@ where
 
 The emphasis is therefore on discovering which hidden network properties are electrically observable at the distribution station interface and how these observables evolve under changing operating conditions.
 
----
-
 ### System Model
 
 #### 1. Known Plant for Latent Network Realization
@@ -189,8 +187,6 @@ The plant model contains strictly distribution network elements and local source
 * **Main Feeder**: with lines extending from the substation, each characterized by known feeder lengths and impedances.
 * **Fixed Set of Transformers**: Step-down distribution transformers whose primary-side terminals serve as the boundary measurement interfaces.
 * **Measurement and Monitoring Devices**: Electrical sensors capturing voltage, current, active/reactive power, and sequence components at the meters and transformer primary terminal.
-
----
 
 #### 2. Measurement Architecture
 
@@ -241,8 +237,6 @@ Selected candidate PCCs are instrumented with smart meters to acquire:
 * Current unbalance
 * Positive-, negative-, and zero-sequence components
 
----
-
 2. Transformer Measurements
 
 Each distribution transformer serves as an edge measurement node representing the interface to an unknown downstream network.
@@ -264,8 +258,6 @@ Dynamic Quantities
     Load recovery characteristics
     Transformer temperature
     Transient voltage and current waveforms
-
----
 
 #### 3. Distribution Network Simulation And Station Modeling
 
@@ -310,8 +302,6 @@ The simulation framework generates two distinct, decoupled datasets to evaluate 
    - **Observation Features ($M_{\mathrm{PCC}}$):** Localized transformer steady-state reference magnitudes (`obs_steady_state_v_ref`, `obs_steady_state_i_ref`), three-phase raw transient waveforms (`obs_raw_transient_time`, `obs_raw_transient_v`, `obs_raw_transient_i`), and three-phase steady-state-normalized transient waveforms (`obs_norm_transient_time`, `obs_norm_transient_v`, `obs_norm_transient_i`).
 
 Each perturbed network is simulated to produce these decoupled datasets, linking hidden network states and events to observable PCC-level signatures without any target label leakage or cross-transformer data contamination.
-
----
 
 #### 4. Statistical Tests for estimated lv network parameters and observable state
 
@@ -378,7 +368,6 @@ Then perform the Two One-Sided Tests procedure on the joint wavelet data:
 \[ H_{01}:\Delta\leq-\delta \]and\[ H_{02}:\Delta\geq+\delta. \]
 Rejecting both means the difference in wavelet signatures lies within the pre-specified practically negligible interval.
 That gives a principled way of identifying observationally indistinguishable network classes.
-
 
 * Test 5 — Observability of Hidden State and Perturbations from Joint Wavelet and Spectral Representations
 
