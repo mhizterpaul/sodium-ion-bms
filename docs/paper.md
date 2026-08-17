@@ -78,17 +78,11 @@ The projected design space ($\theta = [\theta_s, \theta_m]$) is explored with a 
 The BESS is evaluated using the DFN electrochemical model coupled with the thermal model. The model provides the measurable simulation outputs required for performance evaluation:
 
 Terminal voltage, \(V(t)\)
-
 Terminal current, \(I(t)\)
-
 Temperature, \(T(t)\)
-
 State of charge, \(SoC(t)\)
-
 Available capacity, \(Q(t)\)
-
 Energy throughput
-
 
 The BESS is evaluated under simulated grid-outage, PV-firming, and variable C-rate dispatch profiles.
 
@@ -96,76 +90,63 @@ The BESS is evaluated under simulated grid-outage, PV-firming, and variable C-ra
 
 Each performance metric is calculated directly from the simulated measurements.
 
-* Round-Trip Energy Efficiency (RTE)
+* **Round-Trip Energy Efficiency (RTE)**
 
 Measures the fraction of charging energy recovered during discharge:
-
 [eta_{RTE}=frac{E_{\mathrm{dis}}}{E_{\mathrm{chg}}}] whereb[E_{\mathrm{dis}}=int_{\mathrm{discharge}} V(t)I(t),dt]
 and [E_{\mathrm{chg}}=\int_{\mathrm{charge}} |V(t)I(t)|\,dt.] Coulombic Efficiency
-
 Measures the fraction of charge recovered in terms of electrical charge:
-
 [\eta_C=\frac{Q_{\mathrm{dis}}}{Q_{\mathrm{chg}}}] with [Q_{\mathrm{dis}}= int_{\mathrm{discharge}} |I(t)|\,dt,\qquad Q_{\mathrm{chg}}=\int_{\mathrm{charge}} |I(t)|\,dt.]
 
-* Voltage Efficiency
+* **Voltage Efficiency**
 
 Represents the voltage-related loss independently of charge throughput:
-
 [\eta_V=\frac{\eta_{RTE}}{\eta_C}.]
 
-* Usable Energy Capacity
+* **Usable Energy Capacity**
 
 Measures the energy delivered over the defined operating SOC window:
-
 [E_{\mathrm{usable}}=\int_{t_0}^{t_1}|V(t)I(t)|\,dt] where \(t_0\) and \(t_1\) correspond to the specified upper and lower SOC limits.
 
-* Power Capability
+* **Power Capability**
 
 Measures the maximum deliverable electrical power during the simulated operating window:
-
 [P_{\max}=\max_t |V(t)I(t)|.]
 
-* Thermal Response
+* **Thermal Response**
 
 Measures the temperature excursion produced during operation:
-
 [\Delta T=T_{\max}-T_{\min}] and the maximum operating temperature is[T_{\max}=\max_t T(t).]
 
-* Depth of Discharge
+* **Depth of Discharge**
 
 For each simulated cycle:
-
 [DoD=SoC_{\max}-SoC_{\min}.]
 
-Equivalent Full Cycles
+* **Equivalent Full Cycles**
 
 Accumulated energy throughput is converted into equivalent full cycles:
-
 [EFC=\frac{\displaystyle\int |P(t)|\,dt}{2E_{\mathrm{rated}}}.]
-
 The factor of \(2\) accounts for one complete charge and discharge throughput.
 
-* Capacity Fade
+* **Capacity Fade**
 
 The loss of usable capacity relative to the initial condition is:
-
 [F_Q(t)=1-\frac{Q_{\max}(t)}{Q_{\max}(0)}.]
 
-* Cycle Life
+* **Cycle Life**
 
 Cycle life is estimated from the simulated degradation trajectory as the point at which the battery reaches the prescribed minimum \(SoH\):
-
 [N_{\mathrm{life}}=\min\left\{N:SoH(N)\le SoH_{\mathrm{limit}}\right\}.]
 
-* Calendar Life
+* **Calendar Life**
 
 Where calendar-aging simulations are performed, the corresponding lifetime is:
 [t_{\mathrm{life}}=\min\left\{t:SoH(t)\le SoH_{\mathrm{limit}}\right\}.]
 
-* Levelized Cost of Storage
+* **Levelized Cost of Storage**
 
 For the economic assessment:
-
 [LCOS=\frac{C_{\mathrm{capital}}+C_{\mathrm{replacement}}+C_{\mathrm{operation}}}{E_{\mathrm{lifetime,dis}}}\]
 where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered by the BESS.
 
@@ -181,13 +162,10 @@ where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered
 Unlike conventional Distribution System State Estimation (DSSE), where the complete network topology and bus model are assumed known, this research considers a partially observable network in which only the upstream distribution station is known while the downstream network remains hidden.
 
 The realization problem is formulated as
-
 [
 X_R=\Phi(M)
 ]
-
 where
-
 * (M) denotes synchronized measurements acquired at the meters and distribution transformers,
 * (X_R) is a latent realization state describing the hidden network,
 * The aim is to derive (\Phi(\cdot)) realization operator, empirically from simulated operating scenarios.
@@ -201,7 +179,6 @@ The emphasis is therefore on discovering which hidden network properties are ele
 ## Known Plant for Latent Network Realization
 
 The upstream distribution station is completely known and serves as the boundary for observing downstream states.
-
 It consists of:
 
 ```text
@@ -234,22 +211,18 @@ Transformer   Transformer   Transformer
 The plant model contains strictly distribution network elements and local sources to facilitate Latent Network Realization:
 
 * **Utility Source (Swing Bus)**: Represents the steady connection to the transmission grid.
-
 * **Distribution Substation Transformer**: Substation transformer supplying the medium-voltage bus.
-
 * **Main Feeder**: with lines extending from the substation, each characterized by known feeder lengths and impedances.
-
 * **Fixed Set of Transformers**: Step-down distribution transformers whose primary-side terminals serve as the boundary measurement interfaces.
-
 * **Measurement and Monitoring Devices**: Electrical sensors capturing voltage, current, active/reactive power, and sequence components at the meters and transformer primary terminal.
 
 ---
 
-#### 3. Measurement Architecture
+#### **3. Measurement Architecture**
 
 Measurements are obtained from two sensing layers: PCC line measurements using smart meters and transformer edge monitoring.
 
-**A. PCC Smart-Meter Measurements**
+1. PCC Smart-Meter Measurements
 
 The metering hierarchy is organized as follows:
 
@@ -296,7 +269,7 @@ Selected candidate PCCs are instrumented with smart meters to acquire:
 
 ---
 
-**B. Transformer Measurements**
+2. Transformer Measurements
 
 Each distribution transformer serves as an edge measurement node representing the interface to an unknown downstream network.
 
