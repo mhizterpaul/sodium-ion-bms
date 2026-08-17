@@ -127,10 +127,7 @@ The factor of \(2\) accounts for one complete charge and discharge throughput.
 [LCOS=\frac{C_{\mathrm{capital}}+C_{\mathrm{replacement}}+C_{\mathrm{operation}}}{E_{\mathrm{lifetime,dis}}}\]
 where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered by the BESS.
 
----
-
 **Limitations**:  While this work focuses on a foundational design space, the cell architecture remains amenable to further performance enhancement via composite electrode structuring, advanced pore network engineering, perturbing other dopant sites (beyond the Fe-site), and exploring a broader range of electrolyte systems (solvents and additives) to further enhance cycle life and energy density. The current optimization scope is intentionally streamlined to accommodate the computational constraints of the DFN solver.
-  
 
 ---
 
