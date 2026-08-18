@@ -321,14 +321,10 @@ The code generates scenario datasets by:
 * perturbing line parameters using a scenario-dependent multiplier;
 * varying load allocation and load composition across linear, non-linear, and heavy-duty load classes;
 * assigning transformer loading to each boundary transformer in the range 30–75 % across multi-operating-point sweeps;
-* instantiating switching events for 8 consumer equipment types (`ac_motor`, `dc_motor_inverter`, `microwave`, `induction_plate`, `compressor`, `audio_amplifier`, `ups`, `industrial_fan`);
-* instantiating 6 distinct line fault types and phase combinations:
-  - `LG` — single-phase-to-ground fault;
-  - `LL` — phase-to-phase fault;
-  - `LLG` — two-phase-to-ground fault;
-  - `LLL` — three-phase balanced fault;
-  - `LC` — single-phase capacitive fault combination;
-  - `LLC` — two-phase capacitive fault combination;
+* instantiating event pairs for 3 distinct pair categories across load switches and line faults:
+  - (i) **Load switch event pairs (`load_load`)** — co-occurring consumer load switching operations;
+  - (ii) **Line fault event pairs (`fault_fault`)** — co-occurring network line faults (`LG`, `LL`, `LLG`, `LLL`);
+  - (iii) **Across load switch and fault pairs (`load_fault`)** — mixed load switching and line fault co-events;
 * instantiating co-events with time-shifting operations (simultaneous co-events with $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ vs time-shifted co-events with $t_{\mathrm{offset}} > 0.0\,\mathrm{s}$);
 * constructing OpenDSS objects for lines, loads, capacitors, motors, and distributed energy resources.
 
@@ -345,20 +341,24 @@ Measurements captured in each result include:
 * active power (`P`), reactive power (`Q`), and apparent power (`S`) at boundary nodes;
 * derived steady-state features, sequence features, transient features, and spectral features.
 
-The simulation framework generates three distinct, decoupled datasets to evaluate the latent observability and realization problems under different operating conditions:
+The simulation framework generates four distinct, decoupled datasets to evaluate the latent observability and realization problems under different operating conditions:
 
-1. **Dataset 1 (Scenario-Based Dataset)**: Focuses on steady-state network realization and structural state estimation.
+1. **Dataset 1 (Scenario-Based Steady-State Realization Dataset)**: Focuses on steady-state network realization and structural state estimation.
    - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_feeder_id`, `gt_topology_type`, `gt_number_of_buses`, `gt_number_of_branches`, `gt_r_eq_ohm`, `gt_x_eq_ohm`, `gt_z_eq_ohm` derived from Kron network reduction of a single specific feeder's hidden LV network.
    - **Inverse Realization Estimates ($\hat{X}_R$):** `est_number_of_buses`, `est_number_of_branches`, `est_r_eq_ohm`, `est_x_eq_ohm`, `est_z_eq_ohm` derived by the inverse solver `LatentNetworkRealizationSolver`.
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase steady-state time vector (`obs_steady_state_time`), voltage waveforms (`obs_steady_state_voltage_abc`), current waveforms (`obs_steady_state_current_abc`), along with meter-level summary averages (`obs_transX_lv_pcc_voltage_mag_avg`, `obs_transX_lv_pcc_current_mag_avg`, `obs_transX_lv_pcc_p_kw`, `obs_transX_lv_pcc_q_kvar`).
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase steady-state time vector (`obs_steady_state_time`), voltage waveforms (`obs_steady_state_voltage_abc`), current waveforms (`obs_steady_state_current_abc`), along with meter-level summary averages (`obs_transX_lv_pcc_voltage_mag_avg`, `obs_transX_lv_pcc_current_mag_avg`, `obs_transX_lv_pcc_p_kw`, `obs_transX_lv_pcc_q_kvar`). Contains no time shift or transformer specification variation.
 
-2. **Dataset 2 (Single-Event Observability & Transformer Spec Dataset)**: Answers Questions 1 and 4.
-   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_event_class`, `gt_event_type`, `gt_equipment_type`, `gt_fault_type`, `gt_event_start_timestamp_s`, `gt_event_end_timestamp_s`, `gt_event_target`.
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase raw transient waveforms (`obs_raw_transient_time`, `obs_raw_transient_v`, `obs_raw_transient_i`), three-phase steady-state-normalized transient waveforms (`obs_norm_transient_time`, `obs_norm_transient_v`, `obs_norm_transient_i`), single-event signatures (`single_event_voltage_signature`, `single_event_current_signature`), composed zero baselines (`obs_composed_v_baseline`, `obs_composed_i_baseline`), single-event residual waveforms (`obs_single_event_residual_v`, `obs_single_event_residual_i`), and residual variability metrics (`single_event_residual_v_magnitude`, `single_event_residual_i_magnitude`, `single_event_residual_variability`).
+2. **Dataset 2 (Question 1 Event Pair Observability Dataset)**: Evaluates what type of event pairs are observable across (i) load switch pairs (`load_load`), (ii) line fault pairs (`fault_fault`), and (iii) mixed load switch and fault pairs (`load_fault`).
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`, `gt_time_offset_s`.
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`). Uses a fixed baseline transformer specification and fixed $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ (no time shift or transformer spec variation).
 
-3. **Dataset 3 (Co-Event Composition & Residual Dataset)**: Answers Questions 2 and 3.
-   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_coevent_class`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_1_start_timestamp_s`, `gt_event_2_class`, `gt_event_2_type`, `gt_event_2_start_timestamp_s`, `gt_time_offset_s`.
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase co-event waveforms (`obs_coevent_time`, `obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`).
+3. **Dataset 3 (Question 2 Time Shift Operation Dataset)**: Evaluates how residual magnitude in pair varies with time shift operation ($t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ vs $t_{\mathrm{offset}} > 0.0\,\mathrm{s}$) across (i) load switch pairs, (ii) line fault pairs, and (iii) mixed load-fault pairs.
+   - **Ground-Truth Target Variables ($X_R$):** Same schema as Dataset 2, featuring $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ vs $t_{\mathrm{offset}} = 0.01\,\mathrm{s}$.
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Same complete residual features as Dataset 3. Uses a fixed baseline transformer specification (no transformer spec variation).
+
+4. **Dataset 4 (Question 3 Transformer Specification Dataset)**: Evaluates how transformer specification affects the observability of (i) line fault pairs, (ii) load switch pairs, and (iii) mixed load-fault pairs.
+   - **Ground-Truth Target Variables ($X_R$):** Same schema as Dataset 2, featuring varying transformer specifications (`tx_spec_std_1500kva`, `tx_spec_high_z_1200kva`, `tx_spec_low_loss_2000kva`).
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Same complete residual features as Dataset 3. Uses a fixed time shift $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ (no time shift variation).
 
 ---
 
@@ -373,16 +373,21 @@ Dataset 1 statistical analysis (`src/statistics/correlation.py`) evaluates the a
 2. **Root Mean Squared Error (RMSE)** for continuous equivalent impedance estimation ($\hat{R}_{\mathrm{eq}}$, $\hat{X}_{\mathrm{eq}}$, $\hat{Z}_{\mathrm{eq}}$):
   \[\mathrm{RMSE}_{Z} = \sqrt{\frac{1}{N}\sum_{i=1}^N   (\hat{Z}_{\mathrm{eq},i} - Z_{\mathrm{eq},i})^2}\]
 
-##### Dataset 2 Single-Event Observability & Transformer Spec Testing (Questions 1 & 4)
+##### Question 1 Event Pair Observability Testing (Dataset 2)
 
-Factorial ANOVA & Levene/Brown-Forsythe analysis (`src/statistics/single_event_analysis.py`) evaluates single-event observability magnitude and measurement variation across 8 equipment types and 6 line fault types/combinations (`LG`, `LL`, `LLG`, `LLL`, `LC`, `LLC`) and varying LV transformer specifications across 3 feeder subgroups (`feeder_1`, `feeder_2`, `feeder_3`).
-- **Question 1:** Tests main effect of event type ($F_{\mathrm{event}}, p_{\mathrm{event}}$) on observability magnitude.
-- **Question 4:** Measures the variation in transformer measurements ($V, I$ magnitudes and waveform variance) due to transformer specification variations across the 3 LV feeder groups using Levene/Brown-Forsythe tests ($F_{\mathrm{tx\_var}}, p_{\mathrm{tx\_var}}$).
+Factorial ANOVA analysis (`src/statistics/q1_event_pair_analysis.py`) evaluates event pair observability across (i) load switch pairs (`load_load`), (ii) line fault pairs (`fault_fault`), and (iii) mixed load-fault pairs (`load_fault`) using Dataset 2:
+- **Main Effect:** Evaluates $F_{\mathrm{voltage}}, p_{\mathrm{voltage}}$ and $F_{\mathrm{current}}, p_{\mathrm{current}}$ to test observability differences across pair categories under fixed baseline transformer specs and zero time shift.
 
-##### Dataset 3 Co-Event Residual Variation Testing (Questions 2 & 3)
+##### Question 2 Time Shift Operation Variation Testing (Dataset 3)
 
-Brown-Forsythe Levene testing (`src/statistics/co_event_analysis.py`) measures variation in residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across co-event conditions:
-- **Question 2:** Evaluates residual variation between simultaneous ($t_{\mathrm{offset}} = 0$) and time-shifted co-events.
-- **Question 3:** Evaluates how line faults (`LG`, `LL`, `LLG`, `LLL`, `LC`, `LLC`) alter the observability residual of equipment-switch events.
+Levene / Brown-Forsythe variance analysis (`src/statistics/q2_time_shift_analysis.py`) evaluates residual magnitude variation under time shift operations ($t_{\mathrm{offset}} = 0$ vs $t_{\mathrm{offset}} > 0$) using Dataset 3 across:
+- (i) Load switch event pairs
+- (ii) Line fault event pairs
+- (iii) Across load switch and fault pairs
+
+##### Question 3 Transformer Specification Effect Testing (Dataset 4)
+
+One-Way ANOVA testing (`src/statistics/q3_transformer_spec_analysis.py`) evaluates how transformer specification variations affect observability across load switch pairs, line fault pairs, and mixed pairs using Dataset 4:
+- **Transformer Spec Effect:** Measures $F_{\mathrm{spec}}, p_{\mathrm{spec}}$ across transformer specifications (`tx_spec_std_1500kva`, `tx_spec_high_z_1200kva`, `tx_spec_low_loss_2000kva`) under zero time shift.
 
 **Limitations:** The validation establishes the practical limits of boundary-based realization and identifies the sensing architecture required for distributed dynamic state estimation in partially observable distribution networks within the limits of the simulated environment.
