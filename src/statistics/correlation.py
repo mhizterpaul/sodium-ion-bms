@@ -1,20 +1,13 @@
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from src.statistics.data import load_dataset_1
 
 def compute_mae(gt: np.ndarray, est: np.ndarray) -> float:
-    """
-    Computes Mean Absolute Error (MAE).
-    """
     gt = np.asarray(gt, dtype=float)
     est = np.asarray(est, dtype=float)
     return float(np.mean(np.abs(gt - est)))
 
 def compute_rmse(gt: np.ndarray, est: np.ndarray) -> float:
-    """
-    Computes Root Mean Squared Error (RMSE).
-    """
     gt = np.asarray(gt, dtype=float)
     est = np.asarray(est, dtype=float)
     return float(np.sqrt(np.mean((gt - est)**2)))
@@ -24,7 +17,11 @@ def run_dataset_1_correlation_analysis():
     Evaluates latent network realization accuracy on Dataset 1 by comparing ground truth structural/electrical parameters
     with inverse solver estimates across 3 feeder subgroups (feeder_1, feeder_2, feeder_3), reporting MAE and RMSE metrics.
     """
-    df = load_dataset_1()
+    data_path = Path(__file__).parent.parent / "simulation" / "dataset_1.csv"
+    if not data_path.exists():
+        raise FileNotFoundError(f"Dataset 1 CSV not found at {data_path}. Run dataset generation first.")
+
+    df = pd.read_csv(data_path)
 
     subgroups = ["feeder_1", "feeder_2", "feeder_3"]
     results = {}

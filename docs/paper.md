@@ -332,7 +332,7 @@ The code generates scenario datasets by:
 * perturbing line parameters using a scenario-dependent multiplier
 * varying load allocation and load composition across linear, non-linear, and heavy-duty load classes
 * assigning transformer loading to each boundary transformer in the range 30–75 %
-* instantiating switching events for transformer inrush, capacitor switching, motor starts, feeder switching, and temporary faults
+* instantiating switching events for 8 equipment types (`ac_motor`, `dc_motor_inverter`, `microwave`, `induction_plate`, `compressor`, `audio_amplifier`, `inverter_battery_bank`, `industrial_fan`) and 4 line fault types (`LG`, `LL`, `LLG`, `LLL`)
 * constructing OpenDSS objects for lines, loads, capacitors, motors, and distributed energy resources
 
 For each scenario, `CoSimulationRunner.run_scenario`:
@@ -348,182 +348,59 @@ Measurements captured in each result include:
 * active power (`P`), reactive power (`Q`), and apparent power (`S`) at boundary nodes
 * derived steady-state features, sequence features, transient features, and spectral features
 
-The simulation framework generates two distinct, decoupled datasets to evaluate the latent observability problem under different operating conditions. Critically, to align with the decentralized physical architecture, measurements are not synchronized across transformers, and each dataset element strictly references exactly one transformer's measurements to prevent any inter-transformer leakage:
+The simulation framework generates three distinct, decoupled datasets to evaluate the latent observability and realization problems under different operating conditions:
 
 1. **Dataset 1 (Scenario-Based Dataset)**: Focuses on steady-state network realization and structural state estimation.
    - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_feeder_id`, `gt_topology_type`, `gt_number_of_buses`, `gt_number_of_branches`, `gt_r_eq_ohm`, `gt_x_eq_ohm`, `gt_z_eq_ohm` derived from Kron network reduction of a single specific feeder's hidden LV network.
    - **Inverse Realization Estimates ($\hat{X}_R$):** `est_number_of_buses`, `est_number_of_branches`, `est_r_eq_ohm`, `est_x_eq_ohm`, `est_z_eq_ohm` derived by the inverse solver `LatentNetworkRealizationSolver`.
    - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase steady-state time vector (`obs_steady_state_time`), voltage waveforms (`obs_steady_state_voltage_abc`), current waveforms (`obs_steady_state_current_abc`), along with meter-level summary averages (`obs_transX_lv_pcc_voltage_mag_avg`, `obs_transX_lv_pcc_current_mag_avg`, `obs_transX_lv_pcc_p_kw`, `obs_transX_lv_pcc_q_kvar`).
 
-2. **Dataset 2 (Event-Based Dataset)**: Focuses on transient/switching dynamic state realization.
-   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_event_type`, `gt_simulated_event`, `gt_effective_load_kw`, `gt_load_type`, `gt_start_timestamp_s`, `gt_end_timestamp_s`.
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Localized transformer steady-state reference magnitudes (`obs_steady_state_v_ref`, `obs_steady_state_i_ref`), three-phase raw transient waveforms (`obs_raw_transient_time`, `obs_raw_transient_v`, `obs_raw_transient_i`), and three-phase steady-state-normalized transient waveforms (`obs_norm_transient_time`, `obs_norm_transient_v`, `obs_norm_transient_i`).
+2. **Dataset 2 (Single-Event Observability & Transformer Spec Dataset)**: Answers Questions 1 and 4.
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_event_class`, `gt_event_type`, `gt_equipment_type`, `gt_fault_type`, `gt_event_start_timestamp_s`, `gt_event_end_timestamp_s`, `gt_event_target`.
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase raw transient waveforms (`obs_raw_transient_time`, `obs_raw_transient_v`, `obs_raw_transient_i`), three-phase steady-state-normalized transient waveforms (`obs_norm_transient_time`, `obs_norm_transient_v`, `obs_norm_transient_i`), and single-event signatures (`single_event_voltage_signature`, `single_event_current_signature`).
 
-Each perturbed network is simulated to produce these decoupled datasets, linking hidden network states and events to observable PCC-level signatures without any target label leakage or cross-transformer data contamination.
+3. **Dataset 3 (Co-Event Composition & Residual Dataset)**: Answers Questions 2 and 3.
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_coevent_class`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_1_start_timestamp_s`, `gt_event_2_class`, `gt_event_2_type`, `gt_event_2_start_timestamp_s`, `gt_time_offset_s`.
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase co-event waveforms (`obs_coevent_time`, `obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`).
 
 ---
 
-##### Statistical Tests of Dataset 1 Realization Accuracy and Dataset 2 Observability
+##### Statistical Testing Methodology
+
+### Question 1 & Question 4: Factorial Analysis on Dataset 2
+Factorial ANOVA / Mixed-Effects analysis (`src/statistics/single_event_analysis.py`) evaluates single-event observability magnitude across 8 equipment types and 4 line fault types (`LG`, `LL`, `LLG`, `LLL`) and varying LV transformer specifications across 3 feeder subgroups (`feeder_1`, `feeder_2`, `feeder_3`).
+- **Question 1:** Tests main effect of event type ($F_{\mathrm{event}}, p_{\mathrm{event}}$).
+- **Question 4:** Tests main effect of transformer specification ($F_{\mathrm{transformer}}, p_{\mathrm{transformer}}$).
+
+### Question 2 & Question 3: Brown-Forsythe Residual Variation Analysis on Dataset 3
+Brown-Forsythe Levene testing (`src/statistics/co_event_analysis.py`) measures variation in residual magnitudes ($\mathrm{residual\_voltage\_magnitude}$, $\mathrm{residual\_current\_magnitude}$) across co-event conditions:
+- **Question 2:** Evaluates residual variation between simultaneous ($t_{\mathrm{offset}} = 0$) and time-shifted co-events.
+- **Question 3:** Evaluates how line faults (`LG`, `LL`, `LLG`, `LLL`) alter the observability residual of equipment-switch events.
 
 ### Dataset 1 Realization Accuracy Testing
-Dataset 1 statistical analysis (`src/statistics/correlation.py`) evaluates the accuracy of the inverse realization solver in recovering the hidden distribution network structure and electrical parameters from boundary measurements across 3 feeder subgroups (`feeder_1`, `feeder_2`, `feeder_3`). Metrics evaluated include:
-1. **Mean Absolute Error (MAE)** for discrete structural state estimation (bus count $\hat{N}_b$ vs $N_b$, branch count $\hat{N}_l$ vs $N_l$):
-   \[
-   \mathrm{MAE}_{N_b} = \frac{1}{N} \sum_{i=1}^N |\hat{N}_{b,i} - N_{b,i}|, \qquad \mathrm{MAE}_{N_l} = \frac{1}{N} \sum_{i=1}^N |\hat{N}_{l,i} - N_{l,i}|
-   \]
-2. **Root Mean Squared Error (RMSE)** for continuous equivalent impedance estimation ($\hat{R}_{\mathrm{eq}}$, $\hat{X}_{\mathrm{eq}}$, $\hat{Z}_{\mathrm{eq}}$):
-   \[
-   \mathrm{RMSE}_{Z} = \sqrt{\frac{1}{N} \sum_{i=1}^N (\hat{Z}_{\mathrm{eq},i} - Z_{\mathrm{eq},i})^2}
-   \]
-
-### Dataset 2 Wavelet-Domain Observability Testing
-Prior to statistical testing on Dataset 2, the 3-phase transient waveforms (`obs_raw_transient_v`, `obs_raw_transient_i`) are normalized using steady-state references (`obs_steady_state_v_ref`, `obs_steady_state_i_ref`) to yield normalized transient waveforms (`obs_norm_transient_v`, `obs_norm_transient_i`). Signal processing is then performed directly on these normalized representations:
-1. **Real Fast Fourier Transform (FFT)** via `scipy.fft` computes the frequency-domain spectral magnitude representations across the 3 phases.
-2. **Stationary Wavelet Transform (SWT)** via `pywt.swt` (Level 2 `db1` wavelet) extracts multi-resolution time-frequency approximation and detail coefficients ($cA_2, cD_2, cA_1, cD_1$) across all 3 phases.
-
-The resulting joint feature representation vector $Y_{\mathrm{joint}} = [\mathrm{FFT\_Summary}, \mathrm{SWT\_Coefficients}]$ concatenates spectral magnitudes and wavelet energy/dispersion statistics.
-
-To evaluate spatial consistency and robustness across the distribution architecture, **each statistical test is evaluated across at least 3 distinct network subgroups** ($k=1, 2, 3$, corresponding to `feeder_1`, `feeder_2`, and `feeder_3`). The statistical metrics are calculated independently per subgroup and the **average values across all subgroups** are reported as the primary observability indicators:
-
-\[
-\overline{\mathrm{Metric}} = \frac{1}{K} \sum_{k=1}^K \mathrm{Metric}_k
-\]
-
-* Test 1 — Distance correlation: does the measurement contain information about hidden state?
-
-Evaluates global time-frequency dependency between hidden network states $X = [\mathrm{gt\_effective\_load\_kw}]$ and the multivariate joint representation $Y_{\mathrm{joint}}$ across 3 subgroups (`feeder_1`, `feeder_2`, `feeder_3`), reporting per-subgroup values and average Distance Correlation and average HSIC statistics.
-
-Distance correlation was specifically developed to detect dependence between random vectors and has the important property that population distance correlation is zero iff the variables are independent.
-
-Define:
-\[ X=\text{hidden network state} \] and \[ Y=\text{measurement vector}. \]
-Calculate \[ dCor(X,Y). \]
-
-the hypothesis becomes:
-\[ H_0:X\perp Y \] versus \[ H_1:X\not\perp Y. \]
-
-* Test 2 — MMD: do two hidden networks generate different measurement distributions?
-
-Evaluates whether distinct hidden network load structures (e.g., linear vs. non-linear/heavy-duty load classes in $X$) produce significantly different probability distributions in the joint spectral-wavelet domain $Y_{\mathrm{joint}}$ across the 3 subgroups, reporting per-subgroup values and the average $MMD^2$ statistic.
-
-Take two hidden network states: \[ G_a,\;G_b. \]
-Their corresponding measurement distributions are: \[ P_a(Y) \]and\[ P_b(Y). \]
-The null hypothesis is:
-\[ H_0:P_a=P_b. \]
-
-Using the Maximum Mean Discrepancy (MMD) two-sample test. Gretton et al. formulated MMD specifically as a kernel-based statistical test for determining whether two samples originate from different distributions.
-
-Conceptually: \[ MMD^2(P_a,P_b) = \left\| \mu_{P_a}-\mu_{P_b} \right\|_{\mathcal H}^{2}. \]
-
-This is extremely appropriate for the dataset because we don't need to assume that the measurements are Gaussian.
-
-* Test 3 — PERMANOVA: are measurement vectors separated by hidden network state?
-
-Evaluates multivariate separation of joint spectral/wavelet representations $Y_{\mathrm{joint}}$ across categorical switching event types ($X = \mathrm{gt\_event\_type}$) across the 3 subgroups, reporting per-subgroup values and average pseudo-$F$ statistics, average $R^2_{\mathrm{network}}$, and average PERMDISP dispersion $F$-statistics.
-
-Anderson's PERMANOVA provides a non-parametric multivariate analogue of ANOVA based on distances.
-
-The model can be: \[ D_{ij}=d(Y_i,Y_j) \]
-where \(d\) is Euclidean distance over $Y_{\mathrm{joint}}$.
-
-Then test: \[ H_0: \text{measurement distributions do not differ by network realization}. \] The resulting pseudo-\(F\) statistic tells you whether the groups differ.
-
-More importantly we report:
-\[ R^2_{\rm network} = \frac{SS_{\rm network}}{SS_{\rm total}}. \]
-
-PERMANOVA can confound location differences with dispersion differences. Therefore, we pair it with a dispersion test rather than reporting it alone.
-
-Multivariate Homogeneity of Dispersion (PERMDISP): does network state change joint wavelet representation variability?
-
-We test whether different hidden network states generate significantly different multivariate dispersion on the joint wavelet and spectral representations:
-\[ H_0: \Sigma_{G_1} = \Sigma_{G_2} = \cdots = \Sigma_{G_K}. \]
-
-For example:
-Network A and B may have similar mean joint wavelet responses, but Network B produces substantially greater variability in its transient representations.
-
-That variability itself can carry information about the hidden network.
-So we investigate the joint expectation and variance: \[ E[Y_{\mathrm{joint}}|G] \] and \[ Var(Y_{\mathrm{joint}}|G). \]
-
-* Test 4 — TOST for practical equivalence
-
-Evaluates practical equivalence of joint spectral-wavelet representations $Y_{\mathrm{joint}}$ between transient switching events (e.g., transformer inrush vs. capacitor switching) within a defined equivalence margin $\Delta = \pm \delta$ across the 3 subgroups, reporting per-subgroup values and average mean differences and average TOST $p$-values.
-
-We formulate an equivalence margin for a joint wavelet feature representation:
-
-\[ \Delta_L=-\delta,\qquad \Delta_U=+\delta. \]
-Then perform the Two One-Sided Tests procedure on the joint wavelet data:
-\[ H_{01}:\Delta\leq-\delta \]and\[ H_{02}:\Delta\geq+\delta. \]
-Rejecting both means the difference in wavelet signatures lies within the pre-specified practically negligible interval.
-
-
-That gives a principled way of identifying observationally indistinguishable network classes.
-HSIC is another kernel-based independence test.
-we test: \[ H_0:X\perp Y_{\mathrm{joint}}. \] HSIC measures dependence through the Hilbert–Schmidt norm of the cross-covariance operator of joint wavelet features.
-
-* Test 5 — Observability of Hidden State and Perturbations from Joint Wavelet and Spectral Representations
-
-Evaluates non-linear dependence between the full joint representation vector $Y_{\mathrm{joint}} = [\mathrm{FFT} + \mathrm{SWT}]$ and hidden network perturbation variables across the 3 subgroups, reporting per-subgroup values and average Distance Correlation and average HSIC statistics.
-
-We test if the joint wavelet and spectral representations produce statistically significant and observable dependency with the hidden network configuration and perturbations (including topology changes, network size, load redistribution, switching events, transformer loading, and line parameter variations):
-
-\[ H_0:X \perp Y_{\mathrm{joint}} \]
-where $Y_{\mathrm{joint}}$ represents the actual joint wavelet-domain and spectral-domain observable representations.
-
-Tests applied:
-- Distance correlation
-- HSIC as secondary confirmation of nonlinear dependency on joint data
-
-This is directly useful for answering the central research question: Are hidden network state and perturbations observable from the joint wavelet and spectral representations at the station boundary?
+Evaluates inverse realization solver accuracy (`src/statistics/correlation.py`) across 3 feeder subgroups:
+- **Mean Absolute Error (MAE)** for discrete bus ($\hat{N}_b$) and branch ($\hat{N}_l$) counts.
+- **Root Mean Squared Error (RMSE)** for continuous equivalent impedance estimation ($\hat{R}_{\mathrm{eq}}, \hat{X}_{\mathrm{eq}}, \hat{Z}_{\mathrm{eq}}$).
 
 ##### validation architecture
 
 ```text
-                DATASET
-                    │
-          ┌─────────┴─────────┐
-          │                   │
-   Hidden Network State   Measurements
-          │                   │
-          └─────────┬─────────┘
-                    │
-              Statistical
-                Analysis
-                    │
-        ┌───────────┼───────────┐
-        │           │           │
-     Dependence  Distribution  Multivariate
-        │        Separation     Separation
-        │           │           │
-      dCor         MMD       PERMANOVA
-      HSIC
-        │           │           │
-        └───────────┼───────────┘
-                    │
-             Noise Injection
-                    │
-          ┌─────────┴─────────┐
-          │                   │
-       SNR sweep          Sensor noise
-          │                   │
-          └─────────┬─────────┘
-                    │
-           Repeat statistical
-               validation
-                    │
-                    ▼
-       Statistical Observability
-                    │
-        ┌───────────┴───────────┐
-        │                       │
- Distinguishable states    Equivalent states
-        │                       │
-       MMD                 TOST/equivalence
-        │                       │
-        └───────────┬───────────┘
-                    ▼
-        Operator Design Requirements
+                DATASETS (1, 2, 3)
+                        │
+       ┌────────────────┼────────────────┐
+       │                │                │
+   Dataset 1        Dataset 2        Dataset 3
+   Realization      Single Events    Co-Events
+       │                │                │
+       ▼                ▼                ▼
+  Correlation     Factorial ANOVA  Brown-Forsythe
+ (MAE & RMSE)       (Q1 & Q4)       (Q2 & Q3)
+       │                │                │
+       └────────────────┼────────────────┘
+                        │
+                        ▼
+            Statistical Observability
+            & Operator Requirements
 ```
-
-We decide whether the statistical unit should be the scenario trajectory, the event response, or derived window-level features. That choice determines whether these tests remain statistically valid in the presence of temporal autocorrelation and repeated measurements.
 
 The validation establishes the practical limits of boundary-based realization and identifies the sensing architecture required for distributed dynamic state estimation in partially observable distribution networks within the limits of the simulated environment.
