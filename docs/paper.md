@@ -375,9 +375,9 @@ Dataset 1 statistical analysis (`src/statistics/correlation.py`) evaluates the a
 
 ##### Dataset 2 Single-Event Observability & Transformer Spec Testing (Questions 1 & 4)
 
-Factorial ANOVA / Mixed-Effects analysis (`src/statistics/single_event_analysis.py`) evaluates single-event observability magnitude and residual variability across 8 equipment types and 6 line fault types/combinations (`LG`, `LL`, `LLG`, `LLL`, `LC`, `LLC`) and varying LV transformer specifications across 3 feeder subgroups (`feeder_1`, `feeder_2`, `feeder_3`).
-- **Question 1:** Tests main effect of event type ($F_{\mathrm{event}}, p_{\mathrm{event}}$).
-- **Question 4:** Tests main effect of transformer specification ($F_{\mathrm{transformer}}, p_{\mathrm{transformer}}$).
+Factorial ANOVA & Levene/Brown-Forsythe analysis (`src/statistics/single_event_analysis.py`) evaluates single-event observability magnitude and measurement variation across 8 equipment types and 6 line fault types/combinations (`LG`, `LL`, `LLG`, `LLL`, `LC`, `LLC`) and varying LV transformer specifications across 3 feeder subgroups (`feeder_1`, `feeder_2`, `feeder_3`).
+- **Question 1:** Tests main effect of event type ($F_{\mathrm{event}}, p_{\mathrm{event}}$) on observability magnitude.
+- **Question 4:** Measures the variation in transformer measurements ($V, I$ magnitudes and waveform variance) due to transformer specification variations across the 3 LV feeder groups using Levene/Brown-Forsythe tests ($F_{\mathrm{tx\_var}}, p_{\mathrm{tx\_var}}$).
 
 ##### Dataset 3 Co-Event Residual Variation Testing (Questions 2 & 3)
 
