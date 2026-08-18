@@ -2,13 +2,11 @@
 
 ## Methodology
 
-### Base Cell Model (Literature-Aligned NFPP Sodium-Ion Twin System)
-
+Base Cell Model (Literature-Aligned NFPP Sodium-Ion Twin System)
 1. Electrochemical Core (DFN-Compatible Reaction)
 The sodium iron pyrophosphate (NFPP) cathode operates via reversible sodium intercalation:
 Na₂FePO₄P₂O₇ ⇌ NaₓFePO₄P₂O₇ + (2 − x)Na⁺ + (2 − x)e⁻
 Theoretical specific capacity: ~95–100 mAh g⁻¹, consistent with reported polyanionic NFPP sodium-ion cathode systems used in pouch-scale prototypes.
-
 2. Cathode Electrode Architecture (Composite Design)
 NFPP cathodes in practical sodium-ion full cells follow a carbon–binder–domain composite structure processed using N-methyl-2-pyrrolidone (NMP)-based slurry casting.
 Fixed composition:
@@ -16,7 +14,6 @@ Fixed composition:
 	Conductive carbon additive (carbon black / acetylene black): 8 wt% 
 	Binder: polyvinylidene fluoride (PVDF): 7 wt% 
 This structure reflects standard aluminum current collector-based cathodes used in sodium-ion pouch cells with high-density electrode compaction.
-
 3. Anode Design (Hard Carbon System)
 Hard carbon anodes are implemented as disordered carbon networks with nanopore and turbostratic domains enabling sodium storage through adsorption, intercalation, and pore filling mechanisms.
 Fixed formulation:
@@ -24,14 +21,12 @@ Fixed formulation:
 	Conductive carbon additive: 6 wt% 
 	Binder: polyvinylidene fluoride (PVDF): 6 wt% 
 Practical specific capacity: 250–300 mAh g⁻¹, consistent with full-cell hard carbon sodium storage behavior.
-
 4. Electrolyte System (Carbonate-Based Sodium Salt System)
 The electrolyte follows a standard sodium-ion full-cell carbonate formulation:
 	Sodium hexafluorophosphate (NaPF₆): 1.0 molar concentration 
 	Sodium difluoro(oxalato)borate (NaDFOB): 0.2 molar concentration 
 	Solvent system: ethylene carbonate and propylene carbonate in 1:1 volumetric ratio 
 	Ionic conductivity: ~10 mS cm⁻¹ at 25°C
-
 5. Electrolyte Additive System (Interphase Engineering)
 Interfacial stability is controlled using electrolyte additives that regulate both solid electrolyte interphase and cathode electrolyte interphase formation:
 	Fluoroethylene carbonate (FEC): 3 wt%
@@ -40,7 +35,6 @@ Interfacial stability is controlled using electrolyte additives that regulate bo
 → enhances SEI uniformity and suppresses continuous electrolyte decomposition 
 	Sodium difluoro(oxalato)borate (NaDFOB): functions as both co-salt and cathode electrolyte interphase (CEI) stabilizer 
 The SEI is a passivation layer formed on the anode that regulates sodium-ion transport and prevents continuous electrolyte decomposition, while the CEI stabilizes cathode surface reactions and mitigates structural degradation.
-
 6. Pouch Cell Mechanical Architecture (Stacked Design)
 The full cell follows a stacked pouch configuration consistent with sodium-ion prototype manufacturing systems:
 	Form factor: stacked Z-fold pouch cell architecture 
@@ -53,7 +47,7 @@ Layer stack:
 	External casing: poly-based moisture barrier (no aluminum laminate)
 	Inner sealant: polypropylene-based sealing layer 
 
-### **Design Space:**
+#### **Design Space:**
    
 *   **Structural Parameters ($\theta_s$):** Electrode thickness ($L_c, L_a$), porosity ($\epsilon_c, \epsilon_a, \epsilon_{sep}$), tortuosity ($\tau$), active material loading and particle size ($r_p$).
 *   **Material Parameters ($\theta_m$):** NFPP fraction, conductive carbon fraction, and electrolyte composition (concentration/salts)
@@ -67,68 +61,116 @@ This phase resolves performance properties for chemistry modifications using a d
 *   **Electrolyte & Fluorine Reduction:** Selection of non-fluorinated salts to reduce environmental burden and cost. Primary candidates include **NaBOB** (Sodium bis(oxalato)borate) for stability and **NaTCP** (Sodium tricyanomethanide) for high performance.
 *   **Electrode Doping:** Fe-site doping for cathodes using **Cr** (Cr³⁺ stabilizer), **Mn** (voltage booster), and **Ni** is evaluated via sensitivity-based optimization.
 *   **Alkyl Silane Functionalization:** Implementation of hard carbon electrode functionalization using **methyltrimethoxysilane (MTMS)**. This process replaces surface –OH groups with –Si–O–R groups on the hard carbon electrode, increasing hydrophobicity and promoting a more uniform SEI layer. The model accounts for reduced SEI kinetics (slower growth and lower irreversible capacity fade), slower interfacial resistance growth over cycles, and optimized exchange current density resulting from improved surface wetting and local ion accessibility.
-*   **Sensitivity-Driven Cell Parameter Optimization:** The projected design space ($\theta = [\theta_s, \theta_m]$) is explored with a hierarchical workflow that combines sensitivity screening, objective-specific SG-CEM refinement, and expensive stability filtering. In the implementation, the design vector is first perturbed around a nominal point to estimate the Jacobian of the energy, power, and stability responses; only the most influential variables for each objective are retained for optimization instead of searching the full design space at once.
+*   Sensitivity-Driven Cell Parameter Optimization
+The projected design space ($\theta = [\theta_s, \theta_m]$) is explored with a hierarchical workflow that combines sensitivity screening, objective-specific SG-CEM refinement, and expensive stability filtering. In the implementation, the design vector is first perturbed around a nominal point to estimate the Jacobian of the energy, power, and stability responses; only the most influential variables for each objective are retained for optimization instead of searching the full design space at once.
 
-### BESS Robustness Evaluation Framework
+#### BESS Robustness Evaluation Framework
 
 
-**1. Electrochemical–Thermal Driver Model**
+1. Electrochemical–Thermal Driver Model
+
+
 
 The BESS is evaluated using the DFN electrochemical model coupled with the thermal model. The model provides the measurable simulation outputs required for performance evaluation:
 
 Terminal voltage, \(V(t)\)
+
 Terminal current, \(I(t)\)
+
 Temperature, \(T(t)\)
+
 State of charge, \(SoC(t)\)
+
 Available capacity, \(Q(t)\)
+
 Energy throughput
+
 
 The BESS is evaluated under simulated grid-outage, PV-firming, and variable C-rate dispatch profiles.
 
-**2. Performance Measurements**
+2. Performance Measurements
+
+
 
 Each performance metric is calculated directly from the simulated measurements.
 
-* **Round-Trip Energy Efficiency (RTE):** Measures the fraction of charging energy recovered during discharge:
-\[eta_{RTE}=frac{E_{\mathrm{dis}}}{E_{\mathrm{chg}}}] whereb[E_{\mathrm{dis}}=int_{\mathrm{discharge}} V(t)I(t),dt\]
-and \[E_{\mathrm{chg}}=\int_{\mathrm{charge}} |V(t)I(t)|\,dt.\] 
+Round-Trip Energy Efficiency (RTE)
 
-* **Coulombic Efficiency:** Measures the fraction of charge recovered in terms of electrical charge:
-\[\eta_C=\frac{Q_{\mathrm{dis}}}{Q_{\mathrm{chg}}}] with [Q_{\mathrm{dis}}=\int_{\mathrm{discharge}} |I(t)|\,dt,\qquad Q_{\mathrm{chg}}=\int_{\mathrm{charge}} |I(t)|\,dt.\]
+Measures the fraction of charging energy recovered during discharge:
 
-* **Voltage Efficiency:** Represents the voltage-related loss independently of charge throughput:
+[eta_{RTE}=frac{E_{\mathrm{dis}}}{E_{\mathrm{chg}}}] whereb[E_{\mathrm{dis}}=int_{\mathrm{discharge}} V(t)I(t),dt]
+and [E_{\mathrm{chg}}=\int_{\mathrm{charge}} |V(t)I(t)|\,dt.] Coulombic Efficiency
+
+Measures the fraction of charge recovered in terms of electrical charge:
+
+[\eta_C=\frac{Q_{\mathrm{dis}}}{Q_{\mathrm{chg}}}] with [Q_{\mathrm{dis}}= int_{\mathrm{discharge}} |I(t)|\,dt,\qquad Q_{\mathrm{chg}}=\int_{\mathrm{charge}} |I(t)|\,dt.]
+
+Voltage Efficiency
+
+Represents the voltage-related loss independently of charge throughput:
+
 [\eta_V=\frac{\eta_{RTE}}{\eta_C}.]
 
-* **Usable Energy Capacity:** Measures the energy delivered over the defined operating SOC window:
+Usable Energy Capacity
+
+Measures the energy delivered over the defined operating SOC window:
+
 [E_{\mathrm{usable}}=\int_{t_0}^{t_1}|V(t)I(t)|\,dt] where \(t_0\) and \(t_1\) correspond to the specified upper and lower SOC limits.
 
-* **Power Capability:** Measures the maximum deliverable electrical power during the simulated operating window:
+Power Capability
+
+Measures the maximum deliverable electrical power during the simulated operating window:
+
 [P_{\max}=\max_t |V(t)I(t)|.]
 
-* **Thermal Response:** Measures the temperature excursion produced during operation:
+Thermal Response
+
+Measures the temperature excursion produced during operation:
+
 [\Delta T=T_{\max}-T_{\min}] and the maximum operating temperature is[T_{\max}=\max_t T(t).]
 
-* **Depth of Discharge:** For each simulated cycle:
+Depth of Discharge
+
+For each simulated cycle:
+
 [DoD=SoC_{\max}-SoC_{\min}.]
 
-* **Equivalent Full Cycles:** Accumulated energy throughput is converted into equivalent full cycles:
+Equivalent Full Cycles
+
+Accumulated energy throughput is converted into equivalent full cycles:
+
 [EFC=\frac{\displaystyle\int |P(t)|\,dt}{2E_{\mathrm{rated}}}.]
+
 The factor of \(2\) accounts for one complete charge and discharge throughput.
 
-* **Capacity Fade:** The loss of usable capacity relative to the initial condition is:
+Capacity Fade
+
+The loss of usable capacity relative to the initial condition is:
+
 [F_Q(t)=1-\frac{Q_{\max}(t)}{Q_{\max}(0)}.]
 
-* **Cycle Life:** cell cycle life is estimated from the simulated degradation trajectory as the point at which the battery reaches the prescribed minimum \(SoH\):
+Cycle Life
+
+Cycle life is estimated from the simulated degradation trajectory as the point at which the battery reaches the prescribed minimum \(SoH\):
+
 [N_{\mathrm{life}}=\min\left\{N:SoH(N)\le SoH_{\mathrm{limit}}\right\}.]
 
-* **Calendar Life:** Where calendar-aging simulations are performed, the corresponding lifetime is:
+Calendar Life
+
+Where calendar-aging simulations are performed, the corresponding lifetime is:
 [t_{\mathrm{life}}=\min\left\{t:SoH(t)\le SoH_{\mathrm{limit}}\right\}.]
 
-* **Levelized Cost of Storage:** For the economic assessment:
+Levelized Cost of Storage
+
+For the economic assessment:
+
 [LCOS=\frac{C_{\mathrm{capital}}+C_{\mathrm{replacement}}+C_{\mathrm{operation}}}{E_{\mathrm{lifetime,dis}}}\]
 where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered by the BESS.
 
-**Limitations**:  While this work focuses on a foundational design space, the cell architecture remains amenable to further performance enhancement via composite electrode structuring, advanced pore network engineering, perturbing other dopant sites (beyond the Fe-site), and exploring a broader range of electrolyte systems (solvents and additives) to further enhance cycle life and energy density. The current optimization scope is intentionally streamlined to accommodate the computational constraints of the DFN solver.
+---
+
+*   **Limitations**:  While this work focuses on a foundational design space, the cell architecture remains amenable to further performance enhancement via composite electrode structuring, advanced pore network engineering, perturbing other dopant sites (beyond the Fe-site), and exploring a broader range of electrolyte systems (solvents and additives) to further enhance cycle life and energy density. The current optimization scope is intentionally streamlined to accommodate the computational constraints of the DFN solver.
+
 
 ---
 ## Distributed System State Estimation Using Wavelet Decomposition (core contribution)
@@ -280,11 +322,13 @@ The code generates scenario datasets by:
 * varying load allocation and load composition across linear, non-linear, and heavy-duty load classes;
 * assigning transformer loading to each boundary transformer in the range 30–75 % across multi-operating-point sweeps;
 * instantiating switching events for 8 consumer equipment types (`ac_motor`, `dc_motor_inverter`, `microwave`, `induction_plate`, `compressor`, `audio_amplifier`, `ups`, `industrial_fan`);
-* instantiating 4 distinct line fault event types:
+* instantiating 6 distinct line fault types and phase combinations:
   - `LG` — single-phase-to-ground fault;
   - `LL` — phase-to-phase fault;
   - `LLG` — two-phase-to-ground fault;
   - `LLL` — three-phase balanced fault;
+  - `LC` — single-phase capacitive fault combination;
+  - `LLC` — two-phase capacitive fault combination;
 * instantiating co-events with time-shifting operations (simultaneous co-events with $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ vs time-shifted co-events with $t_{\mathrm{offset}} > 0.0\,\mathrm{s}$);
 * constructing OpenDSS objects for lines, loads, capacitors, motors, and distributed energy resources.
 
@@ -310,12 +354,13 @@ The simulation framework generates three distinct, decoupled datasets to evaluat
 
 2. **Dataset 2 (Single-Event Observability & Transformer Spec Dataset)**: Answers Questions 1 and 4.
    - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_event_class`, `gt_event_type`, `gt_equipment_type`, `gt_fault_type`, `gt_event_start_timestamp_s`, `gt_event_end_timestamp_s`, `gt_event_target`.
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase raw transient waveforms (`obs_raw_transient_time`, `obs_raw_transient_v`, `obs_raw_transient_i`), three-phase steady-state-normalized transient waveforms (`obs_norm_transient_time`, `obs_norm_transient_v`, `obs_norm_transient_i`), and single-event signatures (`single_event_voltage_signature`, `single_event_current_signature`).
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase raw transient waveforms (`obs_raw_transient_time`, `obs_raw_transient_v`, `obs_raw_transient_i`), three-phase steady-state-normalized transient waveforms (`obs_norm_transient_time`, `obs_norm_transient_v`, `obs_norm_transient_i`), single-event signatures (`single_event_voltage_signature`, `single_event_current_signature`), composed zero baselines (`obs_composed_v_baseline`, `obs_composed_i_baseline`), single-event residual waveforms (`obs_single_event_residual_v`, `obs_single_event_residual_i`), and residual variability metrics (`single_event_residual_v_magnitude`, `single_event_residual_i_magnitude`, `single_event_residual_variability`).
 
 3. **Dataset 3 (Co-Event Composition & Residual Dataset)**: Answers Questions 2 and 3.
    - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_coevent_class`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_1_start_timestamp_s`, `gt_event_2_class`, `gt_event_2_type`, `gt_event_2_start_timestamp_s`, `gt_time_offset_s`.
    - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase co-event waveforms (`obs_coevent_time`, `obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`).
 
+---
 
 #### 5. Statistical Tests for estimated lv network parameters and observable state
 
@@ -330,7 +375,7 @@ Dataset 1 statistical analysis (`src/statistics/correlation.py`) evaluates the a
 
 ##### Dataset 2 Single-Event Observability & Transformer Spec Testing (Questions 1 & 4)
 
-Factorial ANOVA / Mixed-Effects analysis (`src/statistics/single_event_analysis.py`) evaluates single-event observability magnitude across 8 equipment types and 4 line fault types (`LG`, `LL`, `LLG`, `LLL`) and varying LV transformer specifications across 3 feeder subgroups (`feeder_1`, `feeder_2`, `feeder_3`).
+Factorial ANOVA / Mixed-Effects analysis (`src/statistics/single_event_analysis.py`) evaluates single-event observability magnitude and residual variability across 8 equipment types and 6 line fault types/combinations (`LG`, `LL`, `LLG`, `LLL`, `LC`, `LLC`) and varying LV transformer specifications across 3 feeder subgroups (`feeder_1`, `feeder_2`, `feeder_3`).
 - **Question 1:** Tests main effect of event type ($F_{\mathrm{event}}, p_{\mathrm{event}}$).
 - **Question 4:** Tests main effect of transformer specification ($F_{\mathrm{transformer}}, p_{\mathrm{transformer}}$).
 
@@ -338,6 +383,6 @@ Factorial ANOVA / Mixed-Effects analysis (`src/statistics/single_event_analysis.
 
 Brown-Forsythe Levene testing (`src/statistics/co_event_analysis.py`) measures variation in residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across co-event conditions:
 - **Question 2:** Evaluates residual variation between simultaneous ($t_{\mathrm{offset}} = 0$) and time-shifted co-events.
-- **Question 3:** Evaluates how line faults (`LG`, `LL`, `LLG`, `LLL`) alter the observability residual of equipment-switch events.
+- **Question 3:** Evaluates how line faults (`LG`, `LL`, `LLG`, `LLL`, `LC`, `LLC`) alter the observability residual of equipment-switch events.
 
 **Limitations:** The validation establishes the practical limits of boundary-based realization and identifies the sensing architecture required for distributed dynamic state estimation in partially observable distribution networks within the limits of the simulated environment.

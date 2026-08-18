@@ -19,7 +19,7 @@ class SingleEquipmentSwitchEvent:
 
 @dataclass
 class SingleLineFaultEvent:
-    fault_type: Literal["LG", "LL", "LLG", "LLL"]
+    fault_type: str  # LG, LL, LLG, LLL, LC, LLC
     start_time_s: float
     duration_s: float
     target: str
@@ -77,5 +77,4 @@ class EquipmentLineFaultCoEvent:
     def time_offset_s(self) -> float:
         return abs(self.event_2.start_time_s - self.event_1.start_time_s)
 
-# Generic alias for compatibility
 TransientEvent = SingleEquipmentSwitchEvent

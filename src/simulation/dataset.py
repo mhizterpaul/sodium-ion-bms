@@ -80,7 +80,10 @@ def validate_dataset_2(df_2: pd.DataFrame):
         "gt_event_class", "gt_event_type", "gt_event_start_timestamp_s", "gt_event_end_timestamp_s",
         "obs_raw_transient_time", "obs_raw_transient_v", "obs_raw_transient_i",
         "obs_norm_transient_time", "obs_norm_transient_v", "obs_norm_transient_i",
-        "single_event_voltage_signature", "single_event_current_signature"
+        "single_event_voltage_signature", "single_event_current_signature",
+        "obs_composed_v_baseline", "obs_composed_i_baseline",
+        "obs_single_event_residual_v", "obs_single_event_residual_i",
+        "single_event_residual_v_magnitude", "single_event_residual_i_magnitude", "single_event_residual_variability"
     ]
     for col in required_cols:
         if col not in df_2.columns:
@@ -141,8 +144,6 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
     rows_2 = []
     rows_3 = []
 
-    # Signature lookup dictionary for Dataset 3 composition
-    # Key: (transformer_spec_id, event_class, event_type, feeder_id) -> dict with 'v_sig', 'i_norm', 'time'
     signature_catalog = {}
 
     scenario_configs = [
@@ -164,12 +165,15 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
     ]
 
     equipment_types = list(EQUIPMENT_REGISTRY.keys())
-    fault_types = ["LG", "LL", "LLG", "LLL"]
+    # Fault types include LG, LL, LLG, LLL, LC, LLC combinations
+    fault_types = ["LG", "LL", "LLG", "LLL", "LC", "LLC"]
     fault_phase_map = {
         "LG": (0,),
         "LL": (0, 1),
         "LLG": (0, 1),
-        "LLL": (0, 1, 2)
+        "LLL": (0, 1, 2),
+        "LC": (0,),
+        "LLC": (0, 1)
     }
 
     for idx in range(min(n_scenarios, len(scenario_configs))):
@@ -309,7 +313,6 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
             rows_1.append(row_1)
 
         # --- B. DATASET 2 GENERATION (Single Events + LV Transformer Spec Experiment) ---
-        # Generate single events for 8 equipment types and 4 line fault types
         single_events = []
         for eq in equipment_types:
             single_events.append(SingleEquipmentSwitchEvent(
@@ -379,11 +382,20 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                     v_norm_abc = [v_norm[:, 0].tolist(), v_norm[:, 1].tolist(), v_norm[:, 2].tolist()]
                     i_norm_abc = [i_norm[:, 0].tolist(), i_norm[:, 1].tolist(), i_norm[:, 2].tolist()]
 
-                    # Single event signatures
+                    # Single event signatures and composed baselines
                     v_sig = v_norm_abc
                     i_sig = i_norm_abc
 
-                    # Catalog signature for Dataset 3 composition
+                    v_baseline = [np.zeros_like(v_norm[:, 0]).tolist() for _ in range(3)]
+                    i_baseline = [np.zeros_like(i_norm[:, 0]).tolist() for _ in range(3)]
+
+                    res_v_single = (v_norm - np.zeros_like(v_norm))
+                    res_i_single = (i_norm - np.zeros_like(i_norm))
+
+                    res_v_single_mag = float(np.sqrt(np.mean(res_v_single**2)))
+                    res_i_single_mag = float(np.sqrt(np.mean(res_i_single**2)))
+                    res_variability = float(np.std(res_v_single) + np.std(res_i_single))
+
                     cat_key = (tx_spec["spec_id"], ev_class, ev_type, f"feeder_{f_id}")
                     signature_catalog[cat_key] = {
                         "v_sig": np.asarray(v_norm),
@@ -417,12 +429,18 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                         "obs_norm_transient_v": json.dumps(v_norm_abc),
                         "obs_norm_transient_i": json.dumps(i_norm_abc),
                         "single_event_voltage_signature": json.dumps(v_sig),
-                        "single_event_current_signature": json.dumps(i_sig)
+                        "single_event_current_signature": json.dumps(i_sig),
+                        "obs_composed_v_baseline": json.dumps(v_baseline),
+                        "obs_composed_i_baseline": json.dumps(i_baseline),
+                        "obs_single_event_residual_v": json.dumps(v_norm_abc),
+                        "obs_single_event_residual_i": json.dumps(i_norm_abc),
+                        "single_event_residual_v_magnitude": round(res_v_single_mag, 6),
+                        "single_event_residual_i_magnitude": round(res_i_single_mag, 6),
+                        "single_event_residual_variability": round(res_variability, 6)
                     }
                     rows_2.append(row_2)
 
         # --- C. DATASET 3 GENERATION (Co-Events & Composed Single-Event Residuals) ---
-        # Generate co-events: Equipment-Equipment (simultaneous & time-shifted) and Equipment-Fault (simultaneous & time-shifted)
         eq1 = SingleEquipmentSwitchEvent("ac_motor", 0.02, 0.04, f"trans{feeder_idx}", {})
         eq2 = SingleEquipmentSwitchEvent("dc_motor_inverter", 0.02, 0.04, f"trans{feeder_idx}", {})
         eq2_shifted = SingleEquipmentSwitchEvent("dc_motor_inverter", 0.03, 0.04, f"trans{feeder_idx}", {})
@@ -475,10 +493,9 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                 tx_spec = TRANSFORMER_SPECS[tx_id]
 
                 if pcc_res is not None:
-                    v_co = pcc_res.normalized_voltage  # shape (N, 3)
-                    i_co = pcc_res.normalized_current  # shape (N, 3)
+                    v_co = pcc_res.normalized_voltage
+                    i_co = pcc_res.normalized_current
 
-                    # Retrieve single event signatures from catalog
                     k1 = (tx_spec["spec_id"], ev1.event_class, ev1.event_type, f"feeder_{f_id}")
                     k2 = (tx_spec["spec_id"], ev2.event_class, ev2.event_type, f"feeder_{f_id}")
 
@@ -492,11 +509,9 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                         v_comp = v_co
                         i_comp = i_co
 
-                    # Calculate residual waveforms
                     res_v = v_co - v_comp
                     res_i = i_co - i_comp
 
-                    # Calculate scalar residual magnitudes
                     res_v_mag = float(np.sqrt(np.mean(res_v**2)))
                     res_i_mag = float(np.sqrt(np.mean(res_i**2)))
 
