@@ -90,11 +90,11 @@ The BESS is evaluated under simulated grid-outage, PV-firming, and variable C-ra
 Each performance metric is calculated directly from the simulated measurements.
 
 * **Round-Trip Energy Efficiency (RTE):** Measures the fraction of charging energy recovered during discharge:
-[eta_{RTE}=frac{E_{\mathrm{dis}}}{E_{\mathrm{chg}}}] whereb[E_{\mathrm{dis}}=int_{\mathrm{discharge}} V(t)I(t),dt]
-and [E_{\mathrm{chg}}=\int_{\mathrm{charge}} |V(t)I(t)|\,dt.] 
+\[eta_{RTE}=frac{E_{\mathrm{dis}}}{E_{\mathrm{chg}}}] whereb[E_{\mathrm{dis}}=int_{\mathrm{discharge}} V(t)I(t),dt\]
+and \[E_{\mathrm{chg}}=\int_{\mathrm{charge}} |V(t)I(t)|\,dt.\] 
 
 * **Coulombic Efficiency:** Measures the fraction of charge recovered in terms of electrical charge:
-[\eta_C=\frac{Q_{\mathrm{dis}}}{Q_{\mathrm{chg}}}] with [Q_{\mathrm{dis}}= int_{\mathrm{discharge}} |I(t)|\,dt,\qquad Q_{\mathrm{chg}}=\int_{\mathrm{charge}} |I(t)|\,dt.]
+\[\eta_C=\frac{Q_{\mathrm{dis}}}{Q_{\mathrm{chg}}}] with [Q_{\mathrm{dis}}=\int_{\mathrm{discharge}} |I(t)|\,dt,\qquad Q_{\mathrm{chg}}=\int_{\mathrm{charge}} |I(t)|\,dt.\]
 
 * **Voltage Efficiency:** Represents the voltage-related loss independently of charge throughput:
 [\eta_V=\frac{\eta_{RTE}}{\eta_C}.]
@@ -210,50 +210,47 @@ The metering hierarchy is organized as follows:
              PCC                |
           Smart Meter           |
               │                 │
-          ┌───┴───┐       ┌───┴───┐
-          │        │       │         │
+          ┌───┴───┐         ┌───┴───┐
+          │       │         │       │
 ```
 
 Selected candidate PCCs are instrumented with smart meters to acquire:
 
-##### Electrical Quantities
+Electrical Quantities
+  Three-phase voltage magnitude and phase angle
+  Three-phase current magnitude and phase angle
+  Active power (P)
+  Reactive power (Q)
+  Apparent power (S)
+  Power factor (PF)
 
-* Three-phase voltage magnitude and phase angle
-* Three-phase current magnitude and phase angle
-* Active power (P)
-* Reactive power (Q)
-* Apparent power (S)
-* Power factor (PF)
-
-##### Network Quality Metrics
-
-* Frequency
-* Rate of Change of Frequency (ROCOF)
-* Voltage unbalance
-* Current unbalance
-* Positive-, negative-, and zero-sequence components
+Network Quality Metrics
+  Frequency
+  Rate of Change of Frequency (ROCOF)
+  Voltage unbalance
+  Current unbalance
+  Positive-, negative-, and zero-sequence components
 
 2. Transformer Measurements
 
 Each distribution transformer serves as an edge measurement node representing the interface to an unknown downstream network.
 
-Measurements include
-Primary Electrical Measurements
+Measurements include:
 
-    High-voltage terminal voltage magnitude and phase angle
-    High-voltage terminal current magnitude and phase angle
-    Active power
-    Reactive power
-    Apparent power
-    Power factor
+Primary Electrical Measurements
+  High-voltage terminal voltage magnitude and phase angle
+  High-voltage terminal current magnitude and phase angle
+  Active power
+  Reactive power
+  Apparent power
+  Power factor
 
 Dynamic Quantities
-
-    Loading rate
-    Overload duration
-    Load recovery characteristics
-    Transformer temperature
-    Transient voltage and current waveforms
+  Loading rate
+  Overload duration
+  Load recovery characteristics
+  Transformer temperature
+  Transient voltage and current waveforms
 
 #### 3. Distribution Network Simulation And Station Modeling
 
@@ -306,77 +303,12 @@ Each perturbed network is simulated to produce these decoupled datasets, linking
 Dataset 1 statistical analysis (`src/statistics/correlation.py`) evaluates the accuracy of the inverse realization solver in recovering the hidden distribution network structure and electrical parameters from boundary measurements across 3 feeder subgroups (`feeder_1`, `feeder_2`, `feeder_3`). Metrics evaluated include:
 
 1. **Mean Absolute Error (MAE)** for discrete structural state estimation (bus count $\hat{N}_b$ vs $N_b$, branch count $\hat{N}_l$ vs $N_l$):
-   \[
-   \mathrm{MAE}_{N_b} = \frac{1}{N} \sum_{i=1}^N |\hat{N}_{b,i} - N_{b,i}|, \qquad \mathrm{MAE}_{N_l} = \frac{1}{N} \sum_{i=1}^N |\hat{N}_{l,i} - N_{l,i}|
-   \]
+  \[\mathrm{MAE}_{N_b} = \frac{1}{N} \sum_{i=1}^N |  \hat{N}_{b,i} - N_{b,i}|, \qquad \mathrm{MAE}_{N_l}   = \frac{1}{N} \sum_{i=1}^N |\hat{N}_{l,i} - N_{l,i}|\]
 2. **Root Mean Squared Error (RMSE)** for continuous equivalent impedance estimation ($\hat{R}_{\mathrm{eq}}$, $\hat{X}_{\mathrm{eq}}$, $\hat{Z}_{\mathrm{eq}}$):
-   \[
-   \mathrm{RMSE}_{Z} = \sqrt{\frac{1}{N} \sum_{i=1}^N (\hat{Z}_{\mathrm{eq},i} - Z_{\mathrm{eq},i})^2}
-   \]
+  \[\mathrm{RMSE}_{Z} = \sqrt{\frac{1}{N}\sum{i=1}^N   (\hat{Z}_{\mathrm{eq},i} - Z_{\mathrm{eq},i})^2}\]
 
 * ##### Dataset 2 Wavelet-Domain Observability Testing
 
-Prior to statistical testing on Dataset 2, the 3-phase transient waveforms (`obs_raw_transient_v`, `obs_raw_transient_i`) are normalized using steady-state references (`obs_steady_state_v_ref`, `obs_steady_state_i_ref`) to yield normalized transient waveforms (`obs_norm_transient_v`, `obs_norm_transient_i`). Signal processing is then performed directly on these normalized representations:
 
-1. **Real Fast Fourier Transform (FFT)** via `scipy.fft` computes the frequency-domain spectral magnitude representations across the 3 phases.
-2. **Stationary Wavelet Transform (SWT)** via `pywt.swt` (Level 2 `db1` wavelet) extracts multi-resolution time-frequency approximation and detail coefficients ($cA_2, cD_2, cA_1, cD_1$) across all 3 phases.
-
-The resulting joint feature representation vector $Y_{\mathrm{joint}} = [\mathrm{FFT\_Summary}, \mathrm{SWT\_Coefficients}]$ concatenates spectral magnitudes and wavelet energy/dispersion statistics.
-
-* Test 1 — Distance correlation: does the measurement contain information about hidden state?
-
-Evaluates global time-frequency dependency between hidden network states \[ X=\text{gt_effective_load_kw} \]
- and the multivariate joint representation $Y_{\mathrm{joint}}$, reporting per-subgroup values and average Distance Correlation and average HSIC statistics.
-Distance correlation was specifically developed to detect dependence between random vectors and has the important property that population distance correlation is zero iff the variables are independent.
-Calculate \[ dCor(X,Y). \]
-the hypothesis: \[ H_0:X\perp Y \] versus \[ H_1:X\not\perp Y. \]
-
-* Test 2 — MMD: do two hidden networks generate different measurement distributions?
-
-Evaluates whether distinct hidden network load structures (e.g., linear vs. non-linear/heavy-duty load classes in $X$) produce significantly different probability distributions in the joint spectral-wavelet domain $Y_{\mathrm{joint}}$ 
-Take two hidden network states: \[ G_a,\;G_b. \]
-Their corresponding measurement distributions are: \[ P_a(Y) \]and\[ P_b(Y). \]
-The null hypothesis is:
-\[ H_0:P_a=P_b. \]
-MMD is specifically formulated as a kernel-based statistical test.
-
-* Test 3 — PERMANOVA: are measurement vectors separated by hidden network state?
-
-Evaluates multivariate separation of joint spectral/wavelet representations $Y_{\mathrm{joint}}$ across categorical switching event types \[ X=\text{gt_event_type} \] across the 3 subgroups, reporting per-subgroup values and average pseudo-$F$ statistics, average $R^2_{\mathrm{network}}$, and average PERMDISP dispersion $F$-statistics.
-Anderson's PERMANOVA provides a non-parametric multivariate analogue of ANOVA based on distances.
-The model can be: \[ D_{ij}=d(Y_i,Y_j) \]
-where \(d\) is Euclidean distance over $Y_{\mathrm{joint}}$.
-Then test: \[ H_0: \text{measurement distributions do not differ by network realization}. \] The resulting pseudo-\(F\) statistic tells you whether the groups differ.
-More importantly we report:
-\[ R^2_{\rm network} = \frac{SS_{\rm network}}{SS_{\rm total}}. \]
-PERMANOVA can confound location differences with dispersion differences. Therefore, we pair it with a Multivariate Homogeneity of Dispersion (PERMDISP) test rather than reporting it alone.
-For example:
-Network A and B may have similar mean joint wavelet responses, but Network B produces substantially greater variability in its transient representations.
-That variability itself can carry information about the hidden network.
-So we investigate the joint expectation and variance: \[ E[Y_{\mathrm{joint}}|G] \] and \[ Var(Y_{\mathrm{joint}}|G). \]
-
-* Test 4 — TOST for practical equivalence
-
-Evaluates practical equivalence of joint spectral-wavelet representations $Y_{\mathrm{joint}}$ between transient switching events (e.g., transformer inrush vs. capacitor switching) within a defined equivalence margin $\Delta = \pm \delta$.
-We formulate an equivalence margin for a joint wavelet feature representation:
-\[ \Delta_L=-\delta,\qquad \Delta_U=+\delta. \]
-Then perform the Two One-Sided Tests procedure on the joint wavelet data:
-\[ H_{01}:\Delta\leq-\delta \]and\[ H_{02}:\Delta\geq+\delta. \]
-Rejecting both means the difference in wavelet signatures lies within the pre-specified practically negligible interval.
-That gives a principled way of identifying observationally indistinguishable network classes.
-
-* Test 5 — Observability of Hidden State and Perturbations from Joint Wavelet and Spectral Representations
-
-Evaluates non-linear dependence between the full joint representation vector $Y_{\mathrm{joint}} = [\mathrm{FFT} + \mathrm{SWT}]$ and hidden network perturbation variables across the 3 subgroups, reporting per-subgroup values and average Distance Correlation and average HSIC statistics.
-We test if the joint wavelet and spectral representations produce statistically significant and observable dependency with the hidden network configuration and perturbations (including topology changes, network size, load redistribution, switching events, transformer loading, and line parameter variations):
-\[ H_0:X \perp Y_{\mathrm{joint}} \]
-where $Y_{\mathrm{joint}}$ represents the actual joint wavelet-domain and spectral-domain observable representations.
-Tests applied:
-- Distance correlation
-- HSIC as secondary confirmation of nonlinear dependency on joint data
-
-This is directly useful for answering the central research question: Are hidden network state and events observable from the joint wavelet and spectral representations at the station boundary?
-
-* NB: We decide whether the statistical unit should be the scenario trajectory, the event response, or derived window-level features. That choice determines whether these tests remain statistically valid in the presence of temporal autocorrelation and repeated measurements.
 
 **Limitations:** The validation establishes the practical limits of boundary-based realization and identifies the sensing architecture required for distributed dynamic state estimation in partially observable distribution networks within the limits of the simulated environment.
