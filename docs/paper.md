@@ -312,30 +312,36 @@ The simulation framework systematically perturbs the unknown downstream network 
 
 OpenDSS is used to simulate the known upstream station together with the hidden downstream distribution network.
 
-A transient simulator is included to support waveform-based event responses, but the current implementation also relies on synchronized steady-state boundary measurements from OpenDSS.
+A transient simulator (`ATPRunner`) executes ATP-EMTP cases built via `ATPCaseBuilder` to acquire high-fidelity 3-phase electromagnetic transient (EMT) waveforms for switching events and line faults.
 
 The code generates scenario datasets by:
 
-* building hidden downstream topologies with radial and optional ring configurations
-* modifying the number of downstream buses and network connectivity
-* perturbing line parameters using a scenario-dependent multiplier
-* varying load allocation and load composition across linear, non-linear, and heavy-duty load classes
-* assigning transformer loading to each boundary transformer in the range 30–75 %
-* instantiating switching events for 8 equipment types (`ac_motor`, `dc_motor_inverter`, `microwave`, `induction_plate`, `compressor`, `audio_amplifier`, `ups`, `industrial_fan`) and 4 line fault types (`LG`, `LL`, `LLG`, `LLL`)
-* constructing OpenDSS objects for lines, loads, capacitors, motors, and distributed energy resources
+* building hidden downstream topologies with radial and optional ring configurations;
+* modifying the number of downstream buses ($N_b$) and network connectivity ($N_l$);
+* perturbing line parameters using a scenario-dependent multiplier;
+* varying load allocation and load composition across linear, non-linear, and heavy-duty load classes;
+* assigning transformer loading to each boundary transformer in the range 30–75 % across multi-operating-point sweeps;
+* instantiating switching events for 8 consumer equipment types (`ac_motor`, `dc_motor_inverter`, `microwave`, `induction_plate`, `compressor`, `audio_amplifier`, `ups`, `industrial_fan`);
+* instantiating 4 distinct line fault event types:
+  - `LG` — single-phase-to-ground fault;
+  - `LL` — phase-to-phase fault;
+  - `LLG` — two-phase-to-ground fault;
+  - `LLL` — three-phase balanced fault;
+* instantiating co-events with time-shifting operations (simultaneous co-events with $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ vs time-shifted co-events with $t_{\mathrm{offset}} > 0.0\,\mathrm{s}$);
+* constructing OpenDSS objects for lines, loads, capacitors, motors, and distributed energy resources.
 
 For each scenario, `CoSimulationRunner.run_scenario`:
 
-* solves the OpenDSS operating point for the known upstream plant plus the hidden downstream network
-* collects PCC measurements via `get_pcc_measurements()`
-* builds an ATP event case with `ATPCaseBuilder`
-* currently falls back to synchronized operating-point values when EMT waveform output is unavailable
+* solves the OpenDSS operating point for the known upstream plant plus the hidden downstream network;
+* collects PCC measurements via `get_pcc_measurements()`;
+* builds an ATP event case with `ATPCaseBuilder`;
+* executes ATP-EMTP via Wine using `ATPRunner` and parses raw EMT output into `EMTWaveforms` via `ATPOutputReader`.
 
 Measurements captured in each result include:
 
-* transformer three-phase voltages and currents waveforms
-* active power (`P`), reactive power (`Q`), and apparent power (`S`) at boundary nodes
-* derived steady-state features, sequence features, transient features, and spectral features
+* transformer three-phase voltage and current waveforms ($V_{abc}(t), I_{abc}(t)$);
+* active power (`P`), reactive power (`Q`), and apparent power (`S`) at boundary nodes;
+* derived steady-state features, sequence features, transient features, and spectral features.
 
 The simulation framework generates three distinct, decoupled datasets to evaluate the latent observability and realization problems under different operating conditions:
 
