@@ -332,7 +332,7 @@ The code generates scenario datasets by:
 * perturbing line parameters using a scenario-dependent multiplier
 * varying load allocation and load composition across linear, non-linear, and heavy-duty load classes
 * assigning transformer loading to each boundary transformer in the range 30–75 %
-* instantiating switching events for 8 equipment types (`ac_motor`, `dc_motor_inverter`, `microwave`, `induction_plate`, `compressor`, `audio_amplifier`, `inverter_battery_bank`, `industrial_fan`) and 4 line fault types (`LG`, `LL`, `LLG`, `LLL`)
+* instantiating switching events for 8 equipment types (`ac_motor`, `dc_motor_inverter`, `microwave`, `induction_plate`, `compressor`, `audio_amplifier`, `ups`, `industrial_fan`) and 4 line fault types (`LG`, `LL`, `LLG`, `LLL`)
 * constructing OpenDSS objects for lines, loads, capacitors, motors, and distributed energy resources
 
 For each scenario, `CoSimulationRunner.run_scenario`:

@@ -5,7 +5,7 @@ from src.hidden_network.loads.microwave import get_microwave
 from src.hidden_network.loads.induction_plate import get_induction_plate
 from src.hidden_network.loads.compressor import get_compressor
 from src.hidden_network.loads.audio_amplifier import get_audio_amplifier
-from src.hidden_network.loads.battery_inverter import get_battery_inverter
+from src.hidden_network.loads.ups import get_ups
 from src.hidden_network.loads.industrial_fan import get_industrial_fan
 import numpy as np
 
@@ -16,7 +16,7 @@ EQUIPMENT_REGISTRY = {
     "induction_plate": get_induction_plate,
     "compressor": get_compressor,
     "audio_amplifier": get_audio_amplifier,
-    "inverter_battery_bank": get_battery_inverter,
+    "ups": get_ups,
     "industrial_fan": get_industrial_fan
 }
 

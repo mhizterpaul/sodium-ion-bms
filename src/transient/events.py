@@ -3,7 +3,7 @@ from typing import Optional, Literal
 
 @dataclass
 class SingleEquipmentSwitchEvent:
-    equipment_type: str  # ac_motor, dc_motor_inverter, microwave, induction_plate, compressor, audio_amplifier, inverter_battery_bank, industrial_fan
+    equipment_type: str  # ac_motor, dc_motor_inverter, microwave, induction_plate, compressor, audio_amplifier, ups, industrial_fan
     start_time_s: float
     duration_s: float
     target: str

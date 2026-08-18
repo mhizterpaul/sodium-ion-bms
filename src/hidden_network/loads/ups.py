@@ -1,11 +1,11 @@
 from src.hidden_network.loads.base import EquipmentCircuit
 
-def get_battery_inverter(rated_power_kw: float = 8.0) -> EquipmentCircuit:
+def get_ups(rated_power_kw: float = 8.0) -> EquipmentCircuit:
     """
-    Inverter + Battery Bank: Battery equivalent circuit, DC-link, bidirectional converter, AC-side filter interface.
+    Uninterruptible Power Supply (UPS): Battery bank, DC-link, bidirectional inverter, AC-side filter interface.
     """
     return EquipmentCircuit(
-        equipment_type="inverter_battery_bank",
+        equipment_type="ups",
         rated_power_kw=rated_power_kw,
         rated_voltage_v=415.0,
         power_factor=1.0,
