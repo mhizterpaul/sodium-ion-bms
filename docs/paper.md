@@ -173,32 +173,21 @@ where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered
   
 
 ---
-### Distributed System State Estimation Using Wavelet Decomposition (core contribution)
+## Distributed System State Estimation Using Wavelet Decomposition (core contribution)
 
 Unlike conventional Distribution System State Estimation (DSSE), where the complete network topology and bus model are assumed known, this research considers a partially observable network in which only the upstream distribution station is known while the downstream network remains hidden.
-
-The realization problem is formulated as
-
-[
-X_R=\Phi(M)
-]
-
-where
-
-* (M) denotes synchronized measurements acquired at the meters and distribution transformers,
-* (X_R) is a latent realization state describing the hidden network,
-* The aim is to derive (\Phi(\cdot)) realization operator, empirically from simulated operating scenarios.
+The realization problem is formulated as \[X_R=\Phi(M)\] where
+* \(M\) denotes synchronized measurements acquired at the meters and distribution transformers,
+* \(X_R\) is a latent realization state describing the hidden network,
+* The aim is to derive \(\Phi(\cdot)\) realization operator, empirically from simulated operating scenarios.
 
 The emphasis is therefore on discovering which hidden network properties are electrically observable at the distribution station interface and how these observables evolve under changing operating conditions.
 
----
+### System Model
 
-#### 2. System Model
-
-## Known Plant for Latent Network Realization
+#### 1. Known Plant for Latent Network Realization
 
 The upstream distribution station is completely known and serves as the boundary for observing downstream states.
-
 It consists of:
 
 ```text
@@ -231,22 +220,16 @@ Transformer   Transformer   Transformer
 The plant model contains strictly distribution network elements and local sources to facilitate Latent Network Realization:
 
 * **Utility Source (Swing Bus)**: Represents the steady connection to the transmission grid.
-
 * **Distribution Substation Transformer**: Substation transformer supplying the medium-voltage bus.
-
 * **Main Feeder**: with lines extending from the substation, each characterized by known feeder lengths and impedances.
-
 * **Fixed Set of Transformers**: Step-down distribution transformers whose primary-side terminals serve as the boundary measurement interfaces.
-
 * **Measurement and Monitoring Devices**: Electrical sensors capturing voltage, current, active/reactive power, and sequence components at the meters and transformer primary terminal.
 
----
-
-#### 3. Measurement Architecture
+#### 2. Measurement Architecture
 
 Measurements are obtained from two sensing layers: PCC line measurements using smart meters and transformer edge monitoring.
 
-**A. PCC Smart-Meter Measurements**
+1. PCC Smart-Meter Measurements
 
 The metering hierarchy is organized as follows:
 
@@ -268,56 +251,62 @@ The metering hierarchy is organized as follows:
              PCC                |
           Smart Meter           |
               │                 │
-          ┌───┴───┐       ┌───┴───┐
-          │        │       │         │
+          ┌───┴───┐         ┌───┴───┐
+          │       │         │       │
 ```
 
 Selected candidate PCCs are instrumented with smart meters to acquire:
 
-##### Electrical Quantities
+Electrical Quantities
+  Three-phase voltage magnitude and phase angle
+  Three-phase current magnitude and phase angle
+  Active power (P)
+  Reactive power (Q)
+  Apparent power (S)
+  Power factor (PF)
 
-* Three-phase voltage magnitude and phase angle
-* Three-phase current magnitude and phase angle
-* Active power (P)
-* Reactive power (Q)
-* Apparent power (S)
-* Power factor (PF)
+Network Quality Metrics
+  Frequency
+  Rate of Change of Frequency (ROCOF)
+  Voltage unbalance
+  Current unbalance
+  Positive-, negative-, and zero-sequence components
 
-##### Network Quality Metrics
-
-* Frequency
-* Rate of Change of Frequency (ROCOF)
-* Voltage unbalance
-* Current unbalance
-* Positive-, negative-, and zero-sequence components
-
----
-
-**B. Transformer Measurements**
+2. Transformer Measurements
 
 Each distribution transformer serves as an edge measurement node representing the interface to an unknown downstream network.
 
-Measurements include
-Primary Electrical Measurements
+Measurements include:
 
-    High-voltage terminal voltage magnitude and phase angle
-    High-voltage terminal current magnitude and phase angle
-    Active power
-    Reactive power
-    Apparent power
-    Power factor
+Primary Electrical Measurements
+  High-voltage terminal voltage magnitude and phase angle
+  High-voltage terminal current magnitude and phase angle
+  Active power
+  Reactive power
+  Apparent power
+  Power factor
 
 Dynamic Quantities
+  Loading rate
+  Overload duration
+  Load recovery characteristics
+  Transformer temperature
+  Transient voltage and current waveforms
 
-    Loading rate
-    Overload duration
-    Load recovery characteristics
-    Transformer temperature
-    Transient voltage and current waveforms
+#### 3. Consumer Load Circuits
 
----
+To accurately represent realistic residential, commercial, and industrial end-user devices, 8 explicit consumer equipment circuits are implemented compatibly across OpenDSS and ATP-EMTP:
 
-##### 4. Distribution Network Simulation And Station Modeling
+1. **AC Motor (`ac_motor`)**: Three-phase induction motor with stator resistance/inductance, magnetizing branch, rotor resistance/inductance, and mechanical inertia.
+2. **DC Motor + Inverter (`dc_motor_inverter`)**: Rectifier stage, DC-link capacitor, PWM H-bridge inverter, and DC motor armature $R_a, L_a$ with speed-dependent Back-EMF.
+3. **Microwave (`microwave`)**: Input rectifier, PFC stage, DC-link capacitor, high-voltage transformer, diode voltage doubler, and magnetron non-linear load.
+4. **Induction Plate (`induction_plate`)**: Input rectifier, DC-link, high-frequency resonant inverter, resonant capacitor, and induction coil $R_{\mathrm{eq}} + j\omega L_{\mathrm{eq}}$.
+5. **Compressor (`compressor`)**: Single-phase AC induction motor driving reciprocating/scroll compressor load torque.
+6. **Audio Amplifier (`audio_amplifier`)**: AC supply rectifier, DC-link supply capacitor bank, Class-D switching H-bridge, LC output filter, and speaker impedance.
+7. **Uninterruptible Power Supply / UPS (`ups`)**: Battery bank equivalent circuit, DC-link, bidirectional converter, and AC-side filter interface.
+8. **Industrial Fan (`industrial_fan`)**: Three-phase induction motor driving speed-squared aerodynamic fan load torque.
+
+#### 4. Distribution Network Simulation And Station Modeling
 
 The simulation framework systematically perturbs the unknown downstream network while maintaining a fixed upstream distribution station.
 
@@ -365,42 +354,27 @@ The simulation framework generates three distinct, decoupled datasets to evaluat
 
 ---
 
-##### Statistical Testing Methodology
+#### 5. Statistical Tests for estimated lv network parameters and observable state
 
-### Question 1 & Question 4: Factorial Analysis on Dataset 2
+##### Dataset 1 Realization Accuracy Testing
+
+Dataset 1 statistical analysis (`src/statistics/correlation.py`) evaluates the accuracy of the inverse realization solver in recovering the hidden distribution network structure and electrical parameters from boundary measurements across 3 feeder subgroups (`feeder_1`, `feeder_2`, `feeder_3`). Metrics evaluated include:
+
+1. **Mean Absolute Error (MAE)** for discrete structural state estimation (bus count $\hat{N}_b$ vs $N_b$, branch count $\hat{N}_l$ vs $N_l$):
+  \[\mathrm{MAE}_{N_b} = \frac{1}{N} \sum_{i=1}^N |  \hat{N}_{b,i} - N_{b,i}|, \qquad \mathrm{MAE}_{N_l}   = \frac{1}{N} \sum_{i=1}^N |\hat{N}_{l,i} - N_{l,i}|\]
+2. **Root Mean Squared Error (RMSE)** for continuous equivalent impedance estimation ($\hat{R}_{\mathrm{eq}}$, $\hat{X}_{\mathrm{eq}}$, $\hat{Z}_{\mathrm{eq}}$):
+  \[\mathrm{RMSE}_{Z} = \sqrt{\frac{1}{N}\sum_{i=1}^N   (\hat{Z}_{\mathrm{eq},i} - Z_{\mathrm{eq},i})^2}\]
+
+##### Dataset 2 Single-Event Observability & Transformer Spec Testing (Questions 1 & 4)
+
 Factorial ANOVA / Mixed-Effects analysis (`src/statistics/single_event_analysis.py`) evaluates single-event observability magnitude across 8 equipment types and 4 line fault types (`LG`, `LL`, `LLG`, `LLL`) and varying LV transformer specifications across 3 feeder subgroups (`feeder_1`, `feeder_2`, `feeder_3`).
 - **Question 1:** Tests main effect of event type ($F_{\mathrm{event}}, p_{\mathrm{event}}$).
 - **Question 4:** Tests main effect of transformer specification ($F_{\mathrm{transformer}}, p_{\mathrm{transformer}}$).
 
-### Question 2 & Question 3: Brown-Forsythe Residual Variation Analysis on Dataset 3
-Brown-Forsythe Levene testing (`src/statistics/co_event_analysis.py`) measures variation in residual magnitudes ($\mathrm{residual\_voltage\_magnitude}$, $\mathrm{residual\_current\_magnitude}$) across co-event conditions:
+##### Dataset 3 Co-Event Residual Variation Testing (Questions 2 & 3)
+
+Brown-Forsythe Levene testing (`src/statistics/co_event_analysis.py`) measures variation in residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across co-event conditions:
 - **Question 2:** Evaluates residual variation between simultaneous ($t_{\mathrm{offset}} = 0$) and time-shifted co-events.
 - **Question 3:** Evaluates how line faults (`LG`, `LL`, `LLG`, `LLL`) alter the observability residual of equipment-switch events.
 
-### Dataset 1 Realization Accuracy Testing
-Evaluates inverse realization solver accuracy (`src/statistics/correlation.py`) across 3 feeder subgroups:
-- **Mean Absolute Error (MAE)** for discrete bus ($\hat{N}_b$) and branch ($\hat{N}_l$) counts.
-- **Root Mean Squared Error (RMSE)** for continuous equivalent impedance estimation ($\hat{R}_{\mathrm{eq}}, \hat{X}_{\mathrm{eq}}, \hat{Z}_{\mathrm{eq}}$).
-
-##### validation architecture
-
-```text
-                DATASETS (1, 2, 3)
-                        │
-       ┌────────────────┼────────────────┐
-       │                │                │
-   Dataset 1        Dataset 2        Dataset 3
-   Realization      Single Events    Co-Events
-       │                │                │
-       ▼                ▼                ▼
-  Correlation     Factorial ANOVA  Brown-Forsythe
- (MAE & RMSE)       (Q1 & Q4)       (Q2 & Q3)
-       │                │                │
-       └────────────────┼────────────────┘
-                        │
-                        ▼
-            Statistical Observability
-            & Operator Requirements
-```
-
-The validation establishes the practical limits of boundary-based realization and identifies the sensing architecture required for distributed dynamic state estimation in partially observable distribution networks within the limits of the simulated environment.
+**Limitations:** The validation establishes the practical limits of boundary-based realization and identifies the sensing architecture required for distributed dynamic state estimation in partially observable distribution networks within the limits of the simulated environment.
