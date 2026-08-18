@@ -131,14 +131,13 @@ where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered
 **Limitations**:  While this work focuses on a foundational design space, the cell architecture remains amenable to further performance enhancement via composite electrode structuring, advanced pore network engineering, perturbing other dopant sites (beyond the Fe-site), and exploring a broader range of electrolyte systems (solvents and additives) to further enhance cycle life and energy density. The current optimization scope is intentionally streamlined to accommodate the computational constraints of the DFN solver.
 
 ---
-
 ## Distributed System State Estimation Using Wavelet Decomposition (core contribution)
 
 Unlike conventional Distribution System State Estimation (DSSE), where the complete network topology and bus model are assumed known, this research considers a partially observable network in which only the upstream distribution station is known while the downstream network remains hidden.
-The realization problem is formulated as [X_R=\Phi(M)] where
-* (M) denotes synchronized measurements acquired at the meters and distribution transformers,
-* (X_R) is a latent realization state describing the hidden network,
-* The aim is to derive (\Phi(\cdot)) realization operator, empirically from simulated operating scenarios.
+The realization problem is formulated as \[X_R=\Phi(M)\] where
+* \(M\) denotes synchronized measurements acquired at the meters and distribution transformers,
+* \(X_R\) is a latent realization state describing the hidden network,
+* The aim is to derive \(\Phi(\cdot)\) realization operator, empirically from simulated operating scenarios.
 
 The emphasis is therefore on discovering which hidden network properties are electrically observable at the distribution station interface and how these observables evolve under changing operating conditions.
 
@@ -252,63 +251,93 @@ Dynamic Quantities
   Transformer temperature
   Transient voltage and current waveforms
 
-#### 3. Distribution Network Simulation And Station Modeling
+#### 3. Consumer Load Circuits
+
+To accurately represent realistic residential, commercial, and industrial end-user devices, 8 explicit consumer equipment circuits are implemented compatibly across OpenDSS and ATP-EMTP:
+
+1. **AC Motor (`ac_motor`)**: Three-phase induction motor with stator resistance/inductance, magnetizing branch, rotor resistance/inductance, and mechanical inertia.
+2. **DC Motor + Inverter (`dc_motor_inverter`)**: Rectifier stage, DC-link capacitor, PWM H-bridge inverter, and DC motor armature $R_a, L_a$ with speed-dependent Back-EMF.
+3. **Microwave (`microwave`)**: Input rectifier, PFC stage, DC-link capacitor, high-voltage transformer, diode voltage doubler, and magnetron non-linear load.
+4. **Induction Plate (`induction_plate`)**: Input rectifier, DC-link, high-frequency resonant inverter, resonant capacitor, and induction coil $R_{\mathrm{eq}} + j\omega L_{\mathrm{eq}}$.
+5. **Compressor (`compressor`)**: Single-phase AC induction motor driving reciprocating/scroll compressor load torque.
+6. **Audio Amplifier (`audio_amplifier`)**: AC supply rectifier, DC-link supply capacitor bank, Class-D switching H-bridge, LC output filter, and speaker impedance.
+7. **Uninterruptible Power Supply / UPS (`ups`)**: Battery bank equivalent circuit, DC-link, bidirectional converter, and AC-side filter interface.
+8. **Industrial Fan (`industrial_fan`)**: Three-phase induction motor driving speed-squared aerodynamic fan load torque.
+
+#### 4. Distribution Network Simulation And Station Modeling
 
 The simulation framework systematically perturbs the unknown downstream network while maintaining a fixed upstream distribution station.
 
 OpenDSS is used to simulate the known upstream station together with the hidden downstream distribution network.
 
-A transient simulator is included to support waveform-based event responses, but the current implementation also relies on synchronized steady-state boundary measurements from OpenDSS.
+A transient simulator (`ATPRunner`) executes ATP-EMTP cases built via `ATPCaseBuilder` to acquire high-fidelity 3-phase electromagnetic transient (EMT) waveforms for switching events and line faults.
 
 The code generates scenario datasets by:
 
-* building hidden downstream topologies with radial and optional ring configurations
-* modifying the number of downstream buses and network connectivity
-* perturbing line parameters using a scenario-dependent multiplier
-* varying load allocation and load composition across linear, non-linear, and heavy-duty load classes
-* assigning transformer loading to each boundary transformer in the range 30–75 %
-* instantiating switching events for transformer inrush, capacitor switching, motor starts, feeder switching, and temporary faults
-* constructing OpenDSS objects for lines, loads, capacitors, motors, and distributed energy resources
+* building hidden downstream topologies with radial and optional ring configurations;
+* modifying the number of downstream buses ($N_b$) and network connectivity ($N_l$);
+* perturbing line parameters using a scenario-dependent multiplier;
+* varying load allocation and load composition across linear, non-linear, and heavy-duty load classes;
+* assigning transformer loading to each boundary transformer in the range 30–75 % across multi-operating-point sweeps;
+* instantiating switching events for 8 consumer equipment types (`ac_motor`, `dc_motor_inverter`, `microwave`, `induction_plate`, `compressor`, `audio_amplifier`, `ups`, `industrial_fan`);
+* instantiating 4 distinct line fault event types:
+  - `LG` — single-phase-to-ground fault;
+  - `LL` — phase-to-phase fault;
+  - `LLG` — two-phase-to-ground fault;
+  - `LLL` — three-phase balanced fault;
+* instantiating co-events with time-shifting operations (simultaneous co-events with $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ vs time-shifted co-events with $t_{\mathrm{offset}} > 0.0\,\mathrm{s}$);
+* constructing OpenDSS objects for lines, loads, capacitors, motors, and distributed energy resources.
 
 For each scenario, `CoSimulationRunner.run_scenario`:
 
-* solves the OpenDSS operating point for the known upstream plant plus the hidden downstream network
-* collects PCC measurements via `get_pcc_measurements()`
-* builds an ATP event case with `ATPCaseBuilder`
-* currently falls back to synchronized operating-point values when EMT waveform output is unavailable
+* solves the OpenDSS operating point for the known upstream plant plus the hidden downstream network;
+* collects PCC measurements via `get_pcc_measurements()`;
+* builds an ATP event case with `ATPCaseBuilder`;
+* executes ATP-EMTP via Wine using `ATPRunner` and parses raw EMT output into `EMTWaveforms` via `ATPOutputReader`.
 
 Measurements captured in each result include:
 
-* transformer three-phase voltages and currents waveforms
-* active power (`P`), reactive power (`Q`), and apparent power (`S`) at boundary nodes
-* derived steady-state features, sequence features, transient features, and spectral features
+* transformer three-phase voltage and current waveforms ($V_{abc}(t), I_{abc}(t)$);
+* active power (`P`), reactive power (`Q`), and apparent power (`S`) at boundary nodes;
+* derived steady-state features, sequence features, transient features, and spectral features.
 
-The simulation framework generates two distinct, decoupled datasets to evaluate the latent observability problem under different operating conditions. Critically, to align with the decentralized physical architecture, measurements are not synchronized across transformers, and each dataset element strictly references exactly one transformer's measurements to prevent any inter-transformer leakage:
+The simulation framework generates three distinct, decoupled datasets to evaluate the latent observability and realization problems under different operating conditions:
 
 1. **Dataset 1 (Scenario-Based Dataset)**: Focuses on steady-state network realization and structural state estimation.
    - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_feeder_id`, `gt_topology_type`, `gt_number_of_buses`, `gt_number_of_branches`, `gt_r_eq_ohm`, `gt_x_eq_ohm`, `gt_z_eq_ohm` derived from Kron network reduction of a single specific feeder's hidden LV network.
    - **Inverse Realization Estimates ($\hat{X}_R$):** `est_number_of_buses`, `est_number_of_branches`, `est_r_eq_ohm`, `est_x_eq_ohm`, `est_z_eq_ohm` derived by the inverse solver `LatentNetworkRealizationSolver`.
    - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase steady-state time vector (`obs_steady_state_time`), voltage waveforms (`obs_steady_state_voltage_abc`), current waveforms (`obs_steady_state_current_abc`), along with meter-level summary averages (`obs_transX_lv_pcc_voltage_mag_avg`, `obs_transX_lv_pcc_current_mag_avg`, `obs_transX_lv_pcc_p_kw`, `obs_transX_lv_pcc_q_kvar`).
 
-2. **Dataset 2 (Event-Based Dataset)**: Focuses on transient/switching dynamic state realization.
-   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_event_type`, `gt_simulated_event`, `gt_effective_load_kw`, `gt_load_type`, `gt_start_timestamp_s`, `gt_end_timestamp_s`.
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Localized transformer steady-state reference magnitudes (`obs_steady_state_v_ref`, `obs_steady_state_i_ref`), three-phase raw transient waveforms (`obs_raw_transient_time`, `obs_raw_transient_v`, `obs_raw_transient_i`), and three-phase steady-state-normalized transient waveforms (`obs_norm_transient_time`, `obs_norm_transient_v`, `obs_norm_transient_i`).
+2. **Dataset 2 (Single-Event Observability & Transformer Spec Dataset)**: Answers Questions 1 and 4.
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_event_class`, `gt_event_type`, `gt_equipment_type`, `gt_fault_type`, `gt_event_start_timestamp_s`, `gt_event_end_timestamp_s`, `gt_event_target`.
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase raw transient waveforms (`obs_raw_transient_time`, `obs_raw_transient_v`, `obs_raw_transient_i`), three-phase steady-state-normalized transient waveforms (`obs_norm_transient_time`, `obs_norm_transient_v`, `obs_norm_transient_i`), and single-event signatures (`single_event_voltage_signature`, `single_event_current_signature`).
 
-Each perturbed network is simulated to produce these decoupled datasets, linking hidden network states and events to observable PCC-level signatures without any target label leakage or cross-transformer data contamination.
+3. **Dataset 3 (Co-Event Composition & Residual Dataset)**: Answers Questions 2 and 3.
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_coevent_class`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_1_start_timestamp_s`, `gt_event_2_class`, `gt_event_2_type`, `gt_event_2_start_timestamp_s`, `gt_time_offset_s`.
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase co-event waveforms (`obs_coevent_time`, `obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`).
 
-#### 4. Statistical Tests for estimated lv network parameters and observable state
 
-* ##### Dataset 1 Realization Accuracy Testing
+#### 5. Statistical Tests for estimated lv network parameters and observable state
+
+##### Dataset 1 Realization Accuracy Testing
 
 Dataset 1 statistical analysis (`src/statistics/correlation.py`) evaluates the accuracy of the inverse realization solver in recovering the hidden distribution network structure and electrical parameters from boundary measurements across 3 feeder subgroups (`feeder_1`, `feeder_2`, `feeder_3`). Metrics evaluated include:
 
 1. **Mean Absolute Error (MAE)** for discrete structural state estimation (bus count $\hat{N}_b$ vs $N_b$, branch count $\hat{N}_l$ vs $N_l$):
   \[\mathrm{MAE}_{N_b} = \frac{1}{N} \sum_{i=1}^N |  \hat{N}_{b,i} - N_{b,i}|, \qquad \mathrm{MAE}_{N_l}   = \frac{1}{N} \sum_{i=1}^N |\hat{N}_{l,i} - N_{l,i}|\]
 2. **Root Mean Squared Error (RMSE)** for continuous equivalent impedance estimation ($\hat{R}_{\mathrm{eq}}$, $\hat{X}_{\mathrm{eq}}$, $\hat{Z}_{\mathrm{eq}}$):
-  \[\mathrm{RMSE}_{Z} = \sqrt{\frac{1}{N}\sum{i=1}^N   (\hat{Z}_{\mathrm{eq},i} - Z_{\mathrm{eq},i})^2}\]
+  \[\mathrm{RMSE}_{Z} = \sqrt{\frac{1}{N}\sum_{i=1}^N   (\hat{Z}_{\mathrm{eq},i} - Z_{\mathrm{eq},i})^2}\]
 
-* ##### Dataset 2 Wavelet-Domain Observability Testing
+##### Dataset 2 Single-Event Observability & Transformer Spec Testing (Questions 1 & 4)
 
+Factorial ANOVA / Mixed-Effects analysis (`src/statistics/single_event_analysis.py`) evaluates single-event observability magnitude across 8 equipment types and 4 line fault types (`LG`, `LL`, `LLG`, `LLL`) and varying LV transformer specifications across 3 feeder subgroups (`feeder_1`, `feeder_2`, `feeder_3`).
+- **Question 1:** Tests main effect of event type ($F_{\mathrm{event}}, p_{\mathrm{event}}$).
+- **Question 4:** Tests main effect of transformer specification ($F_{\mathrm{transformer}}, p_{\mathrm{transformer}}$).
 
+##### Dataset 3 Co-Event Residual Variation Testing (Questions 2 & 3)
+
+Brown-Forsythe Levene testing (`src/statistics/co_event_analysis.py`) measures variation in residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across co-event conditions:
+- **Question 2:** Evaluates residual variation between simultaneous ($t_{\mathrm{offset}} = 0$) and time-shifted co-events.
+- **Question 3:** Evaluates how line faults (`LG`, `LL`, `LLG`, `LLL`) alter the observability residual of equipment-switch events.
 
 **Limitations:** The validation establishes the practical limits of boundary-based realization and identifies the sensing architecture required for distributed dynamic state estimation in partially observable distribution networks within the limits of the simulated environment.
