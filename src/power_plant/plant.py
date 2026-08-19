@@ -17,6 +17,8 @@ class OperatingPoint:
     voltage_pu: dict
     frequency_hz: float
     transient_waveforms: Optional[object] = None # Associated ATP transient waveforms for EMT dynamics not provided in OpenDSS
+    phase_voltages_v: Optional[dict] = None
+    phase_angles_deg: Optional[dict] = None
 
     def import_atp_cases(self, atp_waveforms):
         """
@@ -25,7 +27,7 @@ class OperatingPoint:
         """
         self.transient_waveforms = atp_waveforms
 
-def initialize_known_plant():
+def initialize_known_plant(use_baseline_transformers: bool = False):
     """
     Initializes the fixed upstream distribution station using OpenDSS.
     The known plant has standard distribution voltage levels:
@@ -35,7 +37,7 @@ def initialize_known_plant():
     - PCU / Shared Generator (coupled at 11 kV main_bus)
     - Medium-voltage Switchgear
     - Three 11 kV Feeders (Line 1, Line 2, Line 3)
-    - Fixed set of three 11/0.415 kV step-down Distribution Transformers (1.5 MVA) acting as edge interfaces
+    - Fixed set of three 11/0.415 kV step-down Distribution Transformers acting as edge interfaces
     """
     print("INFO: Initializing OpenDSS Physics-Based Known Plant Model (33/11/0.415 kV)...")
 
@@ -69,10 +71,9 @@ def initialize_known_plant():
     dss.run_command("new line.feeder2 bus1=main_bus bus2=feeder2_head phases=3 linecode=feeder length=6.2 units=km")
     dss.run_command("new line.feeder3 bus1=main_bus bus2=feeder3_head phases=3 linecode=feeder length=8.5 units=km")
 
-    # 5. Fixed Set of Distribution Transformers (11/0.415 kV, delta-wye, 1.5 MVA)
-    # Parameterized and instantiated using the dedicated get_distribution_transformer_spec function
+    # 5. Fixed Set of Distribution Transformers (11/0.415 kV, delta-wye)
     for f_id in [1, 2, 3]:
-        spec = get_distribution_transformer_spec(f_id)
+        spec = get_distribution_transformer_spec(f_id, use_baseline=use_baseline_transformers)
         dss.run_command(
             f"new transformer.{spec['name']} "
             f"phases={spec['phases']} windings={spec['windings']} "
@@ -81,7 +82,9 @@ def initialize_known_plant():
             f"kvs=[{','.join(map(str, spec['kvs']))}] "
             f"kvas=[{','.join(map(str, spec['kvas']))}] "
             f"%r={spec['r_pct']} "
-            f"xhl={spec['xhl_pct']}"
+            f"xhl={spec['xhl_pct']} "
+            f"%noloadloss={spec.get('noloadloss_pct', 0.1)} "
+            f"%imag={spec.get('imag_pct', 0.8)}"
         )
 
     print("INFO: OpenDSS Known Plant Model successfully initialized.")
@@ -102,6 +105,8 @@ def solve_operating_point(p_kw: float, q_kvar: float, time_s: float = 0.0) -> Op
     feeder_q = {}
     loading = {}
     voltage_pu = {}
+    phase_voltages_v = {}
+    phase_angles_deg = {}
 
     # We use the three transformers (trans1, trans2, trans3) as our boundaries
     for idx in [1, 2, 3]:
@@ -122,6 +127,9 @@ def solve_operating_point(p_kw: float, q_kvar: float, time_s: float = 0.0) -> Op
         v_nom_lv = 415.0 / np.sqrt(3.0)
         voltage_pu[f"transformer{idx}"] = v_avg_lv / v_nom_lv
 
+        phase_voltages_v[f"trans{idx}"] = tuple(data["v_mags"])
+        phase_angles_deg[f"trans{idx}"] = tuple(data["v_angs"])
+
     freq = float(dss.Solution.Frequency())
 
     return OperatingPoint(
@@ -132,5 +140,7 @@ def solve_operating_point(p_kw: float, q_kvar: float, time_s: float = 0.0) -> Op
         feeder_q_kvar=feeder_q,
         transformer_loading=loading,
         voltage_pu=voltage_pu,
-        frequency_hz=freq
+        frequency_hz=freq,
+        phase_voltages_v=phase_voltages_v,
+        phase_angles_deg=phase_angles_deg
     )

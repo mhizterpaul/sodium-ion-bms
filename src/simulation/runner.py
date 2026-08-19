@@ -28,12 +28,12 @@ class CoSimulationRunner:
     def __init__(self):
         self.atp_builder = ATPCaseBuilder()
 
-    def run_scenario(self, sim_scenario) -> SimulationResult:
+    def run_scenario(self, sim_scenario, use_baseline_transformers: bool = False) -> SimulationResult:
         """
         Coordinates full co-simulation run: DSS operating point + ATP transient waveform simulation.
         Returns a structured SimulationResult object.
         """
-        initialize_known_plant()
+        initialize_known_plant(use_baseline_transformers=use_baseline_transformers)
 
         h_net = sim_scenario.hidden_network
         topo = h_net.topology
@@ -74,6 +74,48 @@ class CoSimulationRunner:
             dss.run_command(
                 f"new generator.{der['name']} bus1={der['bus']} phases=3 kv=0.415 kw={der['kw']} pf=1.0 model=1"
             )
+
+        # Apply distribution line faults in OpenDSS prior to solving operating point
+        if sim_scenario.events:
+            events_to_check = []
+            for ev in sim_scenario.events:
+                if hasattr(ev, "event_1") and hasattr(ev, "event_2"):
+                    events_to_check.extend([ev.event_1, ev.event_2])
+                else:
+                    events_to_check.append(ev)
+
+            fault_count = 0
+            for ev in events_to_check:
+                if getattr(ev, "event_class", "") == "line_fault":
+                    fault_count += 1
+                    f_type = getattr(ev, "fault_type", "LG")
+                    target = getattr(ev, "target", "trans1")
+                    f_res = getattr(ev, "fault_resistance", 0.05)
+                    phases = getattr(ev, "faulted_phases", (0,))
+
+                    if target.startswith("trans"):
+                        f_num = target.replace("trans", "")
+                        target_bus = f"feeder{f_num}_sec"
+                    elif not target.startswith("feeder") and not target.startswith("down_"):
+                        target_bus = "feeder1_sec"
+                    else:
+                        target_bus = target
+
+                    fault_name = f"dist_fault_{fault_count}"
+
+                    if f_type == "LG":
+                        ph_num = phases[0] + 1 if phases else 1
+                        dss.run_command(f"new Fault.{fault_name} bus1={target_bus}.{ph_num} phases=1 r={f_res}")
+                    elif f_type == "LL":
+                        ph1 = phases[0] + 1 if len(phases) > 0 else 1
+                        ph2 = phases[1] + 1 if len(phases) > 1 else 2
+                        dss.run_command(f"new Fault.{fault_name} bus1={target_bus}.{ph1} bus2={target_bus}.{ph2} phases=1 r={f_res}")
+                    elif f_type == "LLG":
+                        dss.run_command(f"new Fault.{fault_name} bus1={target_bus}.1.2 phases=2 r={f_res}")
+                    elif f_type == "LLL":
+                        dss.run_command(f"new Fault.{fault_name} bus1={target_bus}.1.2.3 phases=3 r={f_res}")
+                    else:
+                        dss.run_command(f"new Fault.{fault_name} bus1={target_bus}.1 phases=1 r={f_res}")
 
         op = solve_operating_point(sim_scenario.generator_p_kw, sim_scenario.generator_q_kvar)
 

@@ -175,7 +175,7 @@ where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered
 ---
 ## Distributed System State Estimation Using Wavelet Decomposition (core contribution)
 
-Unlike conventional Distribution System State Estimation (DSSE), where the complete network topology and bus model are assumed known, this research considers a partially observable network in which only the upstream distribution station is known while the downstream network remains hidden.
+Unlike conventional Distribution System State Estimation (DSSE), where the complete network topology and bus model are assumed known and estimation is inherently limited to steady-state estimation, this research considers a partially observable network in which only the upstream distribution station is known while the downstream network partially hidden and extends the state estimation to the dynamic domain using lv distribution transformer transients.
 The realization problem is formulated as \[X_R=\Phi(M)\] where
 * \(M\) denotes synchronized measurements acquired at the meters and distribution transformers,
 * \(X_R\) is a latent realization state describing the hidden network,
@@ -373,19 +373,19 @@ Dataset 1 statistical analysis (`src/statistics/correlation.py`) evaluates the a
 2. **Root Mean Squared Error (RMSE)** for continuous equivalent impedance estimation ($\hat{R}_{\mathrm{eq}}$, $\hat{X}_{\mathrm{eq}}$, $\hat{Z}_{\mathrm{eq}}$):
   \[\mathrm{RMSE}_{Z} = \sqrt{\frac{1}{N}\sum_{i=1}^N   (\hat{Z}_{\mathrm{eq},i} - Z_{\mathrm{eq},i})^2}\]
 
-##### Question 1 Event Pair Observability Testing (Dataset 2)
+##### Dataset 2 Event Pair Observability Testing
 
 Factorial ANOVA analysis (`src/statistics/q1_event_pair_analysis.py`) evaluates event pair observability across (i) load switch pairs (`load_load`), (ii) line fault pairs (`fault_fault`), and (iii) mixed load-fault pairs (`load_fault`) using Dataset 2:
 - **Main Effect:** Evaluates $F_{\mathrm{voltage}}, p_{\mathrm{voltage}}$ and $F_{\mathrm{current}}, p_{\mathrm{current}}$ to test observability differences across pair categories under fixed baseline transformer specs and zero time shift.
 
-##### Question 2 Time Shift Operation Variation Testing (Dataset 3)
+##### Dataset 3 Time Shift Operation Variation Testing
 
 Levene / Brown-Forsythe variance analysis (`src/statistics/q2_time_shift_analysis.py`) evaluates residual magnitude variation under time shift operations ($t_{\mathrm{offset}} = 0$ vs $t_{\mathrm{offset}} > 0$) using Dataset 3 across:
 - (i) Load switch event pairs
 - (ii) Line fault event pairs
 - (iii) Across load switch and fault pairs
 
-##### Question 3 Transformer Specification Effect Testing (Dataset 4)
+##### Dataset 4 Transformer Specification Effect Testing
 
 One-Way ANOVA testing (`src/statistics/q3_transformer_spec_analysis.py`) evaluates how transformer specification variations affect observability across load switch pairs, line fault pairs, and mixed pairs using Dataset 4:
 - **Transformer Spec Effect:** Measures $F_{\mathrm{spec}}, p_{\mathrm{spec}}$ across transformer specifications (`tx_spec_std_1500kva`, `tx_spec_high_z_1200kva`, `tx_spec_low_loss_2000kva`) under zero time shift.

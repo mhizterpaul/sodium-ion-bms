@@ -14,7 +14,9 @@ __mocks__/
 *.dbg
 *.pl4
 *.pl4.bin
+*.ATP
 *.json
 *.csv
 src/simulation/*.json
 src/simulation/*.csv
+src/simulation/atp_cases/
