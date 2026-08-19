@@ -67,115 +67,56 @@ The projected design space ($\theta = [\theta_s, \theta_m]$) is explored with a 
 #### BESS Robustness Evaluation Framework
 
 
-1. Electrochemical–Thermal Driver Model
-
-
-
+**1. Electrochemical–Thermal Driver Model**
 The BESS is evaluated using the DFN electrochemical model coupled with the thermal model. The model provides the measurable simulation outputs required for performance evaluation:
 
-Terminal voltage, \(V(t)\)
-
-Terminal current, \(I(t)\)
-
-Temperature, \(T(t)\)
-
-State of charge, \(SoC(t)\)
-
-Available capacity, \(Q(t)\)
-
-Energy throughput
-
-
+  Terminal voltage, \(V(t)\)
+  Terminal current, \(I(t)\)
+  Temperature, \(T(t)\)
+  State of charge, \(SoC(t)\)
+  Available capacity, \(Q(t)\)
+  Energy throughput
 The BESS is evaluated under simulated grid-outage, PV-firming, and variable C-rate dispatch profiles.
 
-2. Performance Measurements
-
-
-
+**2. Performance Measurements**
 Each performance metric is calculated directly from the simulated measurements.
 
-Round-Trip Energy Efficiency (RTE)
-
-Measures the fraction of charging energy recovered during discharge:
-
+ * Round-Trip Energy Efficiency (RTE): Measures the fraction of charging energy recovered during discharge
 [eta_{RTE}=frac{E_{\mathrm{dis}}}{E_{\mathrm{chg}}}] whereb[E_{\mathrm{dis}}=int_{\mathrm{discharge}} V(t)I(t),dt]
-and [E_{\mathrm{chg}}=\int_{\mathrm{charge}} |V(t)I(t)|\,dt.] Coulombic Efficiency
+and [E_{\mathrm{chg}}=\int_{\mathrm{charge}} |V(t)I(t)|\,dt.]
 
-Measures the fraction of charge recovered in terms of electrical charge:
+ * Coulombic Efficiency: Measures the fraction of charge recovered in terms of electrical charge [\eta_C=\frac{Q_{\mathrm{dis}}}{Q_{\mathrm{chg}}}] with [Q_{\mathrm{dis}}= int_{\mathrm{discharge}} |I(t)|\,dt,\qquad Q_{\mathrm{chg}}=\int_{\mathrm{charge}} |I(t)|\,dt.]
 
-[\eta_C=\frac{Q_{\mathrm{dis}}}{Q_{\mathrm{chg}}}] with [Q_{\mathrm{dis}}= int_{\mathrm{discharge}} |I(t)|\,dt,\qquad Q_{\mathrm{chg}}=\int_{\mathrm{charge}} |I(t)|\,dt.]
+ * Voltage Efficiency: Represents the voltage-related loss independently of charge throughput [\eta_V=\frac{\eta_{RTE}}{\eta_C}.]
 
-Voltage Efficiency
+ * Usable Energy Capacity: Measures the energy delivered over the defined operating SOC window [E_{\mathrm{usable}}=\int_{t_0}^{t_1}|V(t)I(t)|\,dt] where \(t_0\) and \(t_1\) correspond to the specified upper and lower SOC limits.
 
-Represents the voltage-related loss independently of charge throughput:
+ * Power Capability: Measures the maximum deliverable electrical power during the simulated operating window [P_{\max}=\max_t |V(t)I(t)|.]
 
-[\eta_V=\frac{\eta_{RTE}}{\eta_C}.]
+ * Thermal Response: Measures the temperature excursion produced during operation [\Delta T=T_{\max}-T_{\min}] and the maximum operating temperature is[T_{\max}=\max_t T(t).]
 
-Usable Energy Capacity
+ * Depth of Discharge: For each simulated cycle [DoD=SoC_{\max}-SoC_{\min}.]
 
-Measures the energy delivered over the defined operating SOC window:
+Equivalent Full Cycles: Accumulated energy throughput is converted into equivalent full cycles [EFC=\frac{\displaystyle\int |P(t)|\,dt}{2E_{\mathrm{rated}}}.]. The factor of \(2\) accounts for one complete charge and discharge throughput.
 
-[E_{\mathrm{usable}}=\int_{t_0}^{t_1}|V(t)I(t)|\,dt] where \(t_0\) and \(t_1\) correspond to the specified upper and lower SOC limits.
+ * Capacity Fade: The loss of usable capacity relative to the initial condition is [F_Q(t)=1-\frac{Q_{\max}(t)}{Q_{\max}(0)}.]
 
-Power Capability
+ * Cycle Life: cell life cycle is estimated from the simulated degradation trajectory as the point at which the battery reaches the prescribed minimum \(SoH\), [N_{\mathrm{life}}=\min\left\{N:SoH(N)\le SoH_{\mathrm{limit}}\right\}.]
 
-Measures the maximum deliverable electrical power during the simulated operating window:
-
-[P_{\max}=\max_t |V(t)I(t)|.]
-
-Thermal Response
-
-Measures the temperature excursion produced during operation:
-
-[\Delta T=T_{\max}-T_{\min}] and the maximum operating temperature is[T_{\max}=\max_t T(t).]
-
-Depth of Discharge
-
-For each simulated cycle:
-
-[DoD=SoC_{\max}-SoC_{\min}.]
-
-Equivalent Full Cycles
-
-Accumulated energy throughput is converted into equivalent full cycles:
-
-[EFC=\frac{\displaystyle\int |P(t)|\,dt}{2E_{\mathrm{rated}}}.]
-
-The factor of \(2\) accounts for one complete charge and discharge throughput.
-
-Capacity Fade
-
-The loss of usable capacity relative to the initial condition is:
-
-[F_Q(t)=1-\frac{Q_{\max}(t)}{Q_{\max}(0)}.]
-
-Cycle Life
-
-Cycle life is estimated from the simulated degradation trajectory as the point at which the battery reaches the prescribed minimum \(SoH\):
-
-[N_{\mathrm{life}}=\min\left\{N:SoH(N)\le SoH_{\mathrm{limit}}\right\}.]
-
-Calendar Life
-
-Where calendar-aging simulations are performed, the corresponding lifetime is:
+ * Calendar Life: Where calendar-aging simulations are performed, the corresponding lifetime is:
 [t_{\mathrm{life}}=\min\left\{t:SoH(t)\le SoH_{\mathrm{limit}}\right\}.]
 
-Levelized Cost of Storage
-
-For the economic assessment:
-
-[LCOS=\frac{C_{\mathrm{capital}}+C_{\mathrm{replacement}}+C_{\mathrm{operation}}}{E_{\mathrm{lifetime,dis}}}\]
+ * Levelized Cost of Storage: For the economic assessment [LCOS=\frac{C_{\mathrm{capital}}+C_{\mathrm{replacement}}+C_{\mathrm{operation}}}{E_{\mathrm{lifetime,dis}}}\]
 where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered by the BESS.
 
----
-
-*   **Limitations**:  While this work focuses on a foundational design space, the cell architecture remains amenable to further performance enhancement via composite electrode structuring, advanced pore network engineering, perturbing other dopant sites (beyond the Fe-site), and exploring a broader range of electrolyte systems (solvents and additives) to further enhance cycle life and energy density. The current optimization scope is intentionally streamlined to accommodate the computational constraints of the DFN solver.
-
+**Limitations:**  While this work focuses on a foundational design space, the cell architecture remains amenable to further performance enhancement via composite electrode structuring, advanced pore network engineering, perturbing other dopant sites (beyond the Fe-site), and exploring a broader range of electrolyte systems (solvents and additives) to further enhance cycle life and energy density. The current optimization scope is intentionally streamlined to accommodate the computational constraints of the DFN solver.
 
 ---
+
 ## Distributed System State Estimation Using Wavelet Decomposition (core contribution)
 
 Unlike conventional Distribution System State Estimation (DSSE), where the complete network topology and bus model are assumed known, this research considers a partially observable network in which only the upstream distribution station is known while the downstream network remains hidden.
+
 The realization problem is formulated as \[X_R=\Phi(M)\] where
 * \(M\) denotes synchronized measurements acquired at the meters and distribution transformers,
 * \(X_R\) is a latent realization state describing the hidden network,
@@ -310,16 +251,14 @@ To accurately represent realistic residential, commercial, and industrial end-us
 
 The simulation framework systematically perturbs the unknown downstream network while maintaining a fixed upstream distribution station.
 
-OpenDSS is used to simulate the known upstream station together with the hidden downstream distribution network.
+OpenDSS is used to simulate the known upstream station together with the hidden downstream distribution network and line faults.
 
-A transient simulator (`ATPRunner`) executes ATP-EMTP cases built via `ATPCaseBuilder` to acquire high-fidelity 3-phase electromagnetic transient (EMT) waveforms for switching events and line faults.
+A transient simulator (`ATPRunner`) executes ATP-EMTP cases built via `ATPCaseBuilder` to acquire high-fidelity 3-phase electromagnetic transient (EMT) waveforms for switching events.
 
 The code generates scenario datasets by:
 
 * building hidden downstream topologies with radial and optional ring configurations;
 * modifying the number of downstream buses ($N_b$) and network connectivity ($N_l$);
-* perturbing line parameters using a scenario-dependent multiplier;
-* varying load allocation and load composition across linear, non-linear, and heavy-duty load classes;
 * assigning transformer loading to each boundary transformer in the range 30–75 % across multi-operating-point sweeps;
 * instantiating event pairs for 3 distinct pair categories across load switches and line faults:
   - (i) **Load switch event pairs (`load_load`)** — co-occurring consumer load switching operations;
@@ -329,14 +268,11 @@ The code generates scenario datasets by:
 * constructing OpenDSS objects for lines, loads, capacitors, motors, and distributed energy resources.
 
 For each scenario, `CoSimulationRunner.run_scenario`:
-
-* solves the OpenDSS operating point for the known upstream plant plus the hidden downstream network;
 * collects PCC measurements via `get_pcc_measurements()`;
 * builds an ATP event case with `ATPCaseBuilder`;
 * executes ATP-EMTP via Wine using `ATPRunner` and parses raw EMT output into `EMTWaveforms` via `ATPOutputReader`.
 
 Measurements captured in each result include:
-
 * transformer three-phase voltage and current waveforms ($V_{abc}(t), I_{abc}(t)$);
 * active power (`P`), reactive power (`Q`), and apparent power (`S`) at boundary nodes;
 * derived steady-state features, sequence features, transient features, and spectral features.
