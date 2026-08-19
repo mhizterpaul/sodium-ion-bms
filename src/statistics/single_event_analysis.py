@@ -15,18 +15,11 @@ def parse_json_array(val):
     except Exception:
         return np.array([])
 
-def compute_observability_magnitude(v_norm_abc: np.ndarray, i_norm_abc: np.ndarray) -> tuple[float, float]:
-    v_norm = np.asarray(v_norm_abc, dtype=float)
-    i_norm = np.asarray(i_norm_abc, dtype=float)
-
-    mag_v = float(np.sqrt(np.mean(v_norm**2))) if v_norm.size > 0 else 0.0
-    mag_i = float(np.sqrt(np.mean(i_norm**2))) if i_norm.size > 0 else 0.0
-
-    return mag_v, mag_i
-
 def run_dataset_2_factorial_analysis():
     """
-    Factorial ANOVA / Mixed-Effects Analysis for Dataset 2 Single-Event Observability (Q1 & Q4).
+    Factorial ANOVA & Levene/Brown-Forsythe Variance Analysis for Dataset 2 Single-Event Observability & Transformer Spec Variation (Q1 & Q4).
+      - Q1: Measures observability differences across event classes/types (8 equipment types + fault combinations LG, LL, LLG, LLL, LC, LLC).
+      - Q4: Measures the variation in transformer measurements (voltage/current magnitudes and waveform variance) due to specification variation across the 3 LV feeder groups.
     """
     data_path = Path(__file__).parent.parent / "simulation" / "dataset_2.csv"
     if not data_path.exists():
@@ -34,58 +27,53 @@ def run_dataset_2_factorial_analysis():
 
     df = pd.read_csv(data_path)
 
-    v_mags = []
-    i_mags = []
+    subgroups = ["feeder_1", "feeder_2", "feeder_3"]
+    f_event_list = []
+    p_event_list = []
+    f_tx_var_list = []
+    p_tx_var_list = []
 
-    for idx, row in df.iterrows():
-        v_norm = parse_json_array(row.get("obs_norm_transient_v"))
-        i_norm = parse_json_array(row.get("obs_norm_transient_i"))
-        mv, mi = compute_observability_magnitude(v_norm, i_norm)
-        v_mags.append(mv)
-        i_mags.append(mi)
+    print("--- Dataset 2 Single-Event Observability & Transformer Spec Variation Analysis (Q1 & Q4) ---")
 
-    df["voltage_observability_magnitude"] = v_mags
-    df["current_observability_magnitude"] = i_mags
+    for sg in subgroups:
+        sub_df = df[df["gt_feeder_id"] == sg]
+        if len(sub_df) > 0:
+            # Q1: Main effect of event types on observability magnitude
+            event_groups = [g["single_event_residual_v_magnitude"].values for _, g in sub_df.groupby("gt_event_type") if len(g) > 1 and np.std(g["single_event_residual_v_magnitude"].values) > 1e-12]
+            f_ev, p_ev = stats.f_oneway(*event_groups) if len(event_groups) > 1 else (0.0, 1.0)
+            f_event_list.append(f_ev)
+            p_event_list.append(p_ev)
 
-    print("--- Dataset 2 Single-Event Observability Factorial Analysis (Q1 & Q4) ---")
+            # Q4: Variation in transformer measurements across transformer specifications within LV group
+            tx_groups = [g["single_event_residual_v_magnitude"].values for _, g in sub_df.groupby("gt_transformer_spec_id") if len(g) > 1]
+            valid_tx_groups = [tg for tg in tx_groups if np.std(tg) > 1e-12]
 
-    grouped = df.groupby(["gt_event_type", "gt_transformer_spec_id"])
+            if len(valid_tx_groups) > 1:
+                stat_tx_var, p_tx_var = stats.levene(*valid_tx_groups, center='median')
+            else:
+                stat_tx_var, p_tx_var = 0.0, 1.0
 
-    summary_rows = []
-    for (ev_type, tx_spec), group in grouped:
-        summary_rows.append({
-            "event_type": ev_type,
-            "transformer_spec_id": tx_spec,
-            "n_samples": len(group),
-            "mean_v_observability": float(np.mean(group["voltage_observability_magnitude"])),
-            "mean_i_observability": float(np.mean(group["current_observability_magnitude"]))
-        })
+            f_tx_var_list.append(stat_tx_var)
+            p_tx_var_list.append(p_tx_var)
 
-    summary_df = pd.DataFrame(summary_rows)
+            print(f"Subgroup {sg} (N={len(sub_df)}):")
+            print(f"  Q1 Event Type Main Effect:                     F = {f_ev:.4f}, p = {p_ev:.4e}")
+            print(f"  Q4 Transformer Measurement Variation (Levene): F = {stat_tx_var:.4f}, p = {p_tx_var:.4e}")
 
-    event_groups = [g["current_observability_magnitude"].values for _, g in df.groupby("gt_event_type") if len(g) > 1 and np.std(g["current_observability_magnitude"].values) > 1e-12]
-    tx_groups = [g["current_observability_magnitude"].values for _, g in df.groupby("gt_transformer_spec_id") if len(g) > 1 and np.std(g["current_observability_magnitude"].values) > 1e-12]
+    avg_f_event = float(np.mean(f_event_list)) if f_event_list else 0.0
+    avg_p_event = float(np.mean(p_event_list)) if p_event_list else 1.0
+    avg_f_tx_var = float(np.mean(f_tx_var_list)) if f_tx_var_list else 0.0
+    avg_p_tx_var = float(np.mean(p_tx_var_list)) if p_tx_var_list else 1.0
 
-    if len(event_groups) > 1:
-        f_event, p_event = stats.f_oneway(*event_groups)
-    else:
-        f_event, p_event = 0.0, 1.0
-
-    if len(tx_groups) > 1:
-        f_tx, p_tx = stats.f_oneway(*tx_groups)
-    else:
-        f_tx, p_tx = 0.0, 1.0
-
-    print("\nFactorial Main Effects (Current Observability Magnitude):")
-    print(f"  Q1: Event Type Main Effect:          F = {f_event:.4f}, p = {p_event:.4e}")
-    print(f"  Q4: Transformer Spec Main Effect:    F = {f_tx:.4f}, p = {p_tx:.4e}")
+    print("\n--- Average Observability and Transformer Spec Variation Across All Subgroups ---")
+    print(f"Average Q1 Event Type Main Effect:                     F = {avg_f_event:.4f}, p = {avg_p_event:.4e}")
+    print(f"Average Q4 Transformer Measurement Variation (Levene): F = {avg_f_tx_var:.4f}, p = {avg_p_tx_var:.4e}")
 
     results = {
-        "summary": summary_df,
-        "f_event": float(f_event),
-        "p_event": float(p_event),
-        "f_transformer": float(f_tx),
-        "p_transformer": float(p_tx)
+        "avg_f_event": avg_f_event,
+        "avg_p_event": avg_p_event,
+        "avg_f_tx_var": avg_f_tx_var,
+        "avg_p_tx_var": avg_p_tx_var
     }
     return results
 

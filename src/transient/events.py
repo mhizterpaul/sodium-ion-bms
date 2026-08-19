@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional, Literal
+from typing import Optional, Literal, Union
 
 @dataclass
 class SingleEquipmentSwitchEvent:
@@ -19,7 +19,7 @@ class SingleEquipmentSwitchEvent:
 
 @dataclass
 class SingleLineFaultEvent:
-    fault_type: Literal["LG", "LL", "LLG", "LLL"]
+    fault_type: str  # LG, LL, LLG, LLL, LC, LLC
     start_time_s: float
     duration_s: float
     target: str
@@ -57,6 +57,27 @@ class EquipmentEquipmentCoEvent:
         return abs(self.event_2.start_time_s - self.event_1.start_time_s)
 
 @dataclass
+class LineFaultLineFaultCoEvent:
+    event_1: SingleLineFaultEvent
+    event_2: SingleLineFaultEvent
+
+    @property
+    def event_class(self) -> str:
+        return "line_fault_line_fault_coevent"
+
+    @property
+    def event_type(self) -> str:
+        return f"{self.event_1.event_type}_{self.event_2.event_type}"
+
+    @property
+    def is_simultaneous(self) -> bool:
+        return self.event_1.start_time_s == self.event_2.start_time_s
+
+    @property
+    def time_offset_s(self) -> float:
+        return abs(self.event_2.start_time_s - self.event_1.start_time_s)
+
+@dataclass
 class EquipmentLineFaultCoEvent:
     event_1: SingleEquipmentSwitchEvent
     event_2: SingleLineFaultEvent
@@ -77,5 +98,10 @@ class EquipmentLineFaultCoEvent:
     def time_offset_s(self) -> float:
         return abs(self.event_2.start_time_s - self.event_1.start_time_s)
 
-# Generic alias for compatibility
-TransientEvent = SingleEquipmentSwitchEvent
+TransientEvent = Union[
+    SingleEquipmentSwitchEvent,
+    SingleLineFaultEvent,
+    EquipmentEquipmentCoEvent,
+    LineFaultLineFaultCoEvent,
+    EquipmentLineFaultCoEvent
+]
