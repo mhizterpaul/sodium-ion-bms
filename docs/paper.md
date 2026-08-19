@@ -132,26 +132,18 @@ It consists of:
 
 ```text
         Utility Source (Swing Bus)
-
                   │
-
       Distribution Substation Transformer
-
                   │
-
         Main Distribution Bus ── Generator
-
                   │
-    ┌───────────┼───────────┐
-    │             │             │
-
-   Feeder 1    Feeder 2    Feeder 3
-    │             │             │
-
-Distribution  Distribution  Distribution
-Transformer   Transformer   Transformer
-    │             │             │
-
+      ┌───────────┼───────────┐
+      │           │           │
+    Feeder 1    Feeder 2    Feeder 3
+      │           │           │
+ Distribution  Distribution  Distribution
+ Transformer   Transformer   Transformer
+      │           │           │
  Unknown LV   Unknown LV   Unknown LV
  Distribution Distribution Distribution
   Networks     Networks     Networks
@@ -183,25 +175,25 @@ Measurements are obtained from two sensing layers: PCC line measurements using s
 The metering hierarchy is organized as follows:
 
 ```text
-             Known MV feeder
-                       │
-                       │
+               Known MV feeder
+                      │
+                      │
                 ┌─────┴─────┐
-                │ Transformer │
+                │Transformer│
                 └─────┬─────┘
-                       │
-                    PCC / Edge
-                    Smart Meter
-                       │
-            ┌────────┴────────┐
-            │                    │
-          Line A              Line B
-            │                    │
-           PCC                   |
-          Smart Meter            |
-            │                    │
-       ┌───┴───┐           ┌───┴───┐
-       │        │           │         │
+                      │
+                  PCC / Edge
+                 Smart Meter
+                      │
+             ┌────────┴────────┐
+             │                 │
+           Line A            Line B
+             │                 │
+            PCC                |
+          Smart Meter          |
+            │                  │
+        ┌───┴───┐          ┌───┴───┐
+        │       │          │       │
 ```
 
 Selected candidate PCCs are instrumented with smart meters to acquire:
