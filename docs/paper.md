@@ -97,7 +97,7 @@ and [E_{\mathrm{chg}}=\int_{\mathrm{charge}} |V(t)I(t)|\,dt.]
 
  * Depth of Discharge: For each simulated cycle [DoD=SoC_{\max}-SoC_{\min}.]
 
-Equivalent Full Cycles: Accumulated energy throughput is converted into equivalent full cycles [EFC=\frac{\displaystyle\int |P(t)|\,dt}{2E_{\mathrm{rated}}}.]. The factor of \(2\) accounts for one complete charge and discharge throughput.
+ * Equivalent Full Cycles: Accumulated energy throughput is converted into equivalent full cycles [EFC=\frac{\displaystyle\int |P(t)|\,dt}{2E_{\mathrm{rated}}}.]. The factor of \(2\) accounts for one complete charge and discharge throughput.
 
  * Capacity Fade: The loss of usable capacity relative to the initial condition is [F_Q(t)=1-\frac{Q_{\max}(t)}{Q_{\max}(0)}.]
 
@@ -165,6 +165,15 @@ The plant model contains strictly distribution network elements and local source
 * **Main Feeder**: with lines extending from the substation, each characterized by known feeder lengths and impedances.
 * **Fixed Set of Transformers**: Step-down distribution transformers whose primary-side terminals serve as the boundary measurement interfaces.
 * **Measurement and Monitoring Devices**: Electrical sensors capturing voltage, current, active/reactive power, and sequence components at the meters and transformer primary terminal.
+* **Consumer Load Circuits**: To accurately represent realistic residential, commercial, and industrial end-user devices, consumer equipment circuits are implemented compatibly across OpenDSS and ATP-EMTP:
+  1. **AC Motor (`ac_motor`)**: Three-phase induction motor with stator resistance/inductance, magnetizing branch, rotor resistance/inductance, and mechanical inertia.
+  2. **DC Motor + Inverter (`dc_motor_inverter`)**: Rectifier stage, DC-link capacitor, PWM H-bridge inverter, and DC motor armature $R_a, L_a$ with speed-dependent Back-EMF.
+  3. **Microwave (`microwave`)**: Input rectifier, PFC stage, DC-link capacitor, high-voltage transformer, diode voltage doubler, and magnetron non-linear load.
+  4. **Induction Plate (`induction_plate`)**: Input rectifier, DC-link, high-frequency resonant inverter, resonant capacitor, and induction coil $R_{\mathrm{eq}} + j\omega L_{\mathrm{eq}}$.
+  5. **Compressor (`compressor`)**: Single-phase AC induction motor driving reciprocating/scroll compressor load torque.
+  6. **Audio Amplifier (`audio_amplifier`)**: AC supply rectifier, DC-link supply capacitor bank, Class-D switching H-bridge, LC output filter, and speaker impedance.
+  7. **Uninterruptible Power Supply / UPS (`ups`)**: Battery bank equivalent circuit, DC-link, bidirectional converter, and AC-side filter interface.
+  8. **Industrial Fan (`industrial_fan`)**: Three-phase induction motor driving speed-squared aerodynamic fan load torque.
 
 #### 2. Measurement Architecture
 
@@ -234,20 +243,7 @@ Dynamic Quantities
   Transformer temperature
   Transient voltage and current waveforms
 
-#### 3. Consumer Load Circuits
-
-To accurately represent realistic residential, commercial, and industrial end-user devices, 8 explicit consumer equipment circuits are implemented compatibly across OpenDSS and ATP-EMTP:
-
-1. **AC Motor (`ac_motor`)**: Three-phase induction motor with stator resistance/inductance, magnetizing branch, rotor resistance/inductance, and mechanical inertia.
-2. **DC Motor + Inverter (`dc_motor_inverter`)**: Rectifier stage, DC-link capacitor, PWM H-bridge inverter, and DC motor armature $R_a, L_a$ with speed-dependent Back-EMF.
-3. **Microwave (`microwave`)**: Input rectifier, PFC stage, DC-link capacitor, high-voltage transformer, diode voltage doubler, and magnetron non-linear load.
-4. **Induction Plate (`induction_plate`)**: Input rectifier, DC-link, high-frequency resonant inverter, resonant capacitor, and induction coil $R_{\mathrm{eq}} + j\omega L_{\mathrm{eq}}$.
-5. **Compressor (`compressor`)**: Single-phase AC induction motor driving reciprocating/scroll compressor load torque.
-6. **Audio Amplifier (`audio_amplifier`)**: AC supply rectifier, DC-link supply capacitor bank, Class-D switching H-bridge, LC output filter, and speaker impedance.
-7. **Uninterruptible Power Supply / UPS (`ups`)**: Battery bank equivalent circuit, DC-link, bidirectional converter, and AC-side filter interface.
-8. **Industrial Fan (`industrial_fan`)**: Three-phase induction motor driving speed-squared aerodynamic fan load torque.
-
-#### 4. Distribution Network Simulation And Station Modeling
+#### 3. Distribution Network Simulation And Station Modeling
 
 The simulation framework systematically perturbs the unknown downstream network while maintaining a fixed upstream distribution station.
 
@@ -296,9 +292,8 @@ The simulation framework generates four distinct, decoupled datasets to evaluate
    - **Ground-Truth Target Variables ($X_R$):** Same schema as Dataset 2, featuring varying transformer specifications (`tx_spec_std_1500kva`, `tx_spec_high_z_1200kva`, `tx_spec_low_loss_2000kva`).
    - **Observation Features ($M_{\mathrm{PCC}}$):** Same complete residual features as Dataset 3. Uses a fixed time shift $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ (no time shift variation).
 
----
 
-#### 5. Statistical Tests for estimated lv network parameters and observable state
+#### 4. Statistical Tests for estimated lv network parameters and observable state
 
 ##### Dataset 1 Realization Accuracy Testing
 
@@ -309,19 +304,19 @@ Dataset 1 statistical analysis (`src/statistics/correlation.py`) evaluates the a
 2. **Root Mean Squared Error (RMSE)** for continuous equivalent impedance estimation ($\hat{R}_{\mathrm{eq}}$, $\hat{X}_{\mathrm{eq}}$, $\hat{Z}_{\mathrm{eq}}$):
   \[\mathrm{RMSE}_{Z} = \sqrt{\frac{1}{N}\sum_{i=1}^N   (\hat{Z}_{\mathrm{eq},i} - Z_{\mathrm{eq},i})^2}\]
 
-##### Question 1 Event Pair Observability Testing (Dataset 2)
+##### Dataset 2 Event Pair Observability Testing 
 
 Factorial ANOVA analysis (`src/statistics/q1_event_pair_analysis.py`) evaluates event pair observability across (i) load switch pairs (`load_load`), (ii) line fault pairs (`fault_fault`), and (iii) mixed load-fault pairs (`load_fault`) using Dataset 2:
 - **Main Effect:** Evaluates $F_{\mathrm{voltage}}, p_{\mathrm{voltage}}$ and $F_{\mathrm{current}}, p_{\mathrm{current}}$ to test observability differences across pair categories under fixed baseline transformer specs and zero time shift.
 
-##### Question 2 Time Shift Operation Variation Testing (Dataset 3)
+##### Dataset 3 Time Shift Operation Variation Testing
 
 Levene / Brown-Forsythe variance analysis (`src/statistics/q2_time_shift_analysis.py`) evaluates residual magnitude variation under time shift operations ($t_{\mathrm{offset}} = 0$ vs $t_{\mathrm{offset}} > 0$) using Dataset 3 across:
 - (i) Load switch event pairs
 - (ii) Line fault event pairs
 - (iii) Across load switch and fault pairs
 
-##### Question 3 Transformer Specification Effect Testing (Dataset 4)
+##### Dataset 4 Transformer Specification Effect Testing
 
 One-Way ANOVA testing (`src/statistics/q3_transformer_spec_analysis.py`) evaluates how transformer specification variations affect observability across load switch pairs, line fault pairs, and mixed pairs using Dataset 4:
 - **Transformer Spec Effect:** Measures $F_{\mathrm{spec}}, p_{\mathrm{spec}}$ across transformer specifications (`tx_spec_std_1500kva`, `tx_spec_high_z_1200kva`, `tx_spec_low_loss_2000kva`) under zero time shift.
