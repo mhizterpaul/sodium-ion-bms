@@ -18,4 +18,3 @@ __mocks__/
 *.csv
 src/simulation/*.json
 src/simulation/*.csv
-src/simulation/atp_cases/
