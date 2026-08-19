@@ -143,15 +143,15 @@ It consists of:
         Main Distribution Bus ── Generator
 
                   │
-      ┌───────────┼───────────┐
-      │           │           │
+    ┌───────────┼───────────┐
+    │             │             │
 
    Feeder 1    Feeder 2    Feeder 3
-      │           │           │
+    │             │             │
 
 Distribution  Distribution  Distribution
 Transformer   Transformer   Transformer
-      │           │           │
+    │             │             │
 
  Unknown LV   Unknown LV   Unknown LV
  Distribution Distribution Distribution
@@ -187,22 +187,22 @@ The metering hierarchy is organized as follows:
              Known MV feeder
                        │
                        │
-                 ┌─────┴─────┐
-                 │ Transformer│
-                 └─────┬─────┘
+                ┌─────┴─────┐
+                │ Transformer │
+                └─────┬─────┘
                        │
                     PCC / Edge
                     Smart Meter
                        │
-              ┌────────┴────────┐
-              │                 │
-            Line A            Line B
-              │                 │
-             PCC                |
-          Smart Meter           |
-              │                 │
-          ┌───┴───┐         ┌───┴───┐
-          │       │         │       │
+            ┌────────┴────────┐
+            │                    │
+          Line A              Line B
+            │                    │
+           PCC                   |
+          Smart Meter            |
+            │                    │
+       ┌───┴───┐           ┌───┴───┐
+       │        │           │         │
 ```
 
 Selected candidate PCCs are instrumented with smart meters to acquire:
@@ -224,10 +224,7 @@ Network Quality Metrics
 
 2. Transformer Measurements
 
-Each distribution transformer serves as an edge measurement node representing the interface to an unknown downstream network.
-
-Measurements include:
-
+Each distribution transformer serves as an edge measurement node representing the interface to an unknown downstream network. Measurements include:
 Primary Electrical Measurements
   High-voltage terminal voltage magnitude and phase angle
   High-voltage terminal current magnitude and phase angle
@@ -245,21 +242,14 @@ Dynamic Quantities
 
 #### 3. Distribution Network Simulation And Station Modeling
 
-The simulation framework systematically perturbs the unknown downstream network while maintaining a fixed upstream distribution station.
-
-OpenDSS is used to simulate the known upstream station together with the hidden downstream distribution network and line faults.
-
-A transient simulator (`ATPRunner`) executes ATP-EMTP cases built via `ATPCaseBuilder` to acquire high-fidelity 3-phase electromagnetic transient (EMT) waveforms for switching events.
-
+The simulation framework systematically perturbs the unknown downstream network while maintaining a fixed upstream distribution station. OpenDSS is used to simulate the known upstream station together with the hidden downstream distribution network and Line fault event pairs (`fault_fault`)— co-occurring network line faults (`LG`, `LL`, `LLG`, `LLL`); A transient simulator (`ATPRunner`) executes ATP-EMTP cases built via `ATPCaseBuilder` to acquire high-fidelity 3-phase electromagnetic transient (EMT) waveforms for switching events.
 The code generates scenario datasets by:
-
 * building hidden downstream topologies with radial and optional ring configurations;
 * modifying the number of downstream buses ($N_b$) and network connectivity ($N_l$);
 * assigning transformer loading to each boundary transformer in the range 30–75 % across multi-operating-point sweeps;
-* instantiating event pairs for 3 distinct pair categories across load switches and line faults:
+* instantiating event pairs for 3 distinct pair categories across load switches:
   - (i) **Load switch event pairs (`load_load`)** — co-occurring consumer load switching operations;
-  - (ii) **Line fault event pairs (`fault_fault`)** — co-occurring network line faults (`LG`, `LL`, `LLG`, `LLL`);
-  - (iii) **Across load switch and fault pairs (`load_fault`)** — mixed load switching and line fault co-events;
+  - (ii) **Across load switch and fault pairs (`load_fault`)** — mixed load switching and line fault co-events;
 * instantiating co-events with time-shifting operations (simultaneous co-events with $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ vs time-shifted co-events with $t_{\mathrm{offset}} > 0.0\,\mathrm{s}$);
 * constructing OpenDSS objects for lines, loads, capacitors, motors, and distributed energy resources.
 
