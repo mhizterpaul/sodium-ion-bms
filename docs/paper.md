@@ -65,10 +65,7 @@ This phase resolves performance properties for chemistry modifications using a d
 
 #### BESS Robustness Evaluation Framework
 
-
-**1. Electrochemical–Thermal Driver Model**
-The BESS is evaluated using the DFN electrochemical model coupled with the thermal model. The model provides the measurable simulation outputs required for performance evaluation:
-
+The BESS is evaluated using the DFN electrochemical model coupled with the thermal model. The model provides the measurable simulation outputs required for performance evaluation including:
   Terminal voltage, \(V(t)\)
   Terminal current, \(I(t)\)
   Temperature, \(T(t)\)
@@ -77,7 +74,7 @@ The BESS is evaluated using the DFN electrochemical model coupled with the therm
   Energy throughput
 The BESS is evaluated under simulated grid-outage, PV-firming, and variable C-rate dispatch profiles.
 
-**2. Performance Measurements**
+**Performance Measurements**
 Each performance metric is calculated directly from the simulated measurements.
 
  * **Round-Trip Energy Efficiency (RTE)**: Measures the fraction of charging energy recovered during discharge
