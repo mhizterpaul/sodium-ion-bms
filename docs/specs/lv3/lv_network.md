@@ -1,20 +1,29 @@
-# LV Network Specification - LV Feeder 3 Topology
+# 2. LV Network Parameters - LV Feeder 3
 
-## Network Topology & Bus Structure
-- **Network ID**: `LV3`
-- **Topology Type**: Known Radial Tree
-- **Nominal LV Voltage**: 415 V (Line-to-Line RMS) / 240 V (Line-to-Neutral)
-- **Base Frequency**: 50 Hz
-- **Phase Configuration**: 3-Phase 4-Wire (ABC-N)
-- **Number of Buses ($N_b$)**: 30 (Fixed & Known)
-- **Number of Branches ($N_l$)**: 29 (Fixed & Known)
-- **Transformer Secondary Interface Bus**: `feeder3_sec`
-- **Buses ($\mathcal{B}$)**: [`feeder3_sec`, `f3_node1` ... `f3_node29`]
-- **Conductor & Line Capability**:
-  - **Conductor Specification**: 150 mm² All-Aluminum Conductor (AAC) / 3-phase 4-wire overhead line
-  - **Thermal Rating / Ampacity**: 350 A per phase (capable of supporting peak total consumer demand > 300 kW)
-  - **Series Resistance ($r$)**: 0.21 $\Omega$/km
-  - **Series Reactance ($x$)**: 0.08 $\Omega$/km
-  - **Positive-Sequence Impedance ($Z_1$)**: $0.21 + j0.08\ \Omega$/km
-  - **Zero-Sequence Impedance ($Z_0$)**: $0.63 + j0.24\ \Omega$/km
-- **Consumer Load Placements ($\mathcal{C}$)**: Fixed known locations across buses with specified nominal equipment models (`ac_motor`, `ups`, `microwave`, `induction_plate`, `industrial_fan`).
+## 2.1 LV network-level parameters
+
+| Parameter | Symbol | Specification |
+| --- | --- | --- |
+| Network ID | $N_i$ | `LV3` |
+| Topology type | $T_{\mathrm{type}}$ | Radial |
+| Number of buses | $N_b$ | 30 |
+| Number of branches | $N_l$ | 29 |
+| Number of phases | $n_\phi$ | 3 |
+| Nominal LV voltage | $V_{LV}$ | $415\ \mathrm{V_{LL}}$ / $240\ \mathrm{V_{LN}}$ |
+| Phase configuration | $Cfg_{\mathrm{phase}}$ | 3-phase |
+| Neutral configuration | $Cfg_{\mathrm{neut}}$ | 4-wire |
+| Grounding configuration | $Cfg_{\mathrm{grnd}}$ | Solidly Grounded |
+| Base frequency | $f_0$ | 50 Hz |
+| Network base power | $S_{\mathrm{base}}$ | 2.0 MVA |
+| Network base voltage | $V_{\mathrm{base}}$ | 415 V |
+
+## 2.2 LV topology parameters
+
+For each bus in LV Network 3:
+
+| Bus ID ($b_i$) | Phase Availability ($A_i$) | Bus Type ($T_{\mathrm{bus}}$) | Parent Bus ($b_p$) | Grounding Connection ($G_{\mathrm{conn}}$) |
+| --- | --- | --- | --- | --- |
+| `feeder3_sec` | $\{A,B,C,N\}$ | Root / LV Secondary | `feeder3_head` | Solidly Grounded |
+| `f3_node1` | $\{A,B,C,N\}$ | Intermediate | `feeder3_sec` | Grounded |
+| `f3_node2` | $\{A,B,C,N\}$ | Intermediate | `feeder3_sec` | Grounded |
+| `f3_node3` ... `f3_node29` | $\{A,B,C,N\}$ | Consumer Load Node | Known Tree Parent | Grounded |

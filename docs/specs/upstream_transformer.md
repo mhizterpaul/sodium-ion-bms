@@ -1,16 +1,21 @@
-# Upstream Distribution Substation Transformer Specification
+# Upstream Distribution Substation Transformer Parameters
 
-## Substation Transformer Parameters
-- **Transformer ID**: `substation`
-- **Rated Apparent Power ($S_{\mathrm{tr,sub}}$)**: 7.5 MVA
-- **Primary Rated Voltage ($V_{\mathrm{HV}}$)**: 33.0 kV
-- **Secondary Rated Voltage ($V_{\mathrm{MV}}$)**: 11.0 kV
-- **Nominal Frequency ($f_0$)**: 50 Hz
-- **Vector Group**: Dyn11
-- **Phase Count**: 3
-- **Winding Connection**: HV Delta / MV Wye (Grounded Neutral)
-- **Winding Resistance ($R_{\mathrm{tr}}$ / %R)**: 0.60% (50 kW copper loss @ full load)
-- **Leakage Reactance ($X_{\mathrm{tr}}$ / %XHL)**: 8.33%
-- **Load Loss Percentage (%LoadLoss)**: 0.667%
-- **No-Load Loss Percentage (%NoLoadLoss)**: 0.10% (7.5 kW core loss)
-- **Magnetizing Current Percentage (%Imag)**: 0.80%
+The physical specifications of the 33/11-kV upstream distribution substation transformer:
+
+| Parameter | Symbol | Specification |
+| --- | --- | --- |
+| Transformer ID | $T_{\mathrm{sub}}$ | `substation` |
+| Rated apparent power | $S_{\mathrm{tr,sub}}$ | 7.5 MVA |
+| Primary voltage | $V_{HV}$ | 33 kV |
+| Secondary voltage | $V_{MV}$ | 11 kV |
+| Frequency | $f_0$ | 50 Hz |
+| Vector group | $VG$ | Dyn11 |
+| Phase count | $n_\phi$ | 3 |
+| Winding connection | $Conn$ | HV Delta / MV Wye |
+| Neutral grounding | $G_{\mathrm{neut}}$ | MV neutral grounded |
+| Percentage impedance | $Z_{\%}$ | 8.35% |
+| Winding resistance | $R_{\mathrm{tr}}$ | 0.60% (50 kW copper loss @ full load) |
+| Leakage reactance | $X_{\mathrm{tr}}$ | 8.33% |
+| Core loss | $P_{\mathrm{core}}$ | 0.10% (7.5 kW core loss) |
+| Magnetizing reactance | $X_m$ | 250 pu |
+| Core-loss resistance | $R_c$ | 800 pu |

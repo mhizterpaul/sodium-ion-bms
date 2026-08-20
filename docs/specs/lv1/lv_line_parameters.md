@@ -1,35 +1,30 @@
-# Known LV Line Parameters Specification - LV Network 1
+# 3. LV Line Parameters - LV Network 1
 
-## Known Conductor & Line Physical Specifications
-- **Conductor Type**: 150 mm² All-Aluminum Conductor (AAC) / 3-phase 4-wire overhead
-- **Current Ampacity / Thermal Limit**: 350 A per phase (capable of supporting peak consumer loads)
-- **Positive-Sequence Series Resistance ($r_1$)**: 0.21 $\Omega$/km
-- **Positive-Sequence Series Reactance ($x_1$)**: 0.08 $\Omega$/km
-- **Shunt Conductance ($g_1$)**: $1.0 \times 10^{-6}$ S/km
-- **Shunt Susceptance ($b_1$)**: $1.0 \times 10^{-6}$ S/km
-- **Zero-Sequence Series Resistance ($r_0$)**: 0.63 $\Omega$/km
-- **Zero-Sequence Series Reactance ($x_0$)**: 0.24 $\Omega$/km
-- **Nominal Operating Frequency**: 50 Hz
+For every LV line in Network 1:
 
-## Known Network Line Segment Inventory
-| Line ID | From Bus | To Bus | Length ($L_l$) | $R_l = r_1 L_l$ ($\Omega$) | $X_l = x_1 L_l$ ($\Omega$) | Thermal Rating |
-|---|---|---|---|---|---|---|
-| `down_1_1` | `feeder1_sec` | `f1_node1` | 0.05 km | 0.0105 $\Omega$ | 0.0040 $\Omega$ | 350 A |
-| `down_1_2` | `feeder1_sec` | `f1_node2` | 0.06 km | 0.0126 $\Omega$ | 0.0048 $\Omega$ | 350 A |
-| `down_1_3` | `f1_node1` | `f1_node3` | 0.07 km | 0.0147 $\Omega$ | 0.0056 $\Omega$ | 350 A |
-| `down_1_4` | `f1_node1` | `f1_node4` | 0.08 km | 0.0168 $\Omega$ | 0.0064 $\Omega$ | 350 A |
-| `down_1_5` | `f1_node2` | `f1_node5` | 0.05 km | 0.0105 $\Omega$ | 0.0040 $\Omega$ | 350 A |
-| `down_1_6` | `f1_node2` | `f1_node6` | 0.06 km | 0.0126 $\Omega$ | 0.0048 $\Omega$ | 350 A |
-| `down_1_7` | `f1_node3` | `f1_node7` | 0.07 km | 0.0147 $\Omega$ | 0.0056 $\Omega$ | 350 A |
-| `down_1_8` | `f1_node3` | `f1_node8` | 0.08 km | 0.0168 $\Omega$ | 0.0064 $\Omega$ | 350 A |
-| `down_1_9` | `f1_node4` | `f1_node9` | 0.05 km | 0.0105 $\Omega$ | 0.0040 $\Omega$ | 350 A |
-| `down_1_10` | `f1_node4` | `f1_node10` | 0.06 km | 0.0126 $\Omega$ | 0.0048 $\Omega$ | 350 A |
-| `down_1_11` | `f1_node5` | `f1_node11` | 0.07 km | 0.0147 $\Omega$ | 0.0056 $\Omega$ | 350 A |
-| `down_1_12` | `f1_node5` | `f1_node12` | 0.08 km | 0.0168 $\Omega$ | 0.0064 $\Omega$ | 350 A |
-| `down_1_13` | `f1_node6` | `f1_node13` | 0.05 km | 0.0105 $\Omega$ | 0.0040 $\Omega$ | 350 A |
-| `down_1_14` | `f1_node6` | `f1_node14` | 0.06 km | 0.0126 $\Omega$ | 0.0048 $\Omega$ | 350 A |
-| `down_1_15` | `f1_node7` | `f1_node15` | 0.07 km | 0.0147 $\Omega$ | 0.0056 $\Omega$ | 350 A |
-| `down_1_16` | `f1_node7` | `f1_node16` | 0.08 km | 0.0168 $\Omega$ | 0.0064 $\Omega$ | 350 A |
-| `down_1_17` | `f1_node8` | `f1_node17` | 0.05 km | 0.0105 $\Omega$ | 0.0040 $\Omega$ | 350 A |
-| `down_1_18` | `f1_node8` | `f1_node18` | 0.06 km | 0.0126 $\Omega$ | 0.0048 $\Omega$ | 350 A |
-| `down_1_19` | `f1_node9` | `f1_node19` | 0.07 km | 0.0147 $\Omega$ | 0.0056 $\Omega$ | 350 A |
+## Mandatory parameters
+
+| Parameter | Symbol | Unit | Specification |
+| --- | --- | --- | --- |
+| Line length | $L$ | km | 0.05 – 0.08 km |
+| Conductor type | $C_{\mathrm{type}}$ | Unitless | 150 mm² All-Aluminum Conductor (AAC) |
+| Thermal rating / Ampacity | $I_{\mathrm{norm}}$ | A | 350 A per phase |
+| Number of phases | $n_\phi$ | Unitless | 3 |
+| Conductor resistance | $r$ | $\Omega/\mathrm{km}$ | 0.21 $\Omega$/km |
+| Conductor reactance | $x$ | $\Omega/\mathrm{km}$ | 0.08 $\Omega$/km |
+| Conductance | $g$ | S/km | $1.0 \times 10^{-6}$ S/km |
+| Susceptance | $b$ | S/km | $1.0 \times 10^{-6}$ S/km |
+| Positive-sequence resistance ($R_1$) | $R_1$ | $\Omega/\mathrm{km}$ | 0.21 $\Omega$/km |
+| Positive-sequence reactance ($X_1$) | $X_1$ | $\Omega/\mathrm{km}$ | 0.08 $\Omega$/km |
+| Zero-sequence resistance ($R_0$) | $R_0$ | $\Omega/\mathrm{km}$ | 0.63 $\Omega$/km |
+| Zero-sequence reactance ($X_0$) | $X_0$ | $\Omega/\mathrm{km}$ | 0.24 $\Omega$/km |
+
+## Known Branch Segment Inventory
+
+For lines `down_1_1` through `down_1_19`:
+
+| Branch ID ($l_i$) | From bus ($b_f$) | To bus ($b_t$) | Length ($L_l$) | Series $R_l = r L_l$ | Series $X_l = x L_l$ | Shunt $G_l = g L_l$ | Shunt $B_l = b L_l$ |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `down_1_1` | `feeder1_sec` | `f1_node1` | 0.05 km | 0.0105 $\Omega$ | 0.0040 $\Omega$ | $5.0 \times 10^{-8}$ S | $5.0 \times 10^{-8}$ S |
+| `down_1_2` | `feeder1_sec` | `f1_node2` | 0.06 km | 0.0126 $\Omega$ | 0.0048 $\Omega$ | $6.0 \times 10^{-8}$ S | $6.0 \times 10^{-8}$ S |
+| `down_1_3` ... `down_1_19` | Known Parent | Known Child | 0.05–0.08 km | $0.21 L_l\ \Omega$ | $0.08 L_l\ \Omega$ | $10^{-6} L_l\ \mathrm{S}$ | $10^{-6} L_l\ \mathrm{S}$ |
