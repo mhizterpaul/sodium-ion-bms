@@ -24,19 +24,33 @@ class ATPCaseBuilder:
         R_base = 0.45 * line_mult
         L_base = 0.15 * line_mult
 
-        v_pu = getattr(operating_point, "voltage_pu", {}).get("transformer1", 1.0) if hasattr(operating_point, "voltage_pu") else 1.0
-        amp = v_pu * 311.13
+        # Extract target transformer 3-phase voltages and phase angles solved by OpenDSS
+        target_tx = getattr(event, "target", "trans1")
+        if not target_tx.startswith("trans"):
+            target_tx = "trans1"
 
-        amp_str = f"{amp:.2f}".rjust(10)
+        phase_v = getattr(operating_point, "phase_voltages_v", {}).get(target_tx, (240.0, 240.0, 240.0)) if operating_point else (240.0, 240.0, 240.0)
+        phase_ang = getattr(operating_point, "phase_angles_deg", {}).get(target_tx, (0.0, -120.0, -240.0)) if operating_point else (0.0, -120.0, -240.0)
+
+        # Convert RMS voltage to peak amplitude in Volts
+        import numpy as np
+        amp_a = max(float(phase_v[0]) * np.sqrt(2.0), 0.01)
+        amp_b = max(float(phase_v[1]) * np.sqrt(2.0), 0.01)
+        amp_c = max(float(phase_v[2]) * np.sqrt(2.0), 0.01)
+
+        ang_a = float(phase_ang[0])
+        ang_b = float(phase_ang[1])
+        ang_c = float(phase_ang[2])
+
         freq_str = f"50.00".rjust(10)
         a1_str = " ".rjust(10)
         t1_str = " ".rjust(10)
         tstart_str = f"-1.00".rjust(10)
         tstop_str = f"100.00".rjust(10)
 
-        src_a = "14SRCA  -1" + amp_str + freq_str + f"0.00".rjust(10) + a1_str + t1_str + tstart_str + tstop_str
-        src_b = "14SRCB  -1" + amp_str + freq_str + f"-120.00".rjust(10) + a1_str + t1_str + tstart_str + tstop_str
-        src_c = "14SRCC  -1" + amp_str + freq_str + f"-240.00".rjust(10) + a1_str + t1_str + tstart_str + tstop_str
+        src_a = f"14SRCA  -1{amp_a:10.2f}{freq_str}{ang_a:10.2f}{a1_str}{t1_str}{tstart_str}{tstop_str}"
+        src_b = f"14SRCB  -1{amp_b:10.2f}{freq_str}{ang_b:10.2f}{a1_str}{t1_str}{tstart_str}{tstop_str}"
+        src_c = f"14SRCC  -1{amp_c:10.2f}{freq_str}{ang_c:10.2f}{a1_str}{t1_str}{tstart_str}{tstop_str}"
 
         branch_cards = []
         switch_cards = []
@@ -48,6 +62,7 @@ class ATPCaseBuilder:
             "  SRCC                      1.E8                                               0",
         ])
 
+        # Equipment switching events (line faults are solved in OpenDSS, passing faulted source parameters)
         for idx, ev in enumerate(events_to_process):
             start_s = getattr(ev, "start_time_s", 0.02)
             start_str = f"{start_s:.4f}".rjust(10)
@@ -72,24 +87,6 @@ class ATPCaseBuilder:
                     load_node = f"{node_prefix}{ph_char}"
                     branch_cards.append(f"  {load_node}                       {r_str}{l_str}{c_str}                                     0")
                     switch_cards.append(f"  {src_node}  {load_node}       {start_str}      1.E3                                             0")
-
-            elif ev_class == "line_fault":
-                f_type = getattr(ev, "fault_type", "LG")
-                f_res = getattr(ev, "fault_resistance", 0.05)
-                f_phases = getattr(ev, "faulted_phases", (0,))
-
-                f_res_str = f"{f_res:.4f}".rjust(10)
-                zero_str = f"0.0000".rjust(10)
-
-                node_prefix = f"F{idx}"
-                phase_map = {0: "A", 1: "B", 2: "C"}
-
-                for ph_idx in f_phases:
-                    ph_char = phase_map.get(ph_idx, "A")
-                    src_node = f"SRC{ph_char}"
-                    fault_node = f"{node_prefix}{ph_char}"
-                    branch_cards.append(f"  {fault_node}                       {f_res_str}{zero_str}{zero_str}                                     0")
-                    switch_cards.append(f"  {src_node}  {fault_node}       {start_str}      1.E3                                             0")
 
         if not switch_cards:
             start_str = f"0.0200".rjust(10)

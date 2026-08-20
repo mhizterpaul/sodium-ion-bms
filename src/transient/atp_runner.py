@@ -41,9 +41,15 @@ class ATPRunner:
         shutil.copy(case_path, temp_case_path)
 
         cmd = ["wine", "tpbigm.exe", "both", temp_case_name, ".", "-R"]
+        env = os.environ.copy()
+        wine32_prefix = Path.home() / ".wine32"
+        if wine32_prefix.exists():
+            env["WINEPREFIX"] = str(wine32_prefix)
+
         process = subprocess.run(
             cmd,
             cwd=atp_dir,
+            env=env,
             capture_output=True,
             text=True,
             timeout=self.timeout_s,

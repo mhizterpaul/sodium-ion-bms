@@ -13,7 +13,6 @@ from src.hidden_network.topology import (
     select_metered_pccs
 )
 from src.hidden_network.loads import distribute_loads
-from src.hidden_network.loads import EQUIPMENT_REGISTRY
 from src.hidden_network.perturbations import apply_topology_reconfiguration
 from src.transient.events import (
     SingleEquipmentSwitchEvent,
@@ -24,43 +23,43 @@ from src.transient.events import (
 )
 from src.simulation.kron_reduction import compute_kron_reduced_impedance
 from src.realization.inverse_solver import LatentNetworkRealizationSolver
+from src.power_plant.transformers import TRANSFORMER_MODELS, BASELINE_TRANSFORMER_MODEL
 
-# Standard Transformer Specifications Matrix for Question 3 / Dataset 4
+# Transformer Specifications for Metadata
 TRANSFORMER_SPECS = {
     "trans1": {
-        "spec_id": "tx_spec_std_1500kva",
-        "kva": 1500.0,
-        "kv_pri": 11.0,
-        "kv_sec": 0.415,
-        "pct_r": 0.6,
-        "pct_x": 4.5
+        "spec_id": TRANSFORMER_MODELS["trans1"]["spec_id"],
+        "kva": TRANSFORMER_MODELS["trans1"]["kvas"][0],
+        "kv_pri": TRANSFORMER_MODELS["trans1"]["kvs"][0],
+        "kv_sec": TRANSFORMER_MODELS["trans1"]["kvs"][1],
+        "pct_r": TRANSFORMER_MODELS["trans1"]["r_pct"],
+        "pct_x": TRANSFORMER_MODELS["trans1"]["xhl_pct"]
     },
     "trans2": {
-        "spec_id": "tx_spec_high_z_1200kva",
-        "kva": 1200.0,
-        "kv_pri": 11.0,
-        "kv_sec": 0.415,
-        "pct_r": 0.8,
-        "pct_x": 6.0
+        "spec_id": TRANSFORMER_MODELS["trans2"]["spec_id"],
+        "kva": TRANSFORMER_MODELS["trans2"]["kvas"][0],
+        "kv_pri": TRANSFORMER_MODELS["trans2"]["kvs"][0],
+        "kv_sec": TRANSFORMER_MODELS["trans2"]["kvs"][1],
+        "pct_r": TRANSFORMER_MODELS["trans2"]["r_pct"],
+        "pct_x": TRANSFORMER_MODELS["trans2"]["xhl_pct"]
     },
     "trans3": {
-        "spec_id": "tx_spec_low_loss_2000kva",
-        "kva": 2000.0,
-        "kv_pri": 11.0,
-        "kv_sec": 0.415,
-        "pct_r": 0.4,
-        "pct_x": 3.5
+        "spec_id": TRANSFORMER_MODELS["trans3"]["spec_id"],
+        "kva": TRANSFORMER_MODELS["trans3"]["kvas"][0],
+        "kv_pri": TRANSFORMER_MODELS["trans3"]["kvs"][0],
+        "kv_sec": TRANSFORMER_MODELS["trans3"]["kvs"][1],
+        "pct_r": TRANSFORMER_MODELS["trans3"]["r_pct"],
+        "pct_x": TRANSFORMER_MODELS["trans3"]["xhl_pct"]
     }
 }
 
-# Baseline Transformer Spec for Datasets 1, 2, and 3 (no transformer spec variation)
 BASELINE_TX_SPEC = {
-    "spec_id": "tx_spec_baseline_1500kva",
-    "kva": 1500.0,
-    "kv_pri": 11.0,
-    "kv_sec": 0.415,
-    "pct_r": 0.6,
-    "pct_x": 4.5
+    "spec_id": BASELINE_TRANSFORMER_MODEL["spec_id"],
+    "kva": BASELINE_TRANSFORMER_MODEL["kvas"][0],
+    "kv_pri": BASELINE_TRANSFORMER_MODEL["kvs"][0],
+    "kv_sec": BASELINE_TRANSFORMER_MODEL["kvs"][1],
+    "pct_r": BASELINE_TRANSFORMER_MODEL["r_pct"],
+    "pct_x": BASELINE_TRANSFORMER_MODEL["xhl_pct"]
 }
 
 
@@ -256,7 +255,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                 seed=42 + idx + op_idx * 100
             )
 
-            sim_result = runner.run_scenario(sim_scen)
+            sim_result = runner.run_scenario(sim_scen, use_baseline_transformers=False)
             latest_sim_result = sim_result
 
             for f_id in [1, 2, 3]:
@@ -274,8 +273,8 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
             op_meas = multi_op_measurements[f_id]
             est_res = realization_solver.estimate(op_meas)
 
-            v_raw_ss = pcc_res.raw_voltage if pcc_res is not None else np.zeros((len(time_s), 3))
-            i_raw_ss = pcc_res.raw_current if pcc_res is not None else np.zeros((len(time_s), 3))
+            v_raw_ss = pcc_res["raw_voltage"] if pcc_res is not None else np.zeros((len(time_s), 3))
+            i_raw_ss = pcc_res["raw_current"] if pcc_res is not None else np.zeros((len(time_s), 3))
 
             v_ss_abc = [v_raw_ss[:, 0].tolist(), v_raw_ss[:, 1].tolist(), v_raw_ss[:, 2].tolist()]
             i_ss_abc = [i_raw_ss[:, 0].tolist(), i_raw_ss[:, 1].tolist(), i_raw_ss[:, 2].tolist()]
@@ -297,8 +296,8 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                 "obs_steady_state_time": json.dumps(time_s.tolist()),
                 "obs_steady_state_voltage_abc": json.dumps(v_ss_abc),
                 "obs_steady_state_current_abc": json.dumps(i_ss_abc),
-                f"obs_{pcc_id}_voltage_mag_avg": float(np.mean(pcc_res.raw_voltage)) if pcc_res else 0.0,
-                f"obs_{pcc_id}_current_mag_avg": float(np.mean(pcc_res.raw_current)) if pcc_res else 0.0,
+                f"obs_{pcc_id}_voltage_mag_avg": float(np.mean(pcc_res["raw_voltage"])) if pcc_res else 0.0,
+                f"obs_{pcc_id}_current_mag_avg": float(np.mean(pcc_res["raw_current"])) if pcc_res else 0.0,
                 f"obs_{pcc_id}_p_kw": float(latest_sim_result.steady_state_measurements[pcc_id]["p_kw"]) if pcc_id in latest_sim_result.steady_state_measurements else 0.0,
                 f"obs_{pcc_id}_q_kvar": float(latest_sim_result.steady_state_measurements[pcc_id]["q_kvar"]) if pcc_id in latest_sim_result.steady_state_measurements else 0.0
             }
@@ -325,13 +324,16 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                 transformer_loading={"trans1": 50.0, "trans2": 50.0, "trans3": 50.0},
                 switching_events=[]
             )
-            sim_sig = runner.run_scenario(SimulationScenario(hidden_network=h_net_sig, generator_p_kw=1500.0, generator_q_kvar=0.0, events=[s_ev], meter_fraction=0.5, seed=42+idx))
+            sim_sig = runner.run_scenario(
+                SimulationScenario(hidden_network=h_net_sig, generator_p_kw=1500.0, generator_q_kvar=0.0, events=[s_ev], meter_fraction=0.5, seed=42+idx),
+                use_baseline_transformers=True
+            )
             for f_id in [1, 2, 3]:
                 pcc_res = sim_sig.processed_pccs.get(f"trans{f_id}_lv_pcc")
                 if pcc_res is not None:
                     signature_catalog[(s_ev.event_class, s_ev.event_type, f"feeder_{f_id}")] = {
-                        "v_sig": pcc_res.normalized_voltage,
-                        "i_sig": pcc_res.normalized_current,
+                        "v_sig": pcc_res["raw_voltage"],
+                        "i_sig": pcc_res["raw_current"],
                         "time": sim_sig.time_s
                     }
 
@@ -356,7 +358,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
         pair_lf_simultaneous = EquipmentLineFaultCoEvent(eq1, flt1)
         pair_lf_shifted = EquipmentLineFaultCoEvent(eq1, flt2_shifted)
 
-        # --- C. DATASET 2 GENERATION (Question 1: Event Observability across Event Pairs, Fixed Tx Spec, No Time Shift) ---
+        # --- C. DATASET 2 GENERATION (Question 1: Event Observability across Event Pairs, Single Baseline Tx Spec, No Time Shift) ---
         d2_pairs = [
             ("load_load", pair_ll_simultaneous),
             ("fault_fault", pair_ff_simultaneous),
@@ -378,14 +380,17 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                 transformer_loading={"trans1": 50.0, "trans2": 50.0, "trans3": 50.0},
                 switching_events=[]
             )
-            sim_res_d2 = runner.run_scenario(SimulationScenario(hidden_network=h_net_d2, generator_p_kw=1500.0, generator_q_kvar=0.0, events=[co_ev], meter_fraction=0.5, seed=42+idx))
+            sim_res_d2 = runner.run_scenario(
+                SimulationScenario(hidden_network=h_net_d2, generator_p_kw=1500.0, generator_q_kvar=0.0, events=[co_ev], meter_fraction=0.5, seed=42+idx),
+                use_baseline_transformers=True
+            )
             t_s = sim_res_d2.time_s
 
             for f_id in [1, 2, 3]:
                 pcc_id = f"trans{f_id}_lv_pcc"
                 pcc_res = sim_res_d2.processed_pccs.get(pcc_id)
                 if pcc_res is not None:
-                    v_co, i_co = pcc_res.normalized_voltage, pcc_res.normalized_current
+                    v_co, i_co = pcc_res["raw_voltage"], pcc_res["raw_current"]
                     sig1 = signature_catalog.get((ev1.event_class, ev1.event_type, f"feeder_{f_id}"))
                     sig2 = signature_catalog.get((ev2.event_class, ev2.event_type, f"feeder_{f_id}"))
                     v_comp = (sig1["v_sig"] + sig2["v_sig"]) if (sig1 and sig2) else v_co
@@ -421,7 +426,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                         "residual_current_magnitude": round(float(np.sqrt(np.mean(res_i**2))), 6)
                     })
 
-        # --- D. DATASET 3 GENERATION (Question 2: Residual Magnitude Variation with Time Shift Operation, Fixed Tx Spec) ---
+        # --- D. DATASET 3 GENERATION (Question 2: Residual Magnitude Variation with Time Shift Operation, Single Baseline Tx Spec) ---
         d3_pairs = [
             ("load_load", pair_ll_simultaneous),
             ("load_load", pair_ll_shifted),
@@ -447,14 +452,17 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                 transformer_loading={"trans1": 50.0, "trans2": 50.0, "trans3": 50.0},
                 switching_events=[]
             )
-            sim_res_d3 = runner.run_scenario(SimulationScenario(hidden_network=h_net_d3, generator_p_kw=1500.0, generator_q_kvar=0.0, events=[co_ev], meter_fraction=0.5, seed=42+idx))
+            sim_res_d3 = runner.run_scenario(
+                SimulationScenario(hidden_network=h_net_d3, generator_p_kw=1500.0, generator_q_kvar=0.0, events=[co_ev], meter_fraction=0.5, seed=42+idx),
+                use_baseline_transformers=True
+            )
             t_s = sim_res_d3.time_s
 
             for f_id in [1, 2, 3]:
                 pcc_id = f"trans{f_id}_lv_pcc"
                 pcc_res = sim_res_d3.processed_pccs.get(pcc_id)
                 if pcc_res is not None:
-                    v_co, i_co = pcc_res.normalized_voltage, pcc_res.normalized_current
+                    v_co, i_co = pcc_res["raw_voltage"], pcc_res["raw_current"]
                     sig1 = signature_catalog.get((ev1.event_class, ev1.event_type, f"feeder_{f_id}"))
                     sig2 = signature_catalog.get((ev2.event_class, ev2.event_type, f"feeder_{f_id}"))
                     v_comp = (sig1["v_sig"] + sig2["v_sig"]) if (sig1 and sig2) else v_co
@@ -490,7 +498,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                         "residual_current_magnitude": round(float(np.sqrt(np.mean(res_i**2))), 6)
                     })
 
-        # --- E. DATASET 4 GENERATION (Question 3: Transformer Specification Effect on Event Pairs, Fixed Time Shift = 0) ---
+        # --- E. DATASET 4 GENERATION (Question 3: Transformer Specification Effect on Event Pairs, Varying 3 Tx Models) ---
         d4_pairs = [
             ("load_load", pair_ll_simultaneous),
             ("fault_fault", pair_ff_simultaneous),
@@ -512,7 +520,10 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                 transformer_loading={"trans1": 50.0, "trans2": 50.0, "trans3": 50.0},
                 switching_events=[]
             )
-            sim_res_d4 = runner.run_scenario(SimulationScenario(hidden_network=h_net_d4, generator_p_kw=1500.0, generator_q_kvar=0.0, events=[co_ev], meter_fraction=0.5, seed=42+idx))
+            sim_res_d4 = runner.run_scenario(
+                SimulationScenario(hidden_network=h_net_d4, generator_p_kw=1500.0, generator_q_kvar=0.0, events=[co_ev], meter_fraction=0.5, seed=42+idx),
+                use_baseline_transformers=False
+            )
             t_s = sim_res_d4.time_s
 
             for f_id in [1, 2, 3]:
@@ -522,7 +533,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                 tx_spec = TRANSFORMER_SPECS[tx_id]
 
                 if pcc_res is not None:
-                    v_co, i_co = pcc_res.normalized_voltage, pcc_res.normalized_current
+                    v_co, i_co = pcc_res["raw_voltage"], pcc_res["raw_current"]
                     sig1 = signature_catalog.get((ev1.event_class, ev1.event_type, f"feeder_{f_id}"))
                     sig2 = signature_catalog.get((ev2.event_class, ev2.event_type, f"feeder_{f_id}"))
                     v_comp = (sig1["v_sig"] + sig2["v_sig"]) if (sig1 and sig2) else v_co

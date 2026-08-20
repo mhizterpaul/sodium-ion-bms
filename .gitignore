@@ -14,6 +14,12 @@ __mocks__/
 *.dbg
 *.pl4
 *.pl4.bin
+atpmingw_2024/TEMP_CASE*
+atpmingw_2024/*.bin
+atpmingw_2024/*.tmp
+atpmingw_2024/*.lis
+atpmingw_2024/*.dbg
+atpmingw_2024/*.pl4
 *.json
 *.csv
 src/simulation/*.json
