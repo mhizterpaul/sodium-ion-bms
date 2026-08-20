@@ -133,7 +133,15 @@ class CoSimulationRunner:
         if event is None:
             raise RuntimeError(f"No transient event specified for scenario {scenario_id}")
 
-        atp_case_path = f"src/simulation/atp_cases/{scenario_id}_{event.event_type}.ATP"
+        if hasattr(event, "event_1") and hasattr(event, "event_2"):
+            t_off = getattr(event, "time_offset_s", 0.0)
+            ev_key = f"{event.event_1.event_type}_{event.event_2.event_type}_coevent_{t_off:.2f}s"
+        elif getattr(event, "event_class", "") == "equipment_switch":
+            ev_key = f"{event.event_type}_switch"
+        else:
+            ev_key = "dist_fault_steady"
+
+        atp_case_path = f"src/simulation/atp_cases/case_{ev_key}.ATP"
         self.atp_builder.build(h_net, op, event, atp_case_path)
 
         # Actual ATP-EMTP execution and waveform extraction directly via ATPRunner/ATPOutputReader

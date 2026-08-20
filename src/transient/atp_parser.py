@@ -156,6 +156,57 @@ def evaluate_atp(pcc_id: str, t: np.ndarray, v_wave: np.ndarray, i_wave: np.ndar
         features=pcc_features
     )
 
+def convert_atp_output_to_waveforms(pl4_path: str | Path, lis_path: str | Path = None) -> dict:
+    """
+    Utility script for converting .pl4 and .lis output files into time series waveforms using pyatp/atp_utils.
+    Returns a dictionary of time series channels: {'time_s': np.ndarray, 'channels': dict}.
+    """
+    pl4_p = Path(pl4_path)
+    if not pl4_p.exists():
+        raise FileNotFoundError(f"PL4 file not found at {pl4_p}")
+
+    read_fn = None
+    try:
+        import pyatp
+        read_fn = getattr(pyatp, "read_pl4", None)
+    except ImportError:
+        try:
+            import atp_utils
+            read_fn = getattr(atp_utils, "read_pl4", None)
+        except ImportError:
+            read_fn = None
+
+    if read_fn is not None:
+        dfHEAD, data, miscData = read_fn(str(pl4_p))
+        t = data[:, 0]
+        channels = {}
+        if hasattr(dfHEAD, "columns"):
+            cols = list(dfHEAD.columns)
+            for idx, col in enumerate(cols[1:], start=1):
+                channels[str(col)] = data[:, idx]
+        else:
+            for idx in range(1, data.shape[1]):
+                channels[f"channel_{idx}"] = data[:, idx]
+        return {"time_s": t, "channels": channels}
+
+    # Fallback PL4 text reader
+    t_list = []
+    channels = {}
+    with open(pl4_p, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("PL4:"):
+                parts = line.split()
+                t_val = float(parts[1])
+                ch_key = f"{parts[2]}_ph{parts[3]}"
+                v_val = float(parts[4])
+                if t_val not in t_list:
+                    t_list.append(t_val)
+                channels.setdefault(ch_key, []).append(v_val)
+
+    return {"time_s": np.array(t_list), "channels": {k: np.array(v) for k, v in channels.items()}}
+
+
 class ATPOutputReader:
     def __init__(self):
         pass

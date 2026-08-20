@@ -175,7 +175,7 @@ where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered
 ---
 ## Distributed System State Estimation Using Wavelet Decomposition (core contribution)
 
-Unlike conventional Distribution System State Estimation (DSSE), where the complete network topology and bus model are assumed known and estimation is inherently limited to steady-state estimation, this research considers a partially observable network in which only the upstream distribution station is known while the downstream network partially hidden and extends the state estimation to the dynamic domain using lv distribution transformer transients.
+Unlike conventional Distribution System State Estimation (DSSE), where the complete network topology and bus model are assumed known, this research considers a partially observable network in which only the upstream distribution station is known while the downstream network remains hidden.
 The realization problem is formulated as \[X_R=\Phi(M)\] where
 * \(M\) denotes synchronized measurements acquired at the meters and distribution transformers,
 * \(X_R\) is a latent realization state describing the hidden network,

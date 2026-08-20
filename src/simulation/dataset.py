@@ -368,7 +368,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
         for pair_cat, co_ev in d2_pairs:
             ev1, ev2 = co_ev.event_1, co_ev.event_2
             h_net_d2 = HiddenNetworkScenario(
-                scenario_id=f"{scenario_id}_pair_{pair_cat}_0.0s",
+                scenario_id=f"{scenario_id}_q1_{pair_cat}",
                 num_buses=len(modified_topo["buses"]),
                 num_lines=len(modified_topo["lines"]),
                 topology=modified_topo,
@@ -440,7 +440,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
             ev1, ev2 = co_ev.event_1, co_ev.event_2
             time_offset = co_ev.time_offset_s
             h_net_d3 = HiddenNetworkScenario(
-                scenario_id=f"{scenario_id}_pair_{pair_cat}_{time_offset}s",
+                scenario_id=f"{scenario_id}_q2_{pair_cat}_{time_offset}s",
                 num_buses=len(modified_topo["buses"]),
                 num_lines=len(modified_topo["lines"]),
                 topology=modified_topo,
@@ -508,7 +508,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
         for pair_cat, co_ev in d4_pairs:
             ev1, ev2 = co_ev.event_1, co_ev.event_2
             h_net_d4 = HiddenNetworkScenario(
-                scenario_id=f"{scenario_id}_txvar_{pair_cat}",
+                scenario_id=f"{scenario_id}_q3_{pair_cat}",
                 num_buses=len(modified_topo["buses"]),
                 num_lines=len(modified_topo["lines"]),
                 topology=modified_topo,
