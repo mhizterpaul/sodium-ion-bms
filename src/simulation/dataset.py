@@ -273,8 +273,8 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
             op_meas = multi_op_measurements[f_id]
             est_res = realization_solver.estimate(op_meas)
 
-            v_raw_ss = pcc_res.raw_voltage if pcc_res is not None else np.zeros((len(time_s), 3))
-            i_raw_ss = pcc_res.raw_current if pcc_res is not None else np.zeros((len(time_s), 3))
+            v_raw_ss = pcc_res["raw_voltage"] if pcc_res is not None else np.zeros((len(time_s), 3))
+            i_raw_ss = pcc_res["raw_current"] if pcc_res is not None else np.zeros((len(time_s), 3))
 
             v_ss_abc = [v_raw_ss[:, 0].tolist(), v_raw_ss[:, 1].tolist(), v_raw_ss[:, 2].tolist()]
             i_ss_abc = [i_raw_ss[:, 0].tolist(), i_raw_ss[:, 1].tolist(), i_raw_ss[:, 2].tolist()]
@@ -296,8 +296,8 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                 "obs_steady_state_time": json.dumps(time_s.tolist()),
                 "obs_steady_state_voltage_abc": json.dumps(v_ss_abc),
                 "obs_steady_state_current_abc": json.dumps(i_ss_abc),
-                f"obs_{pcc_id}_voltage_mag_avg": float(np.mean(pcc_res.raw_voltage)) if pcc_res else 0.0,
-                f"obs_{pcc_id}_current_mag_avg": float(np.mean(pcc_res.raw_current)) if pcc_res else 0.0,
+                f"obs_{pcc_id}_voltage_mag_avg": float(np.mean(pcc_res["raw_voltage"])) if pcc_res else 0.0,
+                f"obs_{pcc_id}_current_mag_avg": float(np.mean(pcc_res["raw_current"])) if pcc_res else 0.0,
                 f"obs_{pcc_id}_p_kw": float(latest_sim_result.steady_state_measurements[pcc_id]["p_kw"]) if pcc_id in latest_sim_result.steady_state_measurements else 0.0,
                 f"obs_{pcc_id}_q_kvar": float(latest_sim_result.steady_state_measurements[pcc_id]["q_kvar"]) if pcc_id in latest_sim_result.steady_state_measurements else 0.0
             }
@@ -332,8 +332,8 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                 pcc_res = sim_sig.processed_pccs.get(f"trans{f_id}_lv_pcc")
                 if pcc_res is not None:
                     signature_catalog[(s_ev.event_class, s_ev.event_type, f"feeder_{f_id}")] = {
-                        "v_sig": pcc_res.normalized_voltage,
-                        "i_sig": pcc_res.normalized_current,
+                        "v_sig": pcc_res["raw_voltage"],
+                        "i_sig": pcc_res["raw_current"],
                         "time": sim_sig.time_s
                     }
 
@@ -390,7 +390,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                 pcc_id = f"trans{f_id}_lv_pcc"
                 pcc_res = sim_res_d2.processed_pccs.get(pcc_id)
                 if pcc_res is not None:
-                    v_co, i_co = pcc_res.normalized_voltage, pcc_res.normalized_current
+                    v_co, i_co = pcc_res["raw_voltage"], pcc_res["raw_current"]
                     sig1 = signature_catalog.get((ev1.event_class, ev1.event_type, f"feeder_{f_id}"))
                     sig2 = signature_catalog.get((ev2.event_class, ev2.event_type, f"feeder_{f_id}"))
                     v_comp = (sig1["v_sig"] + sig2["v_sig"]) if (sig1 and sig2) else v_co
@@ -462,7 +462,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                 pcc_id = f"trans{f_id}_lv_pcc"
                 pcc_res = sim_res_d3.processed_pccs.get(pcc_id)
                 if pcc_res is not None:
-                    v_co, i_co = pcc_res.normalized_voltage, pcc_res.normalized_current
+                    v_co, i_co = pcc_res["raw_voltage"], pcc_res["raw_current"]
                     sig1 = signature_catalog.get((ev1.event_class, ev1.event_type, f"feeder_{f_id}"))
                     sig2 = signature_catalog.get((ev2.event_class, ev2.event_type, f"feeder_{f_id}"))
                     v_comp = (sig1["v_sig"] + sig2["v_sig"]) if (sig1 and sig2) else v_co
@@ -533,7 +533,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                 tx_spec = TRANSFORMER_SPECS[tx_id]
 
                 if pcc_res is not None:
-                    v_co, i_co = pcc_res.normalized_voltage, pcc_res.normalized_current
+                    v_co, i_co = pcc_res["raw_voltage"], pcc_res["raw_current"]
                     sig1 = signature_catalog.get((ev1.event_class, ev1.event_type, f"feeder_{f_id}"))
                     sig2 = signature_catalog.get((ev2.event_class, ev2.event_type, f"feeder_{f_id}"))
                     v_comp = (sig1["v_sig"] + sig2["v_sig"]) if (sig1 and sig2) else v_co

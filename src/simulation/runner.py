@@ -15,7 +15,7 @@ from src.hidden_network.perturbations import apply_topology_reconfiguration
 
 from src.transient.atp_case_builder import ATPCaseBuilder
 from src.transient.atp_runner import ATPRunner
-from src.transient.atp_parser import evaluate_atp, ATPOutputReader
+from src.transient.atp_parser import ATPOutputReader
 
 class SimulationResult:
     def __init__(self, time_s: np.ndarray, metered_pccs: list[dict], steady_state_measurements: dict, processed_pccs: dict):
@@ -155,8 +155,7 @@ class CoSimulationRunner:
 
         processed_pccs = {}
 
-        # 4. Steady-state normalization, FFT, and SWT Decomposition (complying with Rule 7, 8, 19, 21)
-        # Evaluated ONLY on transformer LV secondaries (since customer smart meters do not measure transients)
+        # 4. Extract raw physical waveforms on transformer LV secondaries
         for pcc in metered_pccs:
             pcc_id = pcc["pcc_id"]
             if pcc.get("branch_type") == "transformer":
@@ -172,9 +171,10 @@ class CoSimulationRunner:
                 assert np.all(np.isfinite(v_wave))
                 assert np.all(np.isfinite(i_wave))
 
-                # Evaluate ATP secondary transient waveform using evaluate_atp()
-                processed_pcc = evaluate_atp(pcc_id, emt_waveforms.time_s, v_wave, i_wave, event_start=0.02)
-                processed_pccs[pcc_id] = processed_pcc
+                processed_pccs[pcc_id] = {
+                    "raw_voltage": v_wave,
+                    "raw_current": i_wave
+                }
 
         return SimulationResult(
             time_s=emt_waveforms.time_s,

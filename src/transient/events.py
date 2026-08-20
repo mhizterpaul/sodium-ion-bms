@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional, Literal, Union
 
 @dataclass
@@ -56,6 +56,10 @@ class EquipmentEquipmentCoEvent:
     def time_offset_s(self) -> float:
         return abs(self.event_2.start_time_s - self.event_1.start_time_s)
 
+    def with_time_shift(self, offset_s: float):
+        ev2_shifted = replace(self.event_2, start_time_s=self.event_1.start_time_s + offset_s)
+        return EquipmentEquipmentCoEvent(event_1=self.event_1, event_2=ev2_shifted)
+
 @dataclass
 class LineFaultLineFaultCoEvent:
     event_1: SingleLineFaultEvent
@@ -77,6 +81,10 @@ class LineFaultLineFaultCoEvent:
     def time_offset_s(self) -> float:
         return abs(self.event_2.start_time_s - self.event_1.start_time_s)
 
+    def with_time_shift(self, offset_s: float):
+        ev2_shifted = replace(self.event_2, start_time_s=self.event_1.start_time_s + offset_s)
+        return LineFaultLineFaultCoEvent(event_1=self.event_1, event_2=ev2_shifted)
+
 @dataclass
 class EquipmentLineFaultCoEvent:
     event_1: SingleEquipmentSwitchEvent
@@ -97,6 +105,10 @@ class EquipmentLineFaultCoEvent:
     @property
     def time_offset_s(self) -> float:
         return abs(self.event_2.start_time_s - self.event_1.start_time_s)
+
+    def with_time_shift(self, offset_s: float):
+        ev2_shifted = replace(self.event_2, start_time_s=self.event_1.start_time_s + offset_s)
+        return EquipmentLineFaultCoEvent(event_1=self.event_1, event_2=ev2_shifted)
 
 TransientEvent = Union[
     SingleEquipmentSwitchEvent,
