@@ -1,11 +1,12 @@
 import numpy as np
 
-class EquivalentImpedanceSolver:
+class LatentLineImpedanceSolver:
     """
-    Estimates positive-sequence complex equivalent impedance Z_eq = R_eq + j*X_eq
-    from multiple operating point phasor observations using complex least squares:
+    Estimates positive-sequence complex series line impedance Z_L = R_L + j*X_L
+    and line admittance Y_L = G_L + j*B_L for known LV line sections from multi-operating-point
+    boundary and consumer meter phasor observations using complex least squares:
 
-        Z_eq = sum(V_k * conj(I_k)) / sum(|I_k|^2)
+        Z_L = sum(V_k * conj(I_k)) / sum(|I_k|^2)
     """
 
     @staticmethod
@@ -29,21 +30,30 @@ class EquivalentImpedanceSolver:
         return v1, i1
 
     @classmethod
-    def estimate(cls, v_phasors: list[complex], i_phasors: list[complex]) -> tuple[float, float, float]:
+    def estimate(cls, v_phasors: list[complex], i_phasors: list[complex]) -> tuple[float, float, float, float, float]:
         """
-        Estimates (r_eq, x_eq, z_mag) from multi-operating-point complex phasors via complex least squares.
+        Estimates (r_l, x_l, z_mag, g_l, b_l) from multi-operating-point complex phasors via complex least squares.
         """
         v = np.asarray(v_phasors, dtype=complex)
         i = np.asarray(i_phasors, dtype=complex)
 
         denom = np.sum(np.abs(i)**2)
         if denom <= 0 or not np.isfinite(denom):
-            return 0.1, 0.05, float(np.sqrt(0.1**2 + 0.05**2))
+            return 0.1, 0.05, float(np.sqrt(0.1**2 + 0.05**2)), 1e-6, 1e-6
 
         z_eq = np.sum(v * np.conj(i)) / denom
 
-        r_eq = float(np.abs(z_eq.real))
-        x_eq = float(np.abs(z_eq.imag))
-        z_mag = float(np.sqrt(r_eq**2 + x_eq**2))
+        r_l = float(np.abs(z_eq.real))
+        x_l = float(np.abs(z_eq.imag))
+        z_mag = float(np.sqrt(r_l**2 + x_l**2))
 
-        return r_eq, x_eq, z_mag
+        # Admittance components
+        y_eq = 1.0 / (z_eq + 1e-9)
+        g_l = float(np.abs(y_eq.real))
+        b_l = float(np.abs(y_eq.imag))
+
+        return r_l, x_l, z_mag, g_l, b_l
+
+
+# Alias for backward compatibility if needed
+EquivalentImpedanceSolver = LatentLineImpedanceSolver

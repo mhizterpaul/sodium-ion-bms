@@ -1,39 +1,62 @@
 from dataclasses import dataclass
 import numpy as np
-from src.realization.impedance_solver import EquivalentImpedanceSolver
-from src.realization.network_size_solver import HiddenNetworkSizeSolver
+from src.realization.impedance_solver import LatentLineImpedanceSolver
+from src.realization.network_size_solver import LatentLineParameterSolver
 
 @dataclass
-class RealizationEstimate:
-    number_of_buses: int
-    number_of_branches: int
+class LatentLineEstimate:
+    known_num_buses: int
+    known_num_branches: int
     r_eq_ohm: float
     x_eq_ohm: float
     z_eq_ohm: float
+    g_eq_siemens: float
+    b_eq_siemens: float
+    estimated_load_kw: float
     objective_loss: float
 
-class LatentNetworkRealizationSolver:
+# Alias for backward compatibility if needed
+RealizationEstimate = LatentLineEstimate
+
+class LatentLineRealizationSolver:
     """
-    Mixed discrete/continuous inverse solver:
-    1. Level A: Structural search over candidate bus/branch counts (N_b_hat, N_l_hat).
-    2. Level B: Continuous electrical parameter estimation (R_eq_hat, X_eq_hat, Z_eq_hat)
+    Inverse solver for estimating latent LV line electrical parameters and associated loads:
+    1. Level A: Model-based parameter search over candidate latent line parameters (R_L, X_L) given known LV topology K.
+    2. Level B: Continuous impedance & admittance parameter estimation (R_L_hat, X_L_hat, G_L_hat, B_L_hat)
        via complex least squares over positive-sequence phasors from multi-operating-point observations.
     """
 
-    def __init__(self, size_solver: HiddenNetworkSizeSolver = None, impedance_solver: EquivalentImpedanceSolver = None):
-        self.size_solver = size_solver or HiddenNetworkSizeSolver()
-        self.impedance_solver = impedance_solver or EquivalentImpedanceSolver()
+    def __init__(self, param_solver: LatentLineParameterSolver = None, impedance_solver: LatentLineImpedanceSolver = None):
+        self.param_solver = param_solver or LatentLineParameterSolver()
+        self.impedance_solver = impedance_solver or LatentLineImpedanceSolver()
 
-    def estimate(self, multi_op_measurements: list[dict]) -> RealizationEstimate:
+    def estimate(
+        self,
+        multi_op_measurements: list[dict],
+        known_num_buses: int = 20,
+        known_num_branches: int = 19
+    ) -> LatentLineEstimate:
         """
         Args:
             multi_op_measurements: list of operating point dictionaries containing 'v_mags', 'i_mags', 'p_kw', etc.
+            known_num_buses: number of buses in the known LV network topology.
+            known_num_branches: number of branches in the known LV network topology.
 
         Returns:
-            RealizationEstimate
+            LatentLineEstimate
         """
         if not multi_op_measurements:
-            return RealizationEstimate(20, 19, 0.1, 0.05, float(np.sqrt(0.1**2 + 0.05**2)), 0.0)
+            return LatentLineEstimate(
+                known_num_buses=known_num_buses,
+                known_num_branches=known_num_branches,
+                r_eq_ohm=0.1,
+                x_eq_ohm=0.05,
+                z_eq_ohm=float(np.sqrt(0.1**2 + 0.05**2)),
+                g_eq_siemens=1e-3,
+                b_eq_siemens=1e-3,
+                estimated_load_kw=10.0,
+                objective_loss=0.0
+            )
 
         v_phasors = []
         i_phasors = []
@@ -53,17 +76,36 @@ class LatentNetworkRealizationSolver:
                 "p_kw": float(op.get("p_kw", 10.0))
             })
 
-        # Level A: Discrete structural estimation
-        n_b_hat, n_l_hat, loss = self.size_solver.solve(observed_ops)
+        # Level A: Search over latent line parameters for known topology
+        r_search, x_search, g_search, b_search, loss = self.param_solver.solve(
+            observed_ops,
+            known_num_buses=known_num_buses,
+            known_num_branches=known_num_branches
+        )
 
-        # Level B: Continuous impedance estimation
-        r_eq_hat, x_eq_hat, z_eq_hat = self.impedance_solver.estimate(v_phasors, i_phasors)
+        # Level B: Continuous impedance estimation from phasors
+        r_ls, x_ls, z_ls, g_ls, b_ls = self.impedance_solver.estimate(v_phasors, i_phasors)
 
-        return RealizationEstimate(
-            number_of_buses=int(n_b_hat),
-            number_of_branches=int(n_l_hat),
-            r_eq_ohm=round(r_eq_hat, 4),
-            x_eq_ohm=round(x_eq_hat, 4),
-            z_eq_ohm=round(z_eq_hat, 4),
+        # Combine least-squares and model search estimates
+        r_final = (r_search + r_ls) / 2.0
+        x_final = (x_search + x_ls) / 2.0
+        z_final = float(np.sqrt(r_final**2 + x_final**2))
+        g_final = (g_search + g_ls) / 2.0
+        b_final = (b_search + b_ls) / 2.0
+        avg_load_kw = float(np.mean([op["p_kw"] for op in observed_ops]))
+
+        return LatentLineEstimate(
+            known_num_buses=known_num_buses,
+            known_num_branches=known_num_branches,
+            r_eq_ohm=round(r_final, 4),
+            x_eq_ohm=round(x_final, 4),
+            z_eq_ohm=round(z_final, 4),
+            g_eq_siemens=round(g_final, 6),
+            b_eq_siemens=round(b_final, 6),
+            estimated_load_kw=round(avg_load_kw, 2),
             objective_loss=round(loss, 6)
         )
+
+
+# Alias for backward compatibility if needed
+LatentNetworkRealizationSolver = LatentLineRealizationSolver
