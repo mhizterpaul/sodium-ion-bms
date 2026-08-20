@@ -61,121 +61,58 @@ This phase resolves performance properties for chemistry modifications using a d
 *   **Electrolyte & Fluorine Reduction:** Selection of non-fluorinated salts to reduce environmental burden and cost. Primary candidates include **NaBOB** (Sodium bis(oxalato)borate) for stability and **NaTCP** (Sodium tricyanomethanide) for high performance.
 *   **Electrode Doping:** Fe-site doping for cathodes using **Cr** (Cr³⁺ stabilizer), **Mn** (voltage booster), and **Ni** is evaluated via sensitivity-based optimization.
 *   **Alkyl Silane Functionalization:** Implementation of hard carbon electrode functionalization using **methyltrimethoxysilane (MTMS)**. This process replaces surface –OH groups with –Si–O–R groups on the hard carbon electrode, increasing hydrophobicity and promoting a more uniform SEI layer. The model accounts for reduced SEI kinetics (slower growth and lower irreversible capacity fade), slower interfacial resistance growth over cycles, and optimized exchange current density resulting from improved surface wetting and local ion accessibility.
-*   Sensitivity-Driven Cell Parameter Optimization
-The projected design space ($\theta = [\theta_s, \theta_m]$) is explored with a hierarchical workflow that combines sensitivity screening, objective-specific SG-CEM refinement, and expensive stability filtering. In the implementation, the design vector is first perturbed around a nominal point to estimate the Jacobian of the energy, power, and stability responses; only the most influential variables for each objective are retained for optimization instead of searching the full design space at once.
+*   **Sensitivity-Driven Cell Parameter Optimization:** The projected design space ($\theta = [\theta_s, \theta_m]$) is explored with a hierarchical workflow that combines sensitivity screening, objective-specific SG-CEM refinement, and expensive stability filtering. In the implementation, the design vector is first perturbed around a nominal point to estimate the Jacobian of the energy, power, and stability responses; only the most influential variables for each objective are retained for optimization instead of searching the full design space at once.
 
 #### BESS Robustness Evaluation Framework
 
-
-1. Electrochemical–Thermal Driver Model
-
-
-
-The BESS is evaluated using the DFN electrochemical model coupled with the thermal model. The model provides the measurable simulation outputs required for performance evaluation:
-
-Terminal voltage, \(V(t)\)
-
-Terminal current, \(I(t)\)
-
-Temperature, \(T(t)\)
-
-State of charge, \(SoC(t)\)
-
-Available capacity, \(Q(t)\)
-
-Energy throughput
-
-
+The BESS is evaluated using the DFN electrochemical model coupled with the thermal model. The model provides the measurable simulation outputs required for performance evaluation including:
+  Terminal voltage, \(V(t)\)
+  Terminal current, \(I(t)\)
+  Temperature, \(T(t)\)
+  State of charge, \(SoC(t)\)
+  Available capacity, \(Q(t)\)
+  Energy throughput
 The BESS is evaluated under simulated grid-outage, PV-firming, and variable C-rate dispatch profiles.
 
-2. Performance Measurements
-
-
-
+**Performance Measurements**
 Each performance metric is calculated directly from the simulated measurements.
 
-Round-Trip Energy Efficiency (RTE)
-
-Measures the fraction of charging energy recovered during discharge:
-
+ * **Round-Trip Energy Efficiency (RTE)**: Measures the fraction of charging energy recovered during discharge
 [eta_{RTE}=frac{E_{\mathrm{dis}}}{E_{\mathrm{chg}}}] whereb[E_{\mathrm{dis}}=int_{\mathrm{discharge}} V(t)I(t),dt]
-and [E_{\mathrm{chg}}=\int_{\mathrm{charge}} |V(t)I(t)|\,dt.] Coulombic Efficiency
+and [E_{\mathrm{chg}}=\int_{\mathrm{charge}} |V(t)I(t)|\,dt.]
 
-Measures the fraction of charge recovered in terms of electrical charge:
+ * **Coulombic Efficiency**: Measures the fraction of charge recovered in terms of electrical charge [\eta_C=\frac{Q_{\mathrm{dis}}}{Q_{\mathrm{chg}}}] with [Q_{\mathrm{dis}}= int_{\mathrm{discharge}} |I(t)|\,dt,\qquad Q_{\mathrm{chg}}=\int_{\mathrm{charge}} |I(t)|\,dt.]
 
-[\eta_C=\frac{Q_{\mathrm{dis}}}{Q_{\mathrm{chg}}}] with [Q_{\mathrm{dis}}= int_{\mathrm{discharge}} |I(t)|\,dt,\qquad Q_{\mathrm{chg}}=\int_{\mathrm{charge}} |I(t)|\,dt.]
+ * **Voltage Efficiency**: Represents the voltage-related loss independently of charge throughput [\eta_V=\frac{\eta_{RTE}}{\eta_C}.]
 
-Voltage Efficiency
+ * **Usable Energy Capacity**: Measures the energy delivered over the defined operating SOC window [E_{\mathrm{usable}}=\int_{t_0}^{t_1}|V(t)I(t)|\,dt] where \(t_0\) and \(t_1\) correspond to the specified upper and lower SOC limits.
 
-Represents the voltage-related loss independently of charge throughput:
+ * **Power Capability**: Measures the maximum deliverable electrical power during the simulated operating window [P_{\max}=\max_t |V(t)I(t)|.]
 
-[\eta_V=\frac{\eta_{RTE}}{\eta_C}.]
+ * **Thermal Response**: Measures the temperature excursion produced during operation [\Delta T=T_{\max}-T_{\min}] and the maximum operating temperature is[T_{\max}=\max_t T(t).]
 
-Usable Energy Capacity
+ * **Depth of Discharge**: For each simulated cycle [DoD=SoC_{\max}-SoC_{\min}.]
 
-Measures the energy delivered over the defined operating SOC window:
+ * **Equivalent Full Cycles**: Accumulated energy throughput is converted into equivalent full cycles [EFC=\frac{\displaystyle\int |P(t)|\,dt}{2E_{\mathrm{rated}}}.]. The factor of \(2\) accounts for one complete charge and discharge throughput.
 
-[E_{\mathrm{usable}}=\int_{t_0}^{t_1}|V(t)I(t)|\,dt] where \(t_0\) and \(t_1\) correspond to the specified upper and lower SOC limits.
+ * **Capacity Fade**: The loss of usable capacity relative to the initial condition is [F_Q(t)=1-\frac{Q_{\max}(t)}{Q_{\max}(0)}.]
 
-Power Capability
+ * **Cycle Life**: cell life cycle is estimated from the simulated degradation trajectory as the point at which the battery reaches the prescribed minimum \(SoH\), [N_{\mathrm{life}}=\min\left\{N:SoH(N)\le SoH_{\mathrm{limit}}\right\}.]
 
-Measures the maximum deliverable electrical power during the simulated operating window:
-
-[P_{\max}=\max_t |V(t)I(t)|.]
-
-Thermal Response
-
-Measures the temperature excursion produced during operation:
-
-[\Delta T=T_{\max}-T_{\min}] and the maximum operating temperature is[T_{\max}=\max_t T(t).]
-
-Depth of Discharge
-
-For each simulated cycle:
-
-[DoD=SoC_{\max}-SoC_{\min}.]
-
-Equivalent Full Cycles
-
-Accumulated energy throughput is converted into equivalent full cycles:
-
-[EFC=\frac{\displaystyle\int |P(t)|\,dt}{2E_{\mathrm{rated}}}.]
-
-The factor of \(2\) accounts for one complete charge and discharge throughput.
-
-Capacity Fade
-
-The loss of usable capacity relative to the initial condition is:
-
-[F_Q(t)=1-\frac{Q_{\max}(t)}{Q_{\max}(0)}.]
-
-Cycle Life
-
-Cycle life is estimated from the simulated degradation trajectory as the point at which the battery reaches the prescribed minimum \(SoH\):
-
-[N_{\mathrm{life}}=\min\left\{N:SoH(N)\le SoH_{\mathrm{limit}}\right\}.]
-
-Calendar Life
-
-Where calendar-aging simulations are performed, the corresponding lifetime is:
+ * **Calendar Life**: Where calendar-aging simulations are performed, the corresponding lifetime is:
 [t_{\mathrm{life}}=\min\left\{t:SoH(t)\le SoH_{\mathrm{limit}}\right\}.]
 
-Levelized Cost of Storage
-
-For the economic assessment:
-
-[LCOS=\frac{C_{\mathrm{capital}}+C_{\mathrm{replacement}}+C_{\mathrm{operation}}}{E_{\mathrm{lifetime,dis}}}\]
+ * **Levelized Cost of Storage**: For the economic assessment [LCOS=\frac{C_{\mathrm{capital}}+C_{\mathrm{replacement}}+C_{\mathrm{operation}}}{E_{\mathrm{lifetime,dis}}}\]
 where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered by the BESS.
 
----
-
-*   **Limitations**:  While this work focuses on a foundational design space, the cell architecture remains amenable to further performance enhancement via composite electrode structuring, advanced pore network engineering, perturbing other dopant sites (beyond the Fe-site), and exploring a broader range of electrolyte systems (solvents and additives) to further enhance cycle life and energy density. The current optimization scope is intentionally streamlined to accommodate the computational constraints of the DFN solver.
-
+**Limitations:**  While this work focuses on a foundational design space, the cell architecture remains amenable to further performance enhancement via composite electrode structuring, advanced pore network engineering, perturbing other dopant sites (beyond the Fe-site), and exploring a broader range of electrolyte systems (solvents and additives) to further enhance cycle life and energy density. The current optimization scope is intentionally streamlined to accommodate the computational constraints of the DFN solver.
 
 ---
+
 ## Distributed System State Estimation Using Wavelet Decomposition (core contribution)
 
-Unlike conventional Distribution System State Estimation (DSSE), where the complete network topology and bus model are assumed known, this research considers a partially observable network in which only the upstream distribution station is known while the downstream network remains hidden.
+Unlike conventional Distribution System State Estimation (DSSE), where the complete network topology and bus model are assumed known and estimation is inherently limited to steady-state estimation, this research considers a partially observable network in which only the upstream distribution station is known while the downstream network partially hidden and extends the state estimation to the dynamic domain using lv distribution transformer transients.
+
 The realization problem is formulated as \[X_R=\Phi(M)\] where
 * \(M\) denotes synchronized measurements acquired at the meters and distribution transformers,
 * \(X_R\) is a latent realization state describing the hidden network,
@@ -192,26 +129,18 @@ It consists of:
 
 ```text
         Utility Source (Swing Bus)
-
                   │
-
       Distribution Substation Transformer
-
                   │
-
         Main Distribution Bus ── Generator
-
                   │
       ┌───────────┼───────────┐
       │           │           │
-
-   Feeder 1    Feeder 2    Feeder 3
+    Feeder 1    Feeder 2    Feeder 3
       │           │           │
-
-Distribution  Distribution  Distribution
-Transformer   Transformer   Transformer
+ Distribution  Distribution  Distribution
+ Transformer   Transformer   Transformer
       │           │           │
-
  Unknown LV   Unknown LV   Unknown LV
  Distribution Distribution Distribution
   Networks     Networks     Networks
@@ -224,6 +153,15 @@ The plant model contains strictly distribution network elements and local source
 * **Main Feeder**: with lines extending from the substation, each characterized by known feeder lengths and impedances.
 * **Fixed Set of Transformers**: Step-down distribution transformers whose primary-side terminals serve as the boundary measurement interfaces.
 * **Measurement and Monitoring Devices**: Electrical sensors capturing voltage, current, active/reactive power, and sequence components at the meters and transformer primary terminal.
+* **Consumer Load Circuits**: To accurately represent realistic residential, commercial, and industrial end-user devices, consumer equipment circuits are implemented compatibly across OpenDSS and ATP-EMTP:
+  1. **AC Motor (`ac_motor`)**: Three-phase induction motor with stator resistance/inductance, magnetizing branch, rotor resistance/inductance, and mechanical inertia.
+  2. **DC Motor + Inverter (`dc_motor_inverter`)**: Rectifier stage, DC-link capacitor, PWM H-bridge inverter, and DC motor armature $R_a, L_a$ with speed-dependent Back-EMF.
+  3. **Microwave (`microwave`)**: Input rectifier, PFC stage, DC-link capacitor, high-voltage transformer, diode voltage doubler, and magnetron non-linear load.
+  4. **Induction Plate (`induction_plate`)**: Input rectifier, DC-link, high-frequency resonant inverter, resonant capacitor, and induction coil $R_{\mathrm{eq}} + j\omega L_{\mathrm{eq}}$.
+  5. **Compressor (`compressor`)**: Single-phase AC induction motor driving reciprocating/scroll compressor load torque.
+  6. **Audio Amplifier (`audio_amplifier`)**: AC supply rectifier, DC-link supply capacitor bank, Class-D switching H-bridge, LC output filter, and speaker impedance.
+  7. **Uninterruptible Power Supply / UPS (`ups`)**: Battery bank equivalent circuit, DC-link, bidirectional converter, and AC-side filter interface.
+  8. **Industrial Fan (`industrial_fan`)**: Three-phase induction motor driving speed-squared aerodynamic fan load torque.
 
 #### 2. Measurement Architecture
 
@@ -234,25 +172,25 @@ Measurements are obtained from two sensing layers: PCC line measurements using s
 The metering hierarchy is organized as follows:
 
 ```text
-             Known MV feeder
-                       │
-                       │
-                 ┌─────┴─────┐
-                 │ Transformer│
-                 └─────┬─────┘
-                       │
-                    PCC / Edge
-                    Smart Meter
-                       │
-              ┌────────┴────────┐
-              │                 │
-            Line A            Line B
-              │                 │
-             PCC                |
-          Smart Meter           |
-              │                 │
-          ┌───┴───┐         ┌───┴───┐
-          │       │         │       │
+               Known MV feeder
+                      │
+                      │
+                ┌─────┴─────┐
+                │Transformer│
+                └─────┬─────┘
+                      │
+                  PCC / Edge
+                 Smart Meter
+                      │
+             ┌────────┴────────┐
+             │                 │
+           Line A            Line B
+             │                 │
+            PCC                |
+          Smart Meter          |
+            │                  │
+        ┌───┴───┐          ┌───┴───┐
+        │       │          │       │
 ```
 
 Selected candidate PCCs are instrumented with smart meters to acquire:
@@ -274,10 +212,7 @@ Network Quality Metrics
 
 2. Transformer Measurements
 
-Each distribution transformer serves as an edge measurement node representing the interface to an unknown downstream network.
-
-Measurements include:
-
+Each distribution transformer serves as an edge measurement node representing the interface to an unknown downstream network. Measurements include:
 Primary Electrical Measurements
   High-voltage terminal voltage magnitude and phase angle
   High-voltage terminal current magnitude and phase angle
@@ -293,50 +228,25 @@ Dynamic Quantities
   Transformer temperature
   Transient voltage and current waveforms
 
-#### 3. Consumer Load Circuits
+#### 3. Distribution Network Simulation And Station Modeling
 
-To accurately represent realistic residential, commercial, and industrial end-user devices, 8 explicit consumer equipment circuits are implemented compatibly across OpenDSS and ATP-EMTP:
-
-1. **AC Motor (`ac_motor`)**: Three-phase induction motor with stator resistance/inductance, magnetizing branch, rotor resistance/inductance, and mechanical inertia.
-2. **DC Motor + Inverter (`dc_motor_inverter`)**: Rectifier stage, DC-link capacitor, PWM H-bridge inverter, and DC motor armature $R_a, L_a$ with speed-dependent Back-EMF.
-3. **Microwave (`microwave`)**: Input rectifier, PFC stage, DC-link capacitor, high-voltage transformer, diode voltage doubler, and magnetron non-linear load.
-4. **Induction Plate (`induction_plate`)**: Input rectifier, DC-link, high-frequency resonant inverter, resonant capacitor, and induction coil $R_{\mathrm{eq}} + j\omega L_{\mathrm{eq}}$.
-5. **Compressor (`compressor`)**: Single-phase AC induction motor driving reciprocating/scroll compressor load torque.
-6. **Audio Amplifier (`audio_amplifier`)**: AC supply rectifier, DC-link supply capacitor bank, Class-D switching H-bridge, LC output filter, and speaker impedance.
-7. **Uninterruptible Power Supply / UPS (`ups`)**: Battery bank equivalent circuit, DC-link, bidirectional converter, and AC-side filter interface.
-8. **Industrial Fan (`industrial_fan`)**: Three-phase induction motor driving speed-squared aerodynamic fan load torque.
-
-#### 4. Distribution Network Simulation And Station Modeling
-
-The simulation framework systematically perturbs the unknown downstream network while maintaining a fixed upstream distribution station.
-
-OpenDSS is used to simulate the known upstream station together with the hidden downstream distribution network.
-
-A transient simulator (`ATPRunner`) executes ATP-EMTP cases built via `ATPCaseBuilder` to acquire high-fidelity 3-phase electromagnetic transient (EMT) waveforms for switching events and line faults.
-
+The simulation framework systematically perturbs the unknown downstream network while maintaining a fixed upstream distribution station. OpenDSS is used to simulate the known upstream station together with the hidden downstream distribution network and Line fault event pairs (`fault_fault`)— co-occurring network line faults (`LG`, `LL`, `LLG`, `LLL`); A transient simulator (`ATPRunner`) executes ATP-EMTP cases built via `ATPCaseBuilder` to acquire high-fidelity 3-phase electromagnetic transient (EMT) waveforms for switching events.
 The code generates scenario datasets by:
-
 * building hidden downstream topologies with radial and optional ring configurations;
 * modifying the number of downstream buses ($N_b$) and network connectivity ($N_l$);
-* perturbing line parameters using a scenario-dependent multiplier;
-* varying load allocation and load composition across linear, non-linear, and heavy-duty load classes;
 * assigning transformer loading to each boundary transformer in the range 30–75 % across multi-operating-point sweeps;
-* instantiating event pairs for 3 distinct pair categories across load switches and line faults:
+* instantiating event pairs for 3 distinct pair categories across load switches:
   - (i) **Load switch event pairs (`load_load`)** — co-occurring consumer load switching operations;
-  - (ii) **Line fault event pairs (`fault_fault`)** — co-occurring network line faults (`LG`, `LL`, `LLG`, `LLL`);
-  - (iii) **Across load switch and fault pairs (`load_fault`)** — mixed load switching and line fault co-events;
+  - (ii) **Across load switch and fault pairs (`load_fault`)** — mixed load switching and line fault co-events;
 * instantiating co-events with time-shifting operations (simultaneous co-events with $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ vs time-shifted co-events with $t_{\mathrm{offset}} > 0.0\,\mathrm{s}$);
 * constructing OpenDSS objects for lines, loads, capacitors, motors, and distributed energy resources.
 
 For each scenario, `CoSimulationRunner.run_scenario`:
-
-* solves the OpenDSS operating point for the known upstream plant plus the hidden downstream network;
 * collects PCC measurements via `get_pcc_measurements()`;
 * builds an ATP event case with `ATPCaseBuilder`;
 * executes ATP-EMTP via Wine using `ATPRunner` and parses raw EMT output into `EMTWaveforms` via `ATPOutputReader`.
 
 Measurements captured in each result include:
-
 * transformer three-phase voltage and current waveforms ($V_{abc}(t), I_{abc}(t)$);
 * active power (`P`), reactive power (`Q`), and apparent power (`S`) at boundary nodes;
 * derived steady-state features, sequence features, transient features, and spectral features.
@@ -360,9 +270,8 @@ The simulation framework generates four distinct, decoupled datasets to evaluate
    - **Ground-Truth Target Variables ($X_R$):** Same schema as Dataset 2, featuring varying transformer specifications (`tx_spec_std_1500kva`, `tx_spec_high_z_1200kva`, `tx_spec_low_loss_2000kva`).
    - **Observation Features ($M_{\mathrm{PCC}}$):** Same complete residual features as Dataset 3. Uses a fixed time shift $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ (no time shift variation).
 
----
 
-#### 5. Statistical Tests for estimated lv network parameters and observable state
+#### 4. Statistical Tests for estimated lv network parameters and observable state
 
 ##### Dataset 1 Realization Accuracy Testing
 
@@ -373,7 +282,7 @@ Dataset 1 statistical analysis (`src/statistics/correlation.py`) evaluates the a
 2. **Root Mean Squared Error (RMSE)** for continuous equivalent impedance estimation ($\hat{R}_{\mathrm{eq}}$, $\hat{X}_{\mathrm{eq}}$, $\hat{Z}_{\mathrm{eq}}$):
   \[\mathrm{RMSE}_{Z} = \sqrt{\frac{1}{N}\sum_{i=1}^N   (\hat{Z}_{\mathrm{eq},i} - Z_{\mathrm{eq},i})^2}\]
 
-##### Dataset 2 Event Pair Observability Testing
+##### Dataset 2 Event Pair Observability Testing 
 
 Factorial ANOVA analysis (`src/statistics/q1_event_pair_analysis.py`) evaluates event pair observability across (i) load switch pairs (`load_load`), (ii) line fault pairs (`fault_fault`), and (iii) mixed load-fault pairs (`load_fault`) using Dataset 2:
 - **Main Effect:** Evaluates $F_{\mathrm{voltage}}, p_{\mathrm{voltage}}$ and $F_{\mathrm{current}}, p_{\mathrm{current}}$ to test observability differences across pair categories under fixed baseline transformer specs and zero time shift.
