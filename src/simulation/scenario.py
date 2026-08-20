@@ -51,7 +51,7 @@ class SimulationScenario:
     generator_p_kw: float
     generator_q_kvar: float
     events: list[EMTEvent]
-    meter_fraction: float = 0.5
+    meter_fraction: float = 0.36
     seed: int = 42
 
     def __init__(
@@ -60,7 +60,7 @@ class SimulationScenario:
         generator_p_kw: float = 1500.0,
         generator_q_kvar: float = 0.0,
         events: list = None,
-        meter_fraction: float = 0.5,
+        meter_fraction: float = 0.36,
         seed: int = 42,
         hidden_network: KnownLVNetworkScenario = None
     ):

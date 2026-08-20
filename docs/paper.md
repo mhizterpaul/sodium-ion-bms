@@ -110,35 +110,28 @@ where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered
 
 ---
 
-## Distribution System State Estimation Using Wavelet Decomposition with Known LV Network Topology and Latent Line Parameter Estimation
+## Distribution System State Estimation Using Graph-Based Realization and LV Transformer Signal Processing
 
-In this research, the low-voltage (LV) distribution network topology and network structure are known. The research does not estimate or discover a hidden LV network topology. Instead, selected electrical parameters of known LV lines are latent, and the research estimates those latent line parameters from boundary and consumer measurements. Consumer loads are not latent as entities: their existence, type, and placement are known, but loads connected to latent line sections are electrically coupled to the latent line parameters and their load contribution is part of the estimation problem.
+In this research, state estimation in partially observed low-voltage (LV) distribution networks is accomplished using 36% consumer meter measurements and feeder head / boundary transformer measurements. Meters are used to estimate the number of unknown (unmetered) consumer units and their associated load contribution.
 
-The latent line parameter estimation problem is formulated as:
+The estimator models the known network as a graph $\mathcal{G} = (\mathcal{V}, \mathcal{E})$ and extends this graph network by exploring existing branches and replicating these branches into random nodes of the network. A non-resampling sequence memory ensures branches are not resampled in each expansion cycle until the graph flow matches the feeder measurement readings.
 
-[ X_L = \Phi(M; \mathcal{K}) ]
+The mathematical formulation for graph-based consumer unit realization is:
+
+[ \hat{N}_{\mathrm{unmetered}}, \hat{P}_{\mathrm{unmetered}} = \Phi_{\mathrm{graph}}\left( M_{36\%}, M_{\mathrm{feeder}}; \mathcal{G}_{\mathrm{known}} \right) ]
 
 where:
-- $M$ denotes synchronized measurements acquired at distribution transformer boundary meters and consumer meters;
-- $\mathcal{K}$ represents the known network model containing:
-  [ \mathcal{K} = \left[ \mathcal{T}_{LV}, \mathcal{B}, \mathcal{L}, \mathcal{C}, \mathcal{T}_{TX}, \mathcal{F}_{MV} \right] ]
-  in which:
-  - $\mathcal{T}_{LV}$: known LV network topology;
-  - $\mathcal{B}$: known buses;
-  - $\mathcal{L}$: known line set;
-  - $\mathcal{C}$: known consumer-load definitions and locations;
-  - $\mathcal{T}_{TX}$: known distribution transformer specifications;
-  - $\mathcal{F}_{MV}$: known upstream medium-voltage feeder.
-- $X_L$ is the latent line parameter vector:
-  [ X_L = \left[ \mathbf{R}_L, \mathbf{X}_L, \mathbf{G}_L, \mathbf{B}_L, \mathbf{L}_{\mathrm{load}} \right] ]
-  representing series resistance $\mathbf{R}_L$, series reactance $\mathbf{X}_L$, shunt conductance $\mathbf{G}_L$, shunt susceptance $\mathbf{B}_L$, and latent line-associated load electrical contributions $\mathbf{L}_{\mathrm{load}}$.
-- $\Phi(\cdot)$ is the empirical estimation operator.
+- $M_{36\%}$ denotes synchronized observations from the 36% instrumented consumer meters;
+- $M_{\mathrm{feeder}}$ denotes total feeder head / transformer secondary readings;
+- $\mathcal{G}_{\mathrm{known}}$ represents the known LV network graph;
+- $\hat{N}_{\mathrm{unmetered}}$ is the predicted number of unmetered consumer units;
+- $\hat{P}_{\mathrm{unmetered}}$ is the estimated active power load profile of unmetered consumer units.
 
 Detailed physical parameters for the upstream station, substation transformer, and LV networks are documented in `docs/specs/upstream_distribution_station.md`, `docs/specs/upstream_transformer.md`, and `docs/specs/lv1/*`, `docs/specs/lv2/*`, `docs/specs/lv3/*`.
 
 ### System Model
 
-#### 1. Known Plant Model
+#### 1. Known Plant and Graph Model
 
 The upstream distribution station and MV feeders are completely known and serve as the boundary for observing downstream LV network states.
 It consists of:
@@ -158,8 +151,8 @@ It consists of:
  Transformer   Transformer   Transformer
       │           │           │
  Known LV     Known LV     Known LV
- Distribution Distribution Distribution
-  Network      Network      Network
+ Graph        Graph        Graph
+ Network      Network      Network
 ```
 
 The plant model contains strictly distribution network elements and local sources:
@@ -170,59 +163,34 @@ The plant model contains strictly distribution network elements and local source
 * **Fixed Set of Transformers**: Step-down 11/0.415 kV distribution transformers (`trans1`, `trans2`, `trans3`).
 * **Consumer Load Circuits**: Consumer equipment circuits implemented across OpenDSS and ATP-EMTP (`ac_motor`, `dc_motor_inverter`, `microwave`, `induction_plate`, `compressor`, `audio_amplifier`, `ups`, `industrial_fan`).
 
-#### 2. Measurement Architecture
+#### 2. 36% Sensing Architecture & Measurement Strategy
 
-Measurements are obtained from two sensing layers: transformer edge boundary monitoring and consumer smart meters.
+Measurements are acquired from a partial 36% consumer metering coverage layer combined with feeder boundary meters:
 
-1. Consumer Smart-Meter Measurements
+1. **36% Consumer Smart-Meter Coverage**: Exactly 36% of consumer nodes are instrumented with smart meters to measure phase voltages, currents, active power, and reactive power.
+2. **Feeder / Transformer Secondary Boundary Metering**: Complete feeder head and transformer secondary measurements capture total system power flow and high-frequency transient waveforms ($V_{abc}(t), I_{abc}(t)$).
 
-Selected candidate consumer nodes are instrumented with smart meters to acquire:
-  Three-phase voltage magnitude and phase angle
-  Three-phase current magnitude and phase angle
-  Active power (P), Reactive power (Q), Apparent power (S), Power factor (PF)
-  Positive-, negative-, and zero-sequence components
+#### 3. Graph-Based Expansion & State Estimation Algorithm
 
-2. Transformer Boundary Measurements
+To estimate unmetered consumer units and derive the load profile of the network:
+1. Construct initial graph $\mathcal{G} = (\mathcal{V}, \mathcal{E})$ from known buses and 36% metered consumer units.
+2. Compute power residual $\Delta P = P_{\mathrm{feeder}} - \sum_{v \in \mathcal{V}_{\mathrm{metered}}} P_v$.
+3. While $\Delta P > \epsilon$:
+   - Select an existing branch $e \in \mathcal{E}$ from memory without replacement (ensuring non-resampling within an expansion cycle).
+   - Replicate branch $e$ and attach it to a randomly selected node $u \in \mathcal{V}$.
+   - Add candidate unmetered consumer unit node $v_{\mathrm{new}}$ with nominal equipment load profile.
+   - Update candidate power flow until estimated feeder load matches $P_{\mathrm{feeder}}$.
 
-Each distribution transformer secondary serves as an edge measurement node. Measurements include:
-  Voltage and current magnitude and phase angle
-  Active, reactive, and apparent power
-  Transient voltage and current waveforms ($V_{abc}(t), I_{abc}(t)$)
+#### 4. Simulation Framework and Datasets
 
-#### 3. Simulation Framework
+The co-simulation framework generates four distinct datasets to evaluate graph-based realization and transient observability:
 
-The LV network topology, bus connectivity, branch count, transformer location, and consumer-load placement are fixed and known. Experimental variability is introduced through the electrical parameters of designated latent LV line sections and through operating/event conditions. Events in Dataset 2, 3, and 4 originate from known LV lines.
+1. **Dataset 1 (Graph-Based Unmetered Consumer Unit Realization Dataset)**: Focuses on estimating the number of unmetered consumer units ($\hat{N}_{\mathrm{unmetered}}$) and total consumer units ($\hat{N}_{\mathrm{total}}$) under 36% consumer meter coverage and feeder readings.
+   - **Ground-Truth Target Variables:** `gt_scenario_id`, `gt_feeder_id`, `known_number_of_buses`, `gt_total_consumer_units`, `gt_metered_consumer_units`, `gt_unmetered_consumer_units`, `gt_r_eq_ohm`, `gt_x_eq_ohm`, `gt_z_eq_ohm`.
+   - **Estimator Predictions:** `est_total_consumer_units`, `est_unmetered_consumer_units`, `est_r_eq_ohm`, `est_x_eq_ohm`, `est_z_eq_ohm`.
 
-The simulation framework generates four distinct, decoupled datasets:
+2. **Dataset 2 (Question 1 Event Pair Observability Dataset)**: Evaluates event pair observability across load-load, fault-fault, and load-fault pairs using 36% consumer coverage and feeder measurements under fixed baseline transformer specs and zero time shift.
 
-1. **Dataset 1 (Latent Line Parameter Estimation Dataset)**: Focuses on steady-state latent line parameter estimation.
-   - **Ground-Truth Target Variables ($X_L$):** `gt_scenario_id`, `gt_feeder_id`, `gt_topology_type`, `known_number_of_buses`, `known_number_of_branches`, `gt_r_eq_ohm`, `gt_x_eq_ohm`, `gt_z_eq_ohm`, `gt_g_eq_siemens`, `gt_b_eq_siemens`.
-   - **Inverse Realization Estimates ($\hat{X}_L$):** `est_r_eq_ohm`, `est_x_eq_ohm`, `est_z_eq_ohm`, `est_g_eq_siemens`, `est_b_eq_siemens` derived by `LatentLineRealizationSolver`.
-   - **Observation Features ($M$):** Three-phase steady-state time vector (`obs_steady_state_time`), voltage waveforms (`obs_steady_state_voltage_abc`), current waveforms (`obs_steady_state_current_abc`), along with boundary meter summary metrics.
+3. **Dataset 3 (Question 2 Time Shift Operation Dataset)**: Evaluates residual magnitude variation under time shift operations ($t_{\mathrm{offset}} = 0.0\ \mathrm{s}$ vs $t_{\mathrm{offset}} > 0.0\ \mathrm{s}$) using dataset 3.
 
-2. **Dataset 2 (Question 1 Event Pair Observability Dataset)**: Evaluates event pair observability on known LV lines across (i) load switch pairs (`load_load`), (ii) line fault pairs (`fault_fault`), and (iii) mixed load switch and fault pairs (`load_fault`). Uses fixed baseline transformer specifications and zero time shift ($t_{\mathrm{offset}} = 0.0\ \mathrm{s}$).
-
-3. **Dataset 3 (Question 2 Time Shift Operation Dataset)**: Evaluates residual magnitude variation under time shift operations ($t_{\mathrm{offset}} = 0.0\ \mathrm{s}$ vs $t_{\mathrm{offset}} > 0.0\ \mathrm{s}$) across event pairs on known LV lines.
-
-4. **Dataset 4 (Question 3 Transformer Specification Dataset)**: Evaluates how transformer specification variations affect event pair observability across load switch pairs, line fault pairs, and mixed pairs on known LV lines.
-
-#### 4. Statistical Testing
-
-##### Dataset 1 Latent Parameter Estimation Accuracy Testing
-
-Dataset 1 statistical analysis (`src/statistics/correlation.py`) evaluates the accuracy of `LatentLineRealizationSolver` in recovering latent line electrical parameters ($R_L, X_L, Z_L, G_L, B_L$) from boundary and consumer measurements across 3 feeder subgroups (`feeder_1`, `feeder_2`, `feeder_3`). Metrics evaluated include:
-1. **Root Mean Squared Error (RMSE)** for continuous equivalent impedance estimation ($\hat{R}_{\mathrm{eq}}$, $\hat{X}_{\mathrm{eq}}$, $\hat{Z}_{\mathrm{eq}}$):
-  \[\mathrm{RMSE}_{Z} = \sqrt{\frac{1}{N}\sum_{i=1}^N (\hat{Z}_{\mathrm{eq},i} - Z_{\mathrm{eq},i})^2}\]
-2. **RMSE** for equivalent admittance estimation ($\hat{G}_{\mathrm{eq}}$, $\hat{B}_{\mathrm{eq}}$).
-
-##### Dataset 2 Event Pair Observability Testing 
-
-Factorial ANOVA analysis (`src/statistics/q1_event_pair_analysis.py`) evaluates event pair observability across pair categories (`load_load`, `fault_fault`, `load_fault`) using Dataset 2 under fixed baseline transformer specs and zero time shift.
-
-##### Dataset 3 Time Shift Operation Variation Testing
-
-Levene / Brown-Forsythe variance analysis (`src/statistics/q2_time_shift_analysis.py`) evaluates residual magnitude variation under time shift operations ($t_{\mathrm{offset}} = 0$ vs $t_{\mathrm{offset}} > 0$) using Dataset 3.
-
-##### Dataset 4 Transformer Specification Effect Testing
-
-One-Way ANOVA testing (`src/statistics/q3_transformer_spec_analysis.py`) evaluates how transformer specification variations affect observability across pair categories using Dataset 4.
+4. **Dataset 4 (Question 3 Transformer Specification Dataset)**: Evaluates how transformer specification variations affect event pair observability across load-load, fault-fault, and mixed pairs using dataset 4.
