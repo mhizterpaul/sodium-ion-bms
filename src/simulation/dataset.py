@@ -68,12 +68,16 @@ def validate_dataset_1(df_1: pd.DataFrame):
         "gt_total_consumer_units", "gt_metered_consumer_units", "gt_unmetered_consumer_units",
         "gt_r_eq_ohm", "gt_x_eq_ohm", "gt_z_eq_ohm",
         "est_total_consumer_units", "est_metered_consumer_units", "est_unmetered_consumer_units",
-        "est_unmetered_power_kw", "est_r_eq_ohm", "est_x_eq_ohm", "est_z_eq_ohm",
-        "obs_steady_state_time", "obs_steady_state_voltage_abc", "obs_steady_state_current_abc"
+        "est_unmetered_power_kw", "est_r_eq_ohm", "est_x_eq_ohm", "est_z_eq_ohm"
     ]
     for col in required_cols:
         if col not in df_1.columns:
             raise ValueError(f"Dataset 1 validation error: missing required column '{col}'")
+
+    forbidden_cols = ["obs_steady_state_time", "obs_steady_state_voltage_abc", "obs_steady_state_current_abc"]
+    for col in forbidden_cols:
+        if col in df_1.columns:
+            raise ValueError(f"Dataset 1 validation error: waveform column '{col}' must be removed from Dataset 1!")
 
     for idx, row in df_1.iterrows():
         if row["known_number_of_buses"] <= 0 or row["gt_total_consumer_units"] <= 0:
@@ -292,9 +296,6 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
             v_raw_ss = meter_res["raw_voltage"] if meter_res is not None else np.zeros((len(time_s), 3))
             i_raw_ss = meter_res["raw_current"] if meter_res is not None else np.zeros((len(time_s), 3))
 
-            v_ss_abc = [v_raw_ss[:, 0].tolist(), v_raw_ss[:, 1].tolist(), v_raw_ss[:, 2].tolist()]
-            i_ss_abc = [i_raw_ss[:, 0].tolist(), i_raw_ss[:, 1].tolist(), i_raw_ss[:, 2].tolist()]
-
             meas_dict = latest_sim_result.steady_state_measurements.get(m_id, latest_sim_result.steady_state_measurements.get(pcc_key, {}))
 
             row_1 = {
@@ -315,9 +316,6 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                 "est_r_eq_ohm": freq_est.r_eq_ohm,
                 "est_x_eq_ohm": freq_est.x_eq_ohm,
                 "est_z_eq_ohm": freq_est.z_eq_ohm,
-                "obs_steady_state_time": json.dumps(time_s.tolist()),
-                "obs_steady_state_voltage_abc": json.dumps(v_ss_abc),
-                "obs_steady_state_current_abc": json.dumps(i_ss_abc),
                 f"obs_{pcc_key}_voltage_mag_avg": float(np.mean(v_raw_ss)),
                 f"obs_{pcc_key}_current_mag_avg": float(np.mean(i_raw_ss)),
                 f"obs_{pcc_key}_p_kw": float(meas_dict.get("p_kw", 0.0)),
