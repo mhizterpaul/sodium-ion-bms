@@ -156,9 +156,9 @@ The plant model contains strictly distribution network elements and local source
   3. **Microwave (`microwave`)**: Input rectifier, PFC stage, DC-link capacitor, high-voltage transformer, diode voltage doubler, and magnetron non-linear load.
   4. **Induction Plate (`induction_plate`)**: Input rectifier, DC-link, high-frequency resonant inverter, resonant capacitor, and induction coil $R_{\mathrm{eq}} + j\omega L_{\mathrm{eq}}$.
   5. **Compressor (`compressor`)**: Single-phase AC induction motor driving reciprocating/scroll compressor load torque.
-  6. **Audio Amplifier (`audio_amplifier`)**: AC supply rectifier, DC-link supply capacitor bank, Class-D switching H-bridge, LC output filter, and speaker impedance.
-  7. **Uninterruptible Power Supply / UPS (`ups`)**: Battery bank equivalent circuit, DC-link, bidirectional converter, and AC-side filter interface.
-  8. **Industrial Fan (`industrial_fan`)**: Three-phase induction motor driving speed-squared aerodynamic fan load torque.
+  6. **Audio Amplifier (`audio_amplifier`)**: Class-D switching H-bridge and speaker impedance.
+  7. **Uninterruptible Power Supply / UPS (`ups`)**: Battery bank equivalent circuit and AC-side filter.
+  8. **Industrial Fan (`industrial_fan`)**: Three-phase induction motor driving aerodynamic fan torque.
 
 #### 2. Measurement Architecture
 
@@ -192,19 +192,31 @@ To estimate unmetered consumer units and derive the network load profile:
 4. Compute power residual $\Delta P = P_{\mathrm{feeder}} - \sum P_v$.
 5. Reconstruct unmetered consumer units sampled according to inverse-similarity weights $w_g$ until reconstructed load satisfies $P_{\mathrm{feeder}}$.
 
-#### 4. Simulation Framework and Datasets
+#### 4. Simulation Methodology and Datasets
 
-The co-simulation framework generates four distinct datasets to evaluate load frequency reconstruction and transient observability:
+The simulation methodology details how switching event pairs are measured across the three phases ($A, B, C$) of the LV distribution transformers and across transformer specification groups:
 
-1. **Dataset 1 (Load Frequency Reconstruction Dataset)**: Evaluates estimation of unmetered consumer units ($\hat{N}_{\mathrm{unmetered}}$) and total consumer units ($\hat{N}_{\mathrm{total}}$) under 36% consumer coverage using inverse-similarity weighted load group reconstruction.
-   - **Ground-Truth Target Variables:** `gt_scenario_id`, `gt_feeder_id`, `known_number_of_buses`, `gt_total_consumer_units`, `gt_metered_consumer_units`, `gt_unmetered_consumer_units`, `gt_r_eq_ohm`, `gt_x_eq_ohm`, `gt_z_eq_ohm`.
-   - **Estimator Predictions:** `est_total_consumer_units`, `est_metered_consumer_units`, `est_unmetered_consumer_units`, `est_unmetered_power_kw`, `est_r_eq_ohm`, `est_x_eq_ohm`, `est_z_eq_ohm`.
+1. **Measurement Across Three Phases ($A, B, C$):**
+   High-frequency electromagnetic transient (EMT) voltage waveforms $V_{a}(t), V_{b}(t), V_{c}(t)$ and current waveforms $I_{a}(t), I_{b}(t), I_{c}(t)$ are captured on the low-voltage secondary terminals of each step-down distribution transformer across all three phases.
 
-2. **Dataset 2 (Question 1 Event Pair Observability Dataset)**: Evaluates event pair observability across load-load, fault-fault, and load-fault pairs using 36% consumer coverage and feeder measurements under fixed baseline transformer specs and zero time shift.
+2. **Dataset 1 (Load Frequency Reconstruction Dataset):**
+   - Evaluates estimation of unmetered consumer units ($\hat{N}_{\mathrm{unmetered}}$) and total consumer units ($\hat{N}_{\mathrm{total}}$) under 36% consumer coverage using inverse-similarity weighted load group reconstruction across 3 feeder subgroups.
+   - Ground truth targets: `gt_scenario_id`, `gt_feeder_id`, `known_number_of_buses`, `gt_total_consumer_units`, `gt_metered_consumer_units`, `gt_unmetered_consumer_units`, `gt_r_eq_ohm`, `gt_x_eq_ohm`, `gt_z_eq_ohm`.
 
-3. **Dataset 3 (Question 2 Time Shift Operation Dataset)**: Evaluates residual magnitude variation under time shift operations ($t_{\mathrm{offset}} = 0.0\ \mathrm{s}$ vs $t_{\mathrm{offset}} > 0.0\ \mathrm{s}$) using dataset 3.
+3. **Dataset 2 (Question 1 Event Pair Observability Dataset):**
+   - Measures simultaneous switching co-events ($t_{\mathrm{offset}} = 0.0\ \mathrm{s}$) with the exact same start time across the three phases ($A, B, C$) of the LV transformer secondary using **1 single baseline transformer specification group** (`tx_spec_std_1500kva`).
+   - Evaluates event pair categories: (i) load-load (`load_load`), (ii) fault-fault (`fault_fault`), and (iii) mixed load-fault (`load_fault`).
 
-4. **Dataset 4 (Question 3 Transformer Specification Dataset)**: Evaluates how transformer specification variations affect event pair observability across load-load, fault-fault, and mixed pairs using dataset 4.
+4. **Dataset 3 (Question 2 Time Shift Operation Dataset):**
+   - Measures co-events under **time-shifting operations** ($t_{\mathrm{offset}} = 0.0\ \mathrm{s}$ vs $t_{\mathrm{offset}} = 0.01\ \mathrm{s}$) across the three phases ($A, B, C$) of the LV transformer secondary using **1 single baseline transformer specification group**.
+   - Evaluates residual magnitude variations produced by time shift delays.
+
+5. **Dataset 4 (Question 3 Transformer Specification Dataset):**
+   - Measures simultaneous co-events with the exact same start time ($t_{\mathrm{offset}} = 0.0\ \mathrm{s}$) across the three phases ($A, B, C$) of **3 distinct transformer specification groups**:
+     - `trans1`: Standard 1500 kVA model (`tx_spec_std_1500kva`)
+     - `trans2`: High-impedance 1200 kVA model (`tx_spec_high_z_1200kva`)
+     - `trans3`: Low-loss 2000 kVA model (`tx_spec_low_loss_2000kva`)
+   - Evaluates the effect of physical transformer nameplate parameters on dynamic residual observability.
 
 #### 5. Statistical Testing for Datasets 1, 2, 3, and 4
 
