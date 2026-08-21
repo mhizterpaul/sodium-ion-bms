@@ -143,25 +143,6 @@ Detailed physical parameters for the upstream station, substation transformer, a
 #### 1. Known Plant Model
 
 The upstream distribution station and MV feeders are completely known and serve as the boundary for observing downstream LV network states.
-It consists of:
-
-```text
-        Utility Source (Swing Bus)
-                  │
-      Distribution Substation Transformer
-                  │
-        Main Distribution Bus ── Generator
-                  │
-      ┌───────────┼───────────┐
-      │           │           │
-    Feeder 1    Feeder 2    Feeder 3
-      │           │           │
- Distribution  Distribution  Distribution
- Transformer   Transformer   Transformer
-      │           │           │
- Known LV     Known LV     Known LV
- Network      Network      Network
-```
 
 The plant model contains strictly distribution network elements and local sources:
 
