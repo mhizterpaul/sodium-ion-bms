@@ -14,7 +14,7 @@ def compute_rmse(gt: np.ndarray, est: np.ndarray) -> float:
 
 def run_dataset_1_correlation_analysis():
     """
-    Evaluates graph-based realization accuracy on Dataset 1 by comparing ground truth unmetered consumer units
+    Evaluates load frequency reconstruction accuracy on Dataset 1 by comparing ground truth unmetered consumer units
     and electrical parameters with estimator predictions across 3 feeder subgroups (feeder_1, feeder_2, feeder_3), reporting MAE and RMSE metrics.
     """
     data_path = Path(__file__).parent.parent / "simulation" / "dataset_1.csv"
@@ -31,7 +31,7 @@ def run_dataset_1_correlation_analysis():
     rmse_x_list = []
     rmse_z_list = []
 
-    print("--- Running Dataset 1 Graph-Based Unmetered Consumer Unit Realization Testing (MAE & RMSE) ---")
+    print("--- Running Dataset 1 Load Frequency Reconstruction Unmetered Consumer Unit Testing (MAE & RMSE) ---")
 
     for sg in subgroups:
         sub_df = df[df["gt_feeder_id"] == sg]
@@ -64,7 +64,7 @@ def run_dataset_1_correlation_analysis():
     avg_rmse_x = float(np.mean(rmse_x_list)) if rmse_x_list else 0.0
     avg_rmse_z = float(np.mean(rmse_z_list)) if rmse_z_list else 0.0
 
-    print("\n--- Average Graph Realization Metrics Across All Subgroups ---")
+    print("\n--- Average Load Frequency Reconstruction Metrics Across All Subgroups ---")
     print(f"Average MAE Unmetered Consumer Units: {avg_mae_unmetered:.4f}")
     print(f"Average RMSE R_eq:                    {avg_rmse_r:.4f} Ohm")
     print(f"Average RMSE X_eq:                    {avg_rmse_x:.4f} Ohm")

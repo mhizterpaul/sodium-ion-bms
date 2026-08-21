@@ -22,7 +22,7 @@ from src.transient.events import (
     LineFaultLineFaultCoEvent
 )
 from src.simulation.kron_reduction import compute_kron_reduced_impedance
-from src.estimator.graph_realization import GraphBasedConsumerEstimator
+from src.estimator.load_estimator import LoadFrequencyReconstructionEstimator
 from src.power_plant.transformers import TRANSFORMER_MODELS, BASELINE_TRANSFORMER_MODEL
 
 TRANSFORMER_SPECS = {
@@ -121,12 +121,12 @@ def validate_event_pair_dataset(df: pd.DataFrame, dataset_name: str, allow_time_
 
 def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = True):
     """
-    Orchestrates dataset generation for Dataset 1 (36% consumer meter graph-based unmetered consumer unit estimation),
+    Orchestrates dataset generation for Dataset 1 (36% consumer meter load group frequency reconstruction of unmetered units),
     Dataset 2 (Q1), Dataset 3 (Q2), and Dataset 4 (Q3).
     """
     print("INFO: Sweeping scenarios and generating Datasets 1, 2, 3, and 4 with 36% consumer coverage...")
     runner = CoSimulationRunner()
-    graph_estimator = GraphBasedConsumerEstimator(seed=42)
+    freq_estimator = LoadFrequencyReconstructionEstimator(seed=42)
 
     rows_1 = []
     rows_2 = []
@@ -208,7 +208,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
         else:
             load_comp = {"linear": 0.15, "non_linear": 0.15, "heavy_duty": 0.7}
 
-        # --- A. DATASET 1 GENERATION (36% Metered Consumer Graph Realization of Unmetered Consumer Units) ---
+        # --- A. DATASET 1 GENERATION (36% Metered Consumer Load Group Frequency Reconstruction of Unmetered Units) ---
         multi_op_consumer_meas = {1: [], 2: [], 3: []}
         multi_op_feeder_meas = {1: [], 2: [], 3: []}
         latest_sim_result = None
@@ -282,7 +282,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
             gt_metered_units = max(1, int(np.ceil(0.36 * gt_total_units)))
             gt_unmetered_units = gt_total_units - gt_metered_units
 
-            graph_est = graph_estimator.estimate(
+            freq_est = freq_estimator.estimate(
                 metered_consumer_measurements=consumer_meas_last,
                 feeder_measurements=feeder_meas_avg,
                 known_num_buses=known_buses_count,
@@ -308,13 +308,13 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                 "gt_r_eq_ohm": gt_r,
                 "gt_x_eq_ohm": gt_x,
                 "gt_z_eq_ohm": gt_z,
-                "est_total_consumer_units": graph_est.estimated_total_consumer_units,
-                "est_metered_consumer_units": graph_est.estimated_metered_consumer_units,
-                "est_unmetered_consumer_units": graph_est.estimated_unmetered_consumer_units,
-                "est_unmetered_power_kw": graph_est.estimated_unmetered_power_kw,
-                "est_r_eq_ohm": graph_est.r_eq_ohm,
-                "est_x_eq_ohm": graph_est.x_eq_ohm,
-                "est_z_eq_ohm": graph_est.z_eq_ohm,
+                "est_total_consumer_units": freq_est.estimated_total_consumer_units,
+                "est_metered_consumer_units": freq_est.estimated_metered_consumer_units,
+                "est_unmetered_consumer_units": freq_est.estimated_unmetered_consumer_units,
+                "est_unmetered_power_kw": freq_est.estimated_unmetered_power_kw,
+                "est_r_eq_ohm": freq_est.r_eq_ohm,
+                "est_x_eq_ohm": freq_est.x_eq_ohm,
+                "est_z_eq_ohm": freq_est.z_eq_ohm,
                 "obs_steady_state_time": json.dumps(time_s.tolist()),
                 "obs_steady_state_voltage_abc": json.dumps(v_ss_abc),
                 "obs_steady_state_current_abc": json.dumps(i_ss_abc),

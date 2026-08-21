@@ -120,18 +120,18 @@ We reconstruct the LV network using **inverse-similarity weighting of local grou
 
 [ w_g \propto \frac{f_g^{\mathrm{global}}}{f_g^{\mathrm{local}} + \epsilon} ]
 
-where $f_g^{\mathrm{local}}$ is the local frequency of load group $g$ in the metered 36% sample, and $f_g^{\mathrm{global}}$ is the global distribution frequency across the system. This sampling weighting ensures that under-represented energy groups in local observations are prioritized during graph extension, while satisfying both local and global distributions for a sample size large enough to satisfy the feeder head measurements for the LV network.
+where $f_g^{\mathrm{local}}$ is the local frequency of load group $g$ in the metered 36% sample, and $f_g^{\mathrm{global}}$ is the global distribution frequency across the system. This sampling weighting ensures that under-represented energy groups in local observations are prioritized during network reconstruction, while satisfying both local and global distributions for a sample size large enough to satisfy the feeder head measurements for the LV network.
 
 We compare the estimated network state against ground truth and derive the load profile of the network by exploring transformer transients using Datasets 2, 3, and 4.
 
-The mathematical formulation for graph-based consumer unit realization is:
+The mathematical formulation for consumer unit load frequency reconstruction is:
 
-[ \hat{N}_{\mathrm{unmetered}}, \hat{P}_{\mathrm{unmetered}} = \Phi_{\mathrm{graph}}\left( M_{36\%}, M_{\mathrm{feeder}}; \mathcal{G}_{\mathrm{known}}, w_g \right) ]
+[ \hat{N}_{\mathrm{unmetered}}, \hat{P}_{\mathrm{unmetered}} = \Phi_{\mathrm{freq}}\left( M_{36\%}, M_{\mathrm{feeder}}; \mathcal{K}_{\mathrm{known}}, w_g \right) ]
 
 where:
 - $M_{36\%}$ denotes observations from 36% instrumented consumer smart meters;
 - $M_{\mathrm{feeder}}$ denotes total feeder head / transformer secondary readings;
-- $\mathcal{G}_{\mathrm{known}}$ represents the known LV network graph;
+- $\mathcal{K}_{\mathrm{known}}$ represents the known LV network parameters;
 - $w_g$ represents inverse-similarity weights for load group sampling;
 - $\hat{N}_{\mathrm{unmetered}}$ is the estimated number of unmetered consumer units;
 - $\hat{P}_{\mathrm{unmetered}}$ is the estimated active power load profile of unmetered consumer units.
@@ -140,7 +140,7 @@ Detailed physical parameters for the upstream station, substation transformer, a
 
 ### System Model
 
-#### 1. Known Plant and Graph Model
+#### 1. Known Plant Model
 
 The upstream distribution station and MV feeders are completely known and serve as the boundary for observing downstream LV network states.
 It consists of:
@@ -160,7 +160,6 @@ It consists of:
  Transformer   Transformer   Transformer
       │           │           │
  Known LV     Known LV     Known LV
- Graph        Graph        Graph
  Network      Network      Network
 ```
 
@@ -170,30 +169,53 @@ The plant model contains strictly distribution network elements and local source
 * **Distribution Substation Transformer**: Substation transformer supplying the 11 kV medium-voltage bus (7.5 MVA, 33/11 kV, Dyn11).
 * **Main Feeders**: Radial 11 kV feeders extending from the substation, characterized by known lengths and sequence impedances ($Z_1 = 0.25 + j0.35\ \Omega/\mathrm{km}$).
 * **Fixed Set of Transformers**: Step-down 11/0.415 kV distribution transformers (`trans1`, `trans2`, `trans3`).
-* **Consumer Load Circuits**: Consumer equipment circuits implemented across OpenDSS and ATP-EMTP (`ac_motor`, `dc_motor_inverter`, `microwave`, `induction_plate`, `compressor`, `audio_amplifier`, `ups`, `industrial_fan`).
+* **Consumer Load Circuits**: To accurately represent realistic residential, commercial, and industrial end-user devices, consumer equipment circuits are implemented compatibly across OpenDSS and ATP-EMTP:
+  1. **AC Motor (`ac_motor`)**: Three-phase induction motor with stator resistance/inductance, magnetizing branch, rotor resistance/inductance, and mechanical inertia.
+  2. **DC Motor + Inverter (`dc_motor_inverter`)**: Rectifier stage, DC-link capacitor, PWM H-bridge inverter, and DC motor armature $R_a, L_a$ with speed-dependent Back-EMF.
+  3. **Microwave (`microwave`)**: Input rectifier, PFC stage, DC-link capacitor, high-voltage transformer, diode voltage doubler, and magnetron non-linear load.
+  4. **Induction Plate (`induction_plate`)**: Input rectifier, DC-link, high-frequency resonant inverter, resonant capacitor, and induction coil $R_{\mathrm{eq}} + j\omega L_{\mathrm{eq}}$.
+  5. **Compressor (`compressor`)**: Single-phase AC induction motor driving reciprocating/scroll compressor load torque.
+  6. **Audio Amplifier (`audio_amplifier`)**: AC supply rectifier, DC-link supply capacitor bank, Class-D switching H-bridge, LC output filter, and speaker impedance.
+  7. **Uninterruptible Power Supply / UPS (`ups`)**: Battery bank equivalent circuit, DC-link, bidirectional converter, and AC-side filter interface.
+  8. **Industrial Fan (`industrial_fan`)**: Three-phase induction motor driving speed-squared aerodynamic fan load torque.
 
-#### 2. 36% Sensing Architecture & Load Group Extraction
+#### 2. Measurement Architecture
 
-Measurements are acquired from a 36% consumer metering coverage layer combined with feeder boundary meters:
+Measurements are obtained from two sensing layers: consumer smart meters (36% coverage) and transformer edge monitoring.
 
-1. **36% Consumer Smart-Meter Coverage**: Exactly 36% of consumer nodes are instrumented with smart meters to measure phase voltages, currents, active power, and reactive power.
-2. **Representative Load Groups / Energy Classes**: Metered consumers are categorized into load groups based on power magnitude and load class (e.g., light residential, commercial, heavy inductive/motor).
-3. **Feeder / Transformer Secondary Boundary Metering**: Complete feeder head and transformer secondary measurements capture total system power flow and high-frequency transient waveforms ($V_{abc}(t), I_{abc}(t)$).
+##### Consumer Smart-Meter Measurements
+Selected candidate consumer nodes (36% coverage) are instrumented with smart meters to acquire:
+  Three-phase voltage magnitude and phase angle
+  Three-phase current magnitude and phase angle
+  Active power (P), Reactive power (Q), Apparent power (S), Power factor (PF)
+  Positive-, negative-, and zero-sequence components
 
-#### 3. Graph-Based Reconstruction via Inverse-Similarity Weighting
+##### Transformer Measurements
+Each distribution transformer secondary serves as an edge measurement node representing the boundary interface to the LV network. Measurements include:
+Primary Electrical Measurements
+  Low-voltage terminal voltage magnitude and phase angle
+  Low-voltage terminal current magnitude and phase angle
+  Active power, Reactive power, Apparent power, Power factor
+
+Dynamic Quantities
+  Loading rate, overload duration, load recovery characteristics
+  Transformer temperature
+  High-frequency transient voltage and current waveforms ($V_{abc}(t), I_{abc}(t)$)
+
+#### 3. Network Reconstruction via Inverse-Similarity Weighting
 
 To estimate unmetered consumer units and derive the network load profile:
-1. Construct initial graph $\mathcal{G} = (\mathcal{V}, \mathcal{E})$ from known buses and 36% metered consumer units.
+1. Construct initial network model from known buses and 36% metered consumer units.
 2. Calculate local load group frequencies $f_g^{\mathrm{local}}$ and global distribution frequencies $f_g^{\mathrm{global}}$.
 3. Compute inverse-similarity weights $w_g \propto f_g^{\mathrm{global}} / (f_g^{\mathrm{local}} + \epsilon)$ for sampling candidate energy groups.
-4. Compute power residual $\Delta P = P_{\mathrm{feeder}} - \sum_{v \in \mathcal{V}_{\mathrm{metered}}} P_v$.
-5. Expand the graph by selecting existing branches without replacement (non-resampling sequence memory within an expansion cycle), replicating them into random network nodes, and adding unmetered consumer units sampled according to inverse-similarity weights $w_g$ until reconstructed load satisfies $P_{\mathrm{feeder}}$.
+4. Compute power residual $\Delta P = P_{\mathrm{feeder}} - \sum P_v$.
+5. Reconstruct unmetered consumer units sampled according to inverse-similarity weights $w_g$ until reconstructed load satisfies $P_{\mathrm{feeder}}$.
 
 #### 4. Simulation Framework and Datasets
 
-The co-simulation framework generates four distinct datasets to evaluate graph-based realization and transient observability:
+The co-simulation framework generates four distinct datasets to evaluate load frequency reconstruction and transient observability:
 
-1. **Dataset 1 (Graph Realization Dataset with Load Groups)**: Evaluates estimation of unmetered consumer units ($\hat{N}_{\mathrm{unmetered}}$) and total consumer units ($\hat{N}_{\mathrm{total}}$) under 36% consumer coverage using inverse-similarity weighted load group reconstruction.
+1. **Dataset 1 (Load Frequency Reconstruction Dataset)**: Evaluates estimation of unmetered consumer units ($\hat{N}_{\mathrm{unmetered}}$) and total consumer units ($\hat{N}_{\mathrm{total}}$) under 36% consumer coverage using inverse-similarity weighted load group reconstruction.
    - **Ground-Truth Target Variables:** `gt_scenario_id`, `gt_feeder_id`, `known_number_of_buses`, `gt_total_consumer_units`, `gt_metered_consumer_units`, `gt_unmetered_consumer_units`, `gt_r_eq_ohm`, `gt_x_eq_ohm`, `gt_z_eq_ohm`.
    - **Estimator Predictions:** `est_total_consumer_units`, `est_metered_consumer_units`, `est_unmetered_consumer_units`, `est_unmetered_power_kw`, `est_r_eq_ohm`, `est_x_eq_ohm`, `est_z_eq_ohm`.
 
@@ -202,3 +224,24 @@ The co-simulation framework generates four distinct datasets to evaluate graph-b
 3. **Dataset 3 (Question 2 Time Shift Operation Dataset)**: Evaluates residual magnitude variation under time shift operations ($t_{\mathrm{offset}} = 0.0\ \mathrm{s}$ vs $t_{\mathrm{offset}} > 0.0\ \mathrm{s}$) using dataset 3.
 
 4. **Dataset 4 (Question 3 Transformer Specification Dataset)**: Evaluates how transformer specification variations affect event pair observability across load-load, fault-fault, and mixed pairs using dataset 4.
+
+#### 5. Statistical Testing for Datasets 1, 2, 3, and 4
+
+##### Statistical Testing for Dataset 1
+Dataset 1 statistical analysis (`src/statistics/correlation.py`) evaluates the accuracy of `LoadFrequencyReconstructionEstimator` in recovering unmetered consumer units ($\hat{N}_{\mathrm{unmetered}}$) and network load parameters across 3 feeder subgroups (`feeder_1`, `feeder_2`, `feeder_3`).
+- **Mean Absolute Error (MAE):** Evaluates unmetered consumer unit estimation accuracy $\mathrm{MAE}_{N_{\mathrm{unmetered}}} = \frac{1}{N} \sum |\hat{N}_{\mathrm{unmetered},i} - N_{\mathrm{unmetered},i}|$.
+- **Root Mean Squared Error (RMSE):** Evaluates equivalent impedance estimation accuracy ($\mathrm{RMSE}_R, \mathrm{RMSE}_X, \mathrm{RMSE}_Z$).
+
+##### Statistical Testing for Dataset 2
+Factorial ANOVA analysis (`src/statistics/q1_event_pair_analysis.py`) evaluates event pair observability across pair categories (`load_load`, `fault_fault`, `load_fault`) using Dataset 2 under fixed baseline transformer specs and zero time shift:
+- **Main Effect:** Evaluates $F_{\mathrm{voltage}}, p_{\mathrm{voltage}}$ and $F_{\mathrm{current}}, p_{\mathrm{current}}$ to test observability differences across pair categories.
+
+##### Statistical Testing for Dataset 3
+Levene / Brown-Forsythe variance analysis (`src/statistics/q2_time_shift_analysis.py`) evaluates residual magnitude variation under time shift operations ($t_{\mathrm{offset}} = 0$ vs $t_{\mathrm{offset}} > 0$) using Dataset 3 across:
+- (i) Load switch event pairs
+- (ii) Line fault event pairs
+- (iii) Across load switch and fault pairs
+
+##### Statistical Testing for Dataset 4
+One-Way ANOVA testing (`src/statistics/q3_transformer_spec_analysis.py`) evaluates how transformer specification variations affect observability across pair categories using Dataset 4:
+- **Transformer Spec Effect:** Measures $F_{\mathrm{spec}}, p_{\mathrm{spec}}$ across transformer specifications (`tx_spec_std_1500kva`, `tx_spec_high_z_1200kva`, `tx_spec_low_loss_2000kva`) under zero time shift.
