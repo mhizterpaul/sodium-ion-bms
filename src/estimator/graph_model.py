@@ -8,6 +8,7 @@ class ConsumerUnitNode:
     is_metered: bool
     nominal_kw: float
     measured_kw: float = 0.0
+    load_group: str = "residential_light"
     phase_config: str = "3-phase"
 
 @dataclass

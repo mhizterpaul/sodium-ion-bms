@@ -110,21 +110,30 @@ where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered
 
 ---
 
-## Distribution System State Estimation Using Graph-Based Realization and LV Transformer Signal Processing
+## DSSE using Load Frequency Reconstruction and LV Transformer Signal Processing
 
-In this research, state estimation in partially observed low-voltage (LV) distribution networks is accomplished using 36% consumer meter measurements and feeder head / boundary transformer measurements. Meters are used to estimate the number of unknown (unmetered) consumer units and their associated load contribution.
+In this research, state estimation in partially observed low-voltage (LV) distribution networks is accomplished using 36% consumer meter measurements and feeder head / boundary transformer measurements. Smart meters are used to estimate the number of unknown (unmetered) consumer units.
 
-The estimator models the known network as a graph $\mathcal{G} = (\mathcal{V}, \mathcal{E})$ and extends this graph network by exploring existing branches and replicating these branches into random nodes of the network. A non-resampling sequence memory ensures branches are not resampled in each expansion cycle until the graph flow matches the feeder measurement readings.
+We estimate system states by representing the known network using load groups (representative energy classes or load profiles derived from smart meter observations). From the 36% consumer meter measurements, we extract the frequency of each representative energy group across the three feeders and global distribution system.
+
+We reconstruct the LV network using **inverse-similarity weighting of local group frequency**:
+
+[ w_g \propto \frac{f_g^{\mathrm{global}}}{f_g^{\mathrm{local}} + \epsilon} ]
+
+where $f_g^{\mathrm{local}}$ is the local frequency of load group $g$ in the metered 36% sample, and $f_g^{\mathrm{global}}$ is the global distribution frequency across the system. This sampling weighting ensures that under-represented energy groups in local observations are prioritized during graph extension, while satisfying both local and global distributions for a sample size large enough to satisfy the feeder head measurements for the LV network.
+
+We compare the estimated network state against ground truth and derive the load profile of the network by exploring transformer transients using Datasets 2, 3, and 4.
 
 The mathematical formulation for graph-based consumer unit realization is:
 
-[ \hat{N}_{\mathrm{unmetered}}, \hat{P}_{\mathrm{unmetered}} = \Phi_{\mathrm{graph}}\left( M_{36\%}, M_{\mathrm{feeder}}; \mathcal{G}_{\mathrm{known}} \right) ]
+[ \hat{N}_{\mathrm{unmetered}}, \hat{P}_{\mathrm{unmetered}} = \Phi_{\mathrm{graph}}\left( M_{36\%}, M_{\mathrm{feeder}}; \mathcal{G}_{\mathrm{known}}, w_g \right) ]
 
 where:
-- $M_{36\%}$ denotes synchronized observations from the 36% instrumented consumer meters;
+- $M_{36\%}$ denotes observations from 36% instrumented consumer smart meters;
 - $M_{\mathrm{feeder}}$ denotes total feeder head / transformer secondary readings;
 - $\mathcal{G}_{\mathrm{known}}$ represents the known LV network graph;
-- $\hat{N}_{\mathrm{unmetered}}$ is the predicted number of unmetered consumer units;
+- $w_g$ represents inverse-similarity weights for load group sampling;
+- $\hat{N}_{\mathrm{unmetered}}$ is the estimated number of unmetered consumer units;
 - $\hat{P}_{\mathrm{unmetered}}$ is the estimated active power load profile of unmetered consumer units.
 
 Detailed physical parameters for the upstream station, substation transformer, and LV networks are documented in `docs/specs/upstream_distribution_station.md`, `docs/specs/upstream_transformer.md`, and `docs/specs/lv1/*`, `docs/specs/lv2/*`, `docs/specs/lv3/*`.
@@ -163,31 +172,30 @@ The plant model contains strictly distribution network elements and local source
 * **Fixed Set of Transformers**: Step-down 11/0.415 kV distribution transformers (`trans1`, `trans2`, `trans3`).
 * **Consumer Load Circuits**: Consumer equipment circuits implemented across OpenDSS and ATP-EMTP (`ac_motor`, `dc_motor_inverter`, `microwave`, `induction_plate`, `compressor`, `audio_amplifier`, `ups`, `industrial_fan`).
 
-#### 2. 36% Sensing Architecture & Measurement Strategy
+#### 2. 36% Sensing Architecture & Load Group Extraction
 
-Measurements are acquired from a partial 36% consumer metering coverage layer combined with feeder boundary meters:
+Measurements are acquired from a 36% consumer metering coverage layer combined with feeder boundary meters:
 
 1. **36% Consumer Smart-Meter Coverage**: Exactly 36% of consumer nodes are instrumented with smart meters to measure phase voltages, currents, active power, and reactive power.
-2. **Feeder / Transformer Secondary Boundary Metering**: Complete feeder head and transformer secondary measurements capture total system power flow and high-frequency transient waveforms ($V_{abc}(t), I_{abc}(t)$).
+2. **Representative Load Groups / Energy Classes**: Metered consumers are categorized into load groups based on power magnitude and load class (e.g., light residential, commercial, heavy inductive/motor).
+3. **Feeder / Transformer Secondary Boundary Metering**: Complete feeder head and transformer secondary measurements capture total system power flow and high-frequency transient waveforms ($V_{abc}(t), I_{abc}(t)$).
 
-#### 3. Graph-Based Expansion & State Estimation Algorithm
+#### 3. Graph-Based Reconstruction via Inverse-Similarity Weighting
 
-To estimate unmetered consumer units and derive the load profile of the network:
+To estimate unmetered consumer units and derive the network load profile:
 1. Construct initial graph $\mathcal{G} = (\mathcal{V}, \mathcal{E})$ from known buses and 36% metered consumer units.
-2. Compute power residual $\Delta P = P_{\mathrm{feeder}} - \sum_{v \in \mathcal{V}_{\mathrm{metered}}} P_v$.
-3. While $\Delta P > \epsilon$:
-   - Select an existing branch $e \in \mathcal{E}$ from memory without replacement (ensuring non-resampling within an expansion cycle).
-   - Replicate branch $e$ and attach it to a randomly selected node $u \in \mathcal{V}$.
-   - Add candidate unmetered consumer unit node $v_{\mathrm{new}}$ with nominal equipment load profile.
-   - Update candidate power flow until estimated feeder load matches $P_{\mathrm{feeder}}$.
+2. Calculate local load group frequencies $f_g^{\mathrm{local}}$ and global distribution frequencies $f_g^{\mathrm{global}}$.
+3. Compute inverse-similarity weights $w_g \propto f_g^{\mathrm{global}} / (f_g^{\mathrm{local}} + \epsilon)$ for sampling candidate energy groups.
+4. Compute power residual $\Delta P = P_{\mathrm{feeder}} - \sum_{v \in \mathcal{V}_{\mathrm{metered}}} P_v$.
+5. Expand the graph by selecting existing branches without replacement (non-resampling sequence memory within an expansion cycle), replicating them into random network nodes, and adding unmetered consumer units sampled according to inverse-similarity weights $w_g$ until reconstructed load satisfies $P_{\mathrm{feeder}}$.
 
 #### 4. Simulation Framework and Datasets
 
 The co-simulation framework generates four distinct datasets to evaluate graph-based realization and transient observability:
 
-1. **Dataset 1 (Graph-Based Unmetered Consumer Unit Realization Dataset)**: Focuses on estimating the number of unmetered consumer units ($\hat{N}_{\mathrm{unmetered}}$) and total consumer units ($\hat{N}_{\mathrm{total}}$) under 36% consumer meter coverage and feeder readings.
+1. **Dataset 1 (Graph Realization Dataset with Load Groups)**: Evaluates estimation of unmetered consumer units ($\hat{N}_{\mathrm{unmetered}}$) and total consumer units ($\hat{N}_{\mathrm{total}}$) under 36% consumer coverage using inverse-similarity weighted load group reconstruction.
    - **Ground-Truth Target Variables:** `gt_scenario_id`, `gt_feeder_id`, `known_number_of_buses`, `gt_total_consumer_units`, `gt_metered_consumer_units`, `gt_unmetered_consumer_units`, `gt_r_eq_ohm`, `gt_x_eq_ohm`, `gt_z_eq_ohm`.
-   - **Estimator Predictions:** `est_total_consumer_units`, `est_unmetered_consumer_units`, `est_r_eq_ohm`, `est_x_eq_ohm`, `est_z_eq_ohm`.
+   - **Estimator Predictions:** `est_total_consumer_units`, `est_metered_consumer_units`, `est_unmetered_consumer_units`, `est_unmetered_power_kw`, `est_r_eq_ohm`, `est_x_eq_ohm`, `est_z_eq_ohm`.
 
 2. **Dataset 2 (Question 1 Event Pair Observability Dataset)**: Evaluates event pair observability across load-load, fault-fault, and load-fault pairs using 36% consumer coverage and feeder measurements under fixed baseline transformer specs and zero time shift.
 
