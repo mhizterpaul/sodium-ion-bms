@@ -273,46 +273,14 @@ class HierarchicalOptimizer:
         self.base_values = dict(self.base_params)
         self.derived = get_derived_parameters()
         options = {"SEI": "solvent-diffusion limited", "loss of active material": "stress-driven", "thermal": "lumped"}
-        self.model = pybamm.lithium_ion.DFN(options)
+        self.model = pybamm.sodium_ion.DFN(options)
         
         self.solver_kwargs = {"rtol": 1e-7, "atol": 1e-9, "options": {"dt_max": 5.0}}
 
-        self.runner = SimulationRunner(self.model, pybamm.IDAKLUSolver, self.solver_kwargs)
+        self.runner = #(self.model, pybamm.IDAKLUSolver, self.solver_kwargs)
         self.mech_model = ThermoelasticStrainModel()
 
-
-    def simulate(self, params: pybamm.ParameterValues, c_rate: float = 1.0, return_sol: bool = False) -> Dict[str, Any]:
-        res = self.runner.run_simulation(params, c_rate)
-        if not res["success"]:
-            print(res["reason"])
-            return res
-
-        sol = res.get("sol")
-        metrics = post_process_sol(res, return_sol=return_sol)
-
-        # Dispose Solution
-        if not return_sol:
-            if sol is not None:
-                try:
-                    if hasattr(sol, "_all_models"):
-                        sol._all_models = []
-                except Exception:
-                    pass
-                del sol
-                res["sol"] = None
-
-        # Clear PyBaMM parameter values substitutor cache
-        try:
-            if hasattr(params, "_processor") and params._processor is not None:
-                params._processor.clear_cache()
-        except Exception:
-            pass
-
-        return metrics
-
     def evaluate_stability_pde(self, params: pybamm.ParameterValues, mode: str, c_rate: float = 1.0) -> Tuple[bool, float]:
-        res = self.simulate(params, c_rate=c_rate, return_sol=True)
-        if not res["success"]: return False, -1e9
         try:
             mech_res = self.mech_model.solve_strain(res["sol"], params, c_rate=c_rate)
             max_strain = mech_res["max_strain"]
