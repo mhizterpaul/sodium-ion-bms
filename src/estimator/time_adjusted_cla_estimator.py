@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import numpy as np
-from src.estimator.load_group import ConsumerLoadPremises, ConsumerLoadClassModel
+from src.estimator.cla_estimator import ConsumerLoadPremises, ConsumerLoadClassModel
 
 @dataclass
 class TimeAdjustedCLAEstimate:

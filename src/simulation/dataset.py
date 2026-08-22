@@ -21,8 +21,7 @@ from src.transient.events import (
     EquipmentLineFaultCoEvent,
     LineFaultLineFaultCoEvent
 )
-from src.estimator.load_group import ConsumerLoadPremises
-from src.estimator.cla_estimator import ClusterLoadAllocationEstimator
+from src.estimator.cla_estimator import ConsumerLoadPremises, ClusterLoadAllocationEstimator
 from src.estimator.time_adjusted_cla_estimator import TimeAdjustedCLAEstimator
 from src.power_plant.transformers import TRANSFORMER_MODELS, BASELINE_TRANSFORMER_MODEL
 
@@ -226,10 +225,10 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
             gt_unmetered_energy_kwh = round(gt_total_energy_kwh * 0.64, 4)
 
             # Technical losses = transformer losses + line losses
-            transformer_loss_kwh = 0.02 * gt_total_energy_kwh # 2% transformer loss
-            line_loss_kwh = 0.03 * gt_total_energy_kwh # 3% line loss
-            gt_tech_loss_kwh = round(transformer_loss_kwh + line_loss_kwh, 4) # 5% total technical loss
-            gt_non_tech_loss_kwh = round(0.08 * gt_total_energy_kwh, 4) # 8% non-technical loss/theft
+            transformer_loss_kwh = 0.02 * gt_total_energy_kwh
+            line_loss_kwh = 0.03 * gt_total_energy_kwh
+            gt_tech_loss_kwh = round(transformer_loss_kwh + line_loss_kwh, 4)
+            gt_non_tech_loss_kwh = round(0.08 * gt_total_energy_kwh, 4)
 
             feeder_supply_energy_kwh = gt_total_energy_kwh + gt_tech_loss_kwh + gt_non_tech_loss_kwh
 

@@ -267,7 +267,7 @@ Dynamic Quantities
 
 #### 3. Distribution Network Simulation
 
-The simulation involves first assigning consumer load classes to consumer load circuits. The 3 LV transformer models have fixed varied specifications. We take energy consumption from the metered consumer load circuits for time $dt$, and construct Dataset 1 which includes the assigned classes and the energy consumption of the metered group in the network. We compute baseline CLA error and time-adjusted CLA error, considering non-technical losses included in the model. We generated 3 datasets including consumer load circuit switch transient co-events under 3 network conditions, and analyze the observability of these events from which we compute the error correction factor of transformer transients-based consumer load prediction on time-adjusted CLA error. The simulation is performed using OpenDSS and ATP-EMTP.
+The simulation involves first assigning consumer load classes to consumer load circuits. The 3 LV transformer models have fixed varied specifications as detailed in `docs/specs/lv1/lv_transformer.md`, `docs/specs/lv2/lv_transformer.md`, and `docs/specs/lv3/lv_transformer.md`. We take energy consumption from the metered consumer load circuits for time $dt$, and construct Dataset 1 which includes the assigned classes and the energy consumption of the metered group in the network. We compute baseline CLA error and time-adjusted CLA error, considering non-technical losses included in the model. We generated 3 datasets including consumer load circuit switch transient co-events under 3 network conditions, and analyze the observability of these events from which we compute the error correction factor of transformer transients-based consumer load prediction on time-adjusted CLA error. The simulation is performed using OpenDSS and ATP-EMTP.
 
 1. **Dataset 1**: Focuses on Cluster Load Allocation (CLA) energy estimation.
    - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_feeder_id`, `known_number_of_buses`, `known_number_of_branches`, `gt_total_consumer_energy_kwh`, `gt_metered_consumer_energy_kwh`, `gt_unmetered_consumer_energy_kwh`, `gt_technical_loss_kwh` (transformer loss + line loss), `gt_non_technical_loss_kwh`.
@@ -281,25 +281,7 @@ The simulation involves first assigning consumer load classes to consumer load c
    - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_meter_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`, `gt_time_offset_s`.
    - **Observation Features ($M_{\mathrm{meter}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across the 3 phases. Uses a fixed baseline transformer specification.
 
-4. **Dataset 4**: Evaluates how transformer specification affects the observability of line fault pairs, load switch pairs, and mixed load-fault pairs. Featuring varying transformer specifications:
-
-| Parameter | Specification Variant 1 (`trans1`) | Specification Variant 2 (`trans2`) | Specification Variant 3 (`trans3`) |
-| --- | --- | --- | --- |
-| Regulation | Standard | High-Impedance | Low-Loss |
-| Full-load Copper Loss | 50.0 kW (0.667%) | 60.0 kW (0.750%) | 40.0 kW (0.500%) |
-| Copper Loss @80% Loading | 32.0 kW | 38.4 kW | 25.6 kW |
-| Percentage Impedance ($Z_{\%}$) | 8.35% | 10.03% | 6.51% |
-| Resistance ($R_{\mathrm{tr}}$) | 0.60% | 0.80% | 0.40% |
-| Leakage Reactance ($X_{\mathrm{tr}}$) | 8.33% | 10.00% | 6.50% |
-| X/R Ratio | 13.88 | 12.50 | 16.25 |
-| Positive Sequence Resistance | 0.0060 pu | 0.0080 pu | 0.0040 pu |
-| Positive Sequence Reactance | 0.0833 pu | 0.1000 pu | 0.0650 pu |
-| Zero Sequence Resistance | 0.0120 pu | 0.0160 pu | 0.0080 pu |
-| Zero Sequence Reactance | 0.0450 pu | 0.0550 pu | 0.0350 pu |
-| Excitation Current ($I_{\mathrm{mag}}$) | 0.80% | 1.00% | 0.60% |
-| Magnetizing Reactance ($X_m$) | 250.0 pu | 220.0 pu | 300.0 pu |
-| Core-loss Resistance ($R_c$) | 800.0 pu | 750.0 pu | 900.0 pu |
-
+4. **Dataset 4**: Evaluates how transformer specification affects the observability of line fault pairs, load switch pairs, and mixed load-fault pairs. Featuring varying transformer specifications whose physical, sequence, and capability parameters are explicitly specified in `docs/specs/lv1/lv_transformer.md`, `docs/specs/lv2/lv_transformer.md`, and `docs/specs/lv3/lv_transformer.md`.
    - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_meter_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`.
    - **Observation Features ($M_{\mathrm{meter}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across the 3 phases. Uses fixed $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$.
 
