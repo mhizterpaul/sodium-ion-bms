@@ -48,37 +48,6 @@ def carbon_percolation_conductivity(fraction: float, base_cond: float = 100.0) -
     phi_c = 0.03
     return base_cond * (max(fraction - phi_c, 0.0) + 1e-6) ** 1.8
 
-def validate_params(pv: Dict[str, Any], verbose: bool = False):
-    required = ["Nominal cell capacity [A.h]", "Positive electrode exchange-current density [A.m-2]"]
-    derived = get_derived_parameters()
-
-    for r in required:
-        if r not in pv:
-            if verbose: print(f"DEBUG: validate_params failed: {r} missing")
-            return False
-        val = pv[r]
-        if callable(val):
-            sig = inspect.signature(val)
-            params_list = list(sig.parameters.keys())
-            grounded_map = {
-                "c_e": 1200.0,
-                "c_s_surf": 0.5 * derived.get("c_max_p", 25000.0),
-                "c_s_max": derived.get("c_max_p", 25000.0),
-                "T": 298.15,
-                "sto": 0.5
-            }
-            args = [grounded_map.get(p, 0.5) for p in params_list]
-            try:
-                res = val(*args)
-                actual_val = float(res.value) if hasattr(res, "value") else float(res)
-            except Exception as e:
-                if verbose: print(f"DEBUG: validate_params callable {r} failed: {e}")
-                actual_val = 1.0
-        else:
-            actual_val = val
-        if actual_val <= 0:
-            if verbose: print(f"DEBUG: validate_params failed: {r} <= 0 ({actual_val})")
-            return False
 
     if "Positive particle diffusivity [m2.s-1]" in pv:
         D_p = pv["Positive particle diffusivity [m2.s-1]"]
@@ -129,19 +98,6 @@ def validate_params(pv: Dict[str, Any], verbose: bool = False):
 
     return True
 
-
-class MultiplicativeWrapper:
-    def __init__(self, orig_func, factor):
-        self.orig_func = orig_func
-        self.factor = factor
-        try:
-            self.__signature__ = inspect.signature(orig_func)
-            self.__name__ = getattr(orig_func, "__name__", "wrapper")
-            self.__doc__ = getattr(orig_func, "__doc__", "")
-        except Exception:
-            pass
-    def __call__(self, *args, **kwargs):
-        return self.orig_func(*args, **kwargs) * self.factor
 
 class VolumeChangeModel:
     def __init__(self, factor=0.1):
@@ -226,13 +182,6 @@ class ParamTransform:
 
     def get_parameter_values(self) -> pybamm.ParameterValues:
         derived = self.derived
-
-        self.values_dict.setdefault("Negative electrode volume change", VolumeChangeModel(0.1))
-        self.values_dict.setdefault("Positive electrode volume change", VolumeChangeModel(0.1))
-        self.values_dict.setdefault("Cell thermal expansion coefficient [m.K-1]", 1e-6)
-        self.values_dict.setdefault("Number of cells connected in series to make a battery", 1)
-        self.values_dict.setdefault("Number of strings connected in parallel to make a battery", 1)
-
         c_max_p = self.values_dict.get("Maximum concentration in positive electrode [mol.m-3]", derived["c_max_p"])
         c_max_n = self.values_dict.get("Maximum concentration in negative electrode [mol.m-3]", derived["c_max_n"])
         self.values_dict["Initial concentration in positive electrode [mol.m-3]"] = 0.5 * c_max_p
@@ -247,19 +196,6 @@ class ParamTransform:
                 self.values_dict[key] = MultiplicativeWrapper(original, factor)
             else:
                 self.values_dict[key] *= factor
-
-        self.values_dict.setdefault("Cell volume [m3]", derived["cell_volume"])
-        self.values_dict.setdefault("Cell cooling surface area [m2]", derived["surface_area"])
-        self.values_dict.setdefault("Total heat transfer coefficient [W.m-2.K-1]", derived["total_htc"])
-        self.values_dict.setdefault("SEI solvent diffusivity [m2.s-1]", derived["sei_solvent_diffusivity"])
-        self.values_dict.setdefault("Bulk solvent concentration [mol.m-3]", derived["bulk_solvent_concentration"])
-
-        self.values_dict.setdefault("Negative current collector density [kg.m-3]", derived["cu_density"])
-        self.values_dict.setdefault("Positive current collector density [kg.m-3]", derived["al_density"])
-        self.values_dict.setdefault("Negative current collector specific heat capacity [J.kg-1.K-1]", derived["cu_cp"])
-        self.values_dict.setdefault("Positive current collector specific heat capacity [J.kg-1.K-1]", derived["al_cp"])
-        self.values_dict.setdefault("Negative current collector thermal conductivity [W.m-1.K-1]", derived["cu_tc"])
-        self.values_dict.setdefault("Positive current collector thermal conductivity [W.m-1.K-1]", derived["al_tc"])
 
         return pybamm.ParameterValues(self.values_dict)
 
@@ -347,8 +283,6 @@ class HierarchicalOptimizer:
         self.runner = SimulationRunner(self.model, pybamm.IDAKLUSolver, self.solver_kwargs)
         self.mech_model = ThermoelasticStrainModel()
 
-    def run(self):
-        return run_workflow(self.engine)
 
     def simulate(self, params: pybamm.ParameterValues, c_rate: float = 1.0, return_sol: bool = False) -> Dict[str, Any]:
         res = self.runner.run_simulation(params, c_rate)
@@ -472,35 +406,6 @@ def geometry_rounding(x: np.ndarray) -> np.ndarray:
         elif idx in [4, 5]:
             x_rounded[idx] = np.round(val * 1e8) / 1e8
     return x_rounded
-
-def _optimize_mode_pipeline_worker(job):
-    """ThreadPool worker running step 1 and step 2 parameters co-optimization sequentially for a single objective mode."""
-    i, mode, x_base, deltas, G, STRUCT_INDICES, MAT_INDICES, engine = job
-
-    local_optimizer = None
-    problem = None
-    problem_m = None
-    cem = None
-    cem_m = None
-
-    try:
-    
-
-        return x_opt_final
-    finally:
-        # Stage Boundary Cleanup: delete Solution, processed model, discretisation, mesh, clear PyBaMM caches, gc.collect()
-        if "problem" in locals() and problem is not None:
-            del problem
-        if "problem_m" in locals() and problem_m is not None:
-            del problem_m
-        if "local_optimizer" in locals() and local_optimizer is not None:
-            if hasattr(local_optimizer, "runner") and local_optimizer.runner is not None:
-                
-            del local_optimizer
-        if "cem_m" in locals():
-            del cem_m
-        if "cem" in locals():
-            del cem
 
  
 
