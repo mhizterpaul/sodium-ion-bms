@@ -1,4 +1,4 @@
-# Distribution System State Estimation Using Wavelet Decomposition with NFPP Sodium-Ion BESS Performance Evaluation
+# Advanced Distribution System State Estimation and NFPP Sodium-Ion Energy Storage Evaluation for Distribution Networks
 
 ## Methodology
 
@@ -109,16 +109,50 @@ where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered
 
 ---
 
-## Distributed System State Estimation Using Wavelet Decomposition (core contribution)
+## Time-Adjusted Cluster Load Allocation with Error Correction in Sparsely Metered Distribution Networks (core contribution)
 
-Unlike conventional Distribution System State Estimation (DSSE), where the complete network topology and bus model are assumed known and estimation is inherently limited to steady-state estimation, this research considers a partially observable network in which only the upstream distribution station is known while the downstream network partially hidden and extends the state estimation to the dynamic domain using lv distribution transformer transients.
+In a sparsely metered distribution system, the utility may know:
+feeder/transformer energy supplied;
+measurements from a relatively small subset of consumers;
+some information about consumer premises;
+historical consumption patterns/classes;
+but does not know the actual consumption of every customer.
+the  formulation is:
+\[ E_U = E_T - E_M - E_L \]
+where:
+\(E_T\) = transformer/feeder energy,
+\(E_M\) = measured customer energy,
+\(E_L\) = estimated technical losses,
+\(E_U\) = energy attributable to unknown/unmetered customers.
+You can then estimate an expected consumption for each unmetered customer:
+\[ w_i=\mathbb E[E_i\mid C_i,X_i] \]
+where \(X_i\) could include:
+customer class,
+historical billing,
+premises characteristics,
+connected load,
+time of year,
+supply availability,
+transformer loading,
+feeder characteristics.
+Then:
+\[ \boxed{ \hat E_i = E_U \frac{w_i}{\sum_{j\in U}w_j} } \]
+with time-adjusted consumer/load-class information.
+Suppose consumer \(i\) belongs to class \(c\), with metered class profile
+\[ \mu_c(t). \]
+For an unmetered consumer, rather than assigning a static class average, estimate:
+\[ \hat E_i = \int_{t_0}^{t_1} \alpha_i(t)\mu_{c_i}(t)\,dt \]
+where \(\alpha_i(t)\) is your time adjustment factor for observed metered-class behaviour;
+Let the actual feeder energy be
+\[ E_F = E_L+E_{NTL}+E_T \]
+where:
+\(E_L\): legitimate consumer consumption;
+\(E_{NTL}\): technical network losses;
+\(E_T\): non-technical losses/theft.
+Therefore the allocation error is:
+\[ E_F-\hat E_L = \hat E_{loss}+\hat E_T. \]
+we report the baseline CLA error and time adjusted CLA error, and derive transient-assisted CLA error correction factor
 
-The realization problem is formulated as \[X_R=\Phi(M)\] where
-* \(M\) denotes synchronized measurements acquired at the meters and distribution transformers,
-* \(X_R\) is a latent realization state describing the hidden network,
-* The aim is to derive \(\Phi(\cdot)\) realization operator, empirically from simulated operating scenarios.
-
-The emphasis is therefore on discovering which hidden network properties are electrically observable at the distribution station interface and how these observables evolve under changing operating conditions.
 
 ### System Model
 
@@ -141,7 +175,7 @@ It consists of:
  Distribution  Distribution  Distribution
  Transformer   Transformer   Transformer
       │           │           │
- Unknown LV   Unknown LV   Unknown LV
+     LV           LV          LV
  Distribution Distribution Distribution
   Networks     Networks     Networks
 ```
@@ -174,48 +208,38 @@ The metering hierarchy is organized as follows:
 ```text
                Known MV feeder
                       │
+                 PCC / Edge
+                 Smart Meter
                       │
                 ┌─────┴─────┐
                 │Transformer│
                 └─────┬─────┘
                       │
-                  PCC / Edge
-                 Smart Meter
                       │
              ┌────────┴────────┐
              │                 │
-           Line A            Line B
-             │                 │
             PCC                |
           Smart Meter          |
-            │                  │
-        ┌───┴───┐          ┌───┴───┐
-        │       │          │       │
+             │                 │
+           Consumer          Consumer
+            Unit A            Unit B
+                     
 ```
 
 Selected candidate PCCs are instrumented with smart meters to acquire:
 
 Electrical Quantities
-  Three-phase voltage magnitude and phase angle
-  Three-phase current magnitude and phase angle
   Active power (P)
   Reactive power (Q)
   Apparent power (S)
   Power factor (PF)
 
-Network Quality Metrics
-  Frequency
-  Rate of Change of Frequency (ROCOF)
-  Voltage unbalance
-  Current unbalance
-  Positive-, negative-, and zero-sequence components
-
 2. Transformer Measurements
 
 Each distribution transformer serves as an edge measurement node representing the interface to an unknown downstream network. Measurements include:
 Primary Electrical Measurements
-  High-voltage terminal voltage magnitude and phase angle
-  High-voltage terminal current magnitude and phase angle
+  terminal voltage magnitude and phase angle
+  terminal current magnitude and phase angle
   Active power
   Reactive power
   Apparent power
@@ -223,64 +247,46 @@ Primary Electrical Measurements
 
 Dynamic Quantities
   Loading rate
-  Overload duration
-  Load recovery characteristics
   Transformer temperature
   Transient voltage and current waveforms
 
-#### 3. Distribution Network Simulation And Station Modeling
+#### 3. Distribution Network Simulation
 
-The simulation framework systematically perturbs the unknown downstream network while maintaining a fixed upstream distribution station. OpenDSS is used to simulate the known upstream station together with the hidden downstream distribution network and Line fault event pairs (`fault_fault`)— co-occurring network line faults (`LG`, `LL`, `LLG`, `LLL`); A transient simulator (`ATPRunner`) executes ATP-EMTP cases built via `ATPCaseBuilder` to acquire high-fidelity 3-phase electromagnetic transient (EMT) waveforms for switching events.
-The code generates scenario datasets by:
-* building hidden downstream topologies with radial and optional ring configurations;
-* modifying the number of downstream buses ($N_b$) and network connectivity ($N_l$);
-* assigning transformer loading to each boundary transformer in the range 30–75 % across multi-operating-point sweeps;
-* instantiating event pairs for 3 distinct pair categories across load switches:
-  - (i) **Load switch event pairs (`load_load`)** — co-occurring consumer load switching operations;
-  - (ii) **Across load switch and fault pairs (`load_fault`)** — mixed load switching and line fault co-events;
-* instantiating co-events with time-shifting operations (simultaneous co-events with $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ vs time-shifted co-events with $t_{\mathrm{offset}} > 0.0\,\mathrm{s}$);
-* constructing OpenDSS objects for lines, loads, capacitors, motors, and distributed energy resources.
+The simulation involves first assigning consumer load classes to consumer load circuits, the 3 lv trasnformer models have fixed varied specification, we take energy consumption from the metered consumer load circuits for time dt, we construct dataset 1 which include the assigned classes and the energy consumption of the metered group in the network, we compute baseline cla error and time adjusted cla error, considering non technical losses included in the model. we generated 3 datasets including consumer load circuit switch transient co-events under 3 network conditions, we analyse the observability of these events from which we compute the error correction factor of transformer transients based consumer load prediction on time adjusted cla error. The simulation is performed using OpenDSS and ATP-EMTP.
 
-For each scenario, `CoSimulationRunner.run_scenario`:
-* collects PCC measurements via `get_pcc_measurements()`;
-* builds an ATP event case with `ATPCaseBuilder`;
-* executes ATP-EMTP via Wine using `ATPRunner` and parses raw EMT output into `EMTWaveforms` via `ATPOutputReader`.
+2. **Dataset 2**: Evaluates what type of event pairs are observable across load switch pairs (`load_load`), line fault pairs (`fault_fault`), and mixed load switch and fault pairs (`load_fault`).
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`, 
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across the 3 phases. Uses a fixed baseline transformer specification and fixed $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ 
 
-Measurements captured in each result include:
-* transformer three-phase voltage and current waveforms ($V_{abc}(t), I_{abc}(t)$);
-* active power (`P`), reactive power (`Q`), and apparent power (`S`) at boundary nodes;
-* derived steady-state features, sequence features, transient features, and spectral features.
+3. **Dataset 3**: Evaluates how residual magnitude in pair varies with time shift operation ($t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ vs $t_{\mathrm{offset}} > 0.0\,\mathrm{s}$) across load switch pairs, line fault pairs, and mixed load-fault pairs.
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`,`gt_time_offset_s` 
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across the 3 phases. Uses a fixed baseline transformer specification
 
-The simulation framework generates four distinct, decoupled datasets to evaluate the latent observability and realization problems under different operating conditions:
+4. **Dataset 4**: Evaluates how transformer specification affects the observability of line fault pairs, load switch pairs, and mixed load-fault pairs. Featuring varying transformer specifications:
+| Parameter     
+Regulation  
+Full-load Copper Loss    
+Copper Loss @80% Loading 
+| -------------------- 
+| Percentage Impedance 
+| Resistance           
+| Leakage Reactance    
+| X/R Ratio            
+| Sequence | Resistance | Reactance |
+| -------- | 
+| Positive | 
+| Negative | 
+| Zero     |         
+| ---------------------
+| Excitation Current   
+| Magnetizing Reactance
+| Core-loss Resistance 
 
-1. **Dataset 1 (Scenario-Based Steady-State Realization Dataset)**: Focuses on steady-state network realization and structural state estimation.
-   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_feeder_id`, `gt_topology_type`, `gt_number_of_buses`, `gt_number_of_branches`, `gt_r_eq_ohm`, `gt_x_eq_ohm`, `gt_z_eq_ohm` derived from Kron network reduction of a single specific feeder's hidden LV network.
-   - **Inverse Realization Estimates ($\hat{X}_R$):** `est_number_of_buses`, `est_number_of_branches`, `est_r_eq_ohm`, `est_x_eq_ohm`, `est_z_eq_ohm` derived by the inverse solver `LatentNetworkRealizationSolver`.
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase steady-state time vector (`obs_steady_state_time`), voltage waveforms (`obs_steady_state_voltage_abc`), current waveforms (`obs_steady_state_current_abc`), along with meter-level summary averages (`obs_transX_lv_pcc_voltage_mag_avg`, `obs_transX_lv_pcc_current_mag_avg`, `obs_transX_lv_pcc_p_kw`, `obs_transX_lv_pcc_q_kvar`). Contains no time shift or transformer specification variation.
-
-2. **Dataset 2 (Question 1 Event Pair Observability Dataset)**: Evaluates what type of event pairs are observable across (i) load switch pairs (`load_load`), (ii) line fault pairs (`fault_fault`), and (iii) mixed load switch and fault pairs (`load_fault`).
-   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`, `gt_time_offset_s`.
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`). Uses a fixed baseline transformer specification and fixed $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ (no time shift or transformer spec variation).
-
-3. **Dataset 3 (Question 2 Time Shift Operation Dataset)**: Evaluates how residual magnitude in pair varies with time shift operation ($t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ vs $t_{\mathrm{offset}} > 0.0\,\mathrm{s}$) across (i) load switch pairs, (ii) line fault pairs, and (iii) mixed load-fault pairs.
-   - **Ground-Truth Target Variables ($X_R$):** Same schema as Dataset 2, featuring $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ vs $t_{\mathrm{offset}} = 0.01\,\mathrm{s}$.
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Same complete residual features as Dataset 3. Uses a fixed baseline transformer specification (no transformer spec variation).
-
-4. **Dataset 4 (Question 3 Transformer Specification Dataset)**: Evaluates how transformer specification affects the observability of (i) line fault pairs, (ii) load switch pairs, and (iii) mixed load-fault pairs.
-   - **Ground-Truth Target Variables ($X_R$):** Same schema as Dataset 2, featuring varying transformer specifications (`tx_spec_std_1500kva`, `tx_spec_high_z_1200kva`, `tx_spec_low_loss_2000kva`).
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Same complete residual features as Dataset 3. Uses a fixed time shift $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ (no time shift variation).
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`, 
+   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across the 3 phases. Uses a fixed baseline transformer specification and fixed $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ 
 
 
 #### 4. Statistical Tests for estimated lv network parameters and observable state
-
-##### Dataset 1 Realization Accuracy Testing
-
-Dataset 1 statistical analysis (`src/statistics/correlation.py`) evaluates the accuracy of the inverse realization solver in recovering the hidden distribution network structure and electrical parameters from boundary measurements across 3 feeder subgroups (`feeder_1`, `feeder_2`, `feeder_3`). Metrics evaluated include:
-
-1. **Mean Absolute Error (MAE)** for discrete structural state estimation (bus count $\hat{N}_b$ vs $N_b$, branch count $\hat{N}_l$ vs $N_l$):
-  \[\mathrm{MAE}_{N_b} = \frac{1}{N} \sum_{i=1}^N |  \hat{N}_{b,i} - N_{b,i}|, \qquad \mathrm{MAE}_{N_l}   = \frac{1}{N} \sum_{i=1}^N |\hat{N}_{l,i} - N_{l,i}|\]
-2. **Root Mean Squared Error (RMSE)** for continuous equivalent impedance estimation ($\hat{R}_{\mathrm{eq}}$, $\hat{X}_{\mathrm{eq}}$, $\hat{Z}_{\mathrm{eq}}$):
-  \[\mathrm{RMSE}_{Z} = \sqrt{\frac{1}{N}\sum_{i=1}^N   (\hat{Z}_{\mathrm{eq},i} - Z_{\mathrm{eq},i})^2}\]
 
 ##### Dataset 2 Event Pair Observability Testing 
 
@@ -297,6 +303,6 @@ Levene / Brown-Forsythe variance analysis (`src/statistics/q2_time_shift_analysi
 ##### Dataset 4 Transformer Specification Effect Testing
 
 One-Way ANOVA testing (`src/statistics/q3_transformer_spec_analysis.py`) evaluates how transformer specification variations affect observability across load switch pairs, line fault pairs, and mixed pairs using Dataset 4:
-- **Transformer Spec Effect:** Measures $F_{\mathrm{spec}}, p_{\mathrm{spec}}$ across transformer specifications (`tx_spec_std_1500kva`, `tx_spec_high_z_1200kva`, `tx_spec_low_loss_2000kva`) under zero time shift.
+- **Transformer Spec Effect:** Measures $F_{\mathrm{spec}}, p_{\mathrm{spec}}$ across transformer specifications under zero time shift.
 
 **Limitations:** The validation establishes the practical limits of boundary-based realization and identifies the sensing architecture required for distributed dynamic state estimation in partially observable distribution networks within the limits of the simulated environment.
