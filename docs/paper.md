@@ -153,7 +153,6 @@ Therefore the allocation error is:
 \[ E_F-\hat E_L = \hat E_{loss}+\hat E_T. \]
 we report the baseline CLA error and time adjusted CLA error, and derive transient-assisted CLA error correction factor
 
-
 ### System Model
 
 #### 1. Known Plant for Latent Network Realization
@@ -199,17 +198,15 @@ The plant model contains strictly distribution network elements and local source
 
 #### 2. Measurement Architecture
 
-Measurements are obtained from two sensing layers: PCC line measurements using smart meters and transformer edge monitoring.
+Measurements are obtained from two sensing layers:  smart meters measurement at consumer and feeder edge and transformer edge transient analyzer.
 
-1. PCC Smart-Meter Measurements
-
+1. Smart-Meter Measurements
 The metering hierarchy is organized as follows:
 
 ```text
                Known MV feeder
                       │
-                 PCC / Edge
-                 Smart Meter
+                  Edge Meter
                       │
                 ┌─────┴─────┐
                 │Transformer│
@@ -218,28 +215,26 @@ The metering hierarchy is organized as follows:
                       │
              ┌────────┴────────┐
              │                 │
-            PCC                |
-          Smart Meter          |
+            Smart              |
+            Meter              |
              │                 │
            Consumer          Consumer
             Unit A            Unit B
                      
 ```
 
-Selected candidate PCCs are instrumented with smart meters to acquire:
-
-Electrical Quantities
+Selected candidate units are instrumented with smart meters to acquire:
   Active power (P)
   Reactive power (Q)
   Apparent power (S)
   Power factor (PF)
+  Energy consumption (kWh)
 
 2. Transformer Measurements
-
-Each distribution transformer serves as an edge measurement node representing the interface to an unknown downstream network. Measurements include:
+Each distribution transformer serves as an edge measurement node representing the interface to the downstream network. Measurements include:
 Primary Electrical Measurements
-  terminal voltage magnitude and phase angle
-  terminal current magnitude and phase angle
+  phase voltage magnitude and phase angle
+  phase current magnitude and phase angle
   Active power
   Reactive power
   Apparent power
@@ -254,13 +249,15 @@ Dynamic Quantities
 
 The simulation involves first assigning consumer load classes to consumer load circuits, the 3 lv trasnformer models have fixed varied specification, we take energy consumption from the metered consumer load circuits for time dt, we construct dataset 1 which include the assigned classes and the energy consumption of the metered group in the network, we compute baseline cla error and time adjusted cla error, considering non technical losses included in the model. we generated 3 datasets including consumer load circuit switch transient co-events under 3 network conditions, we analyse the observability of these events from which we compute the error correction factor of transformer transients based consumer load prediction on time adjusted cla error. The simulation is performed using OpenDSS and ATP-EMTP.
 
+1. **Dataset 1**: ...
+
 2. **Dataset 2**: Evaluates what type of event pairs are observable across load switch pairs (`load_load`), line fault pairs (`fault_fault`), and mixed load switch and fault pairs (`load_fault`).
-   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`, 
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across the 3 phases. Uses a fixed baseline transformer specification and fixed $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ 
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_meter_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`, 
+   - **Observation Features ($M_{\mathrm{meter}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across the 3 phases. Uses a fixed baseline transformer specification and fixed $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ 
 
 3. **Dataset 3**: Evaluates how residual magnitude in pair varies with time shift operation ($t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ vs $t_{\mathrm{offset}} > 0.0\,\mathrm{s}$) across load switch pairs, line fault pairs, and mixed load-fault pairs.
-   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`,`gt_time_offset_s` 
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across the 3 phases. Uses a fixed baseline transformer specification
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_meter_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`,`gt_time_offset_s` 
+   - **Observation Features ($M_{\mathrm{meter}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across the 3 phases. Uses a fixed baseline transformer specification
 
 4. **Dataset 4**: Evaluates how transformer specification affects the observability of line fault pairs, load switch pairs, and mixed load-fault pairs. Featuring varying transformer specifications:
 | Parameter     
@@ -282,11 +279,11 @@ Copper Loss @80% Loading
 | Magnetizing Reactance
 | Core-loss Resistance 
 
-   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_pcc_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`, 
-   - **Observation Features ($M_{\mathrm{PCC}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across the 3 phases. Uses a fixed baseline transformer specification and fixed $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ 
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_meter_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`, 
+   - **Observation Features ($M_{\mathrm{meter}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across the 3 phases. Uses fixed $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ 
 
 
-#### 4. Statistical Tests for estimated lv network parameters and observable state
+#### 4. Statistical Tests for lv network observable  using trasnformer transients
 
 ##### Dataset 2 Event Pair Observability Testing 
 
