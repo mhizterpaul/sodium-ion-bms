@@ -274,11 +274,8 @@ class HierarchicalOptimizer:
         self.derived = get_derived_parameters()
         options = {"SEI": "solvent-diffusion limited", "loss of active material": "stress-driven", "thermal": "lumped"}
         self.model = pybamm.lithium_ion.DFN(options)
-
-        if os.environ.get("CEM_FAST_RUN") == "True":
-            self.solver_kwargs = {"rtol": 1e-3, "atol": 1e-4, "options": {"dt_max": 20.0}}
-        else:
-            self.solver_kwargs = {"rtol": 1e-7, "atol": 1e-9, "options": {"dt_max": 5.0}}
+        
+        self.solver_kwargs = {"rtol": 1e-7, "atol": 1e-9, "options": {"dt_max": 5.0}}
 
         self.runner = SimulationRunner(self.model, pybamm.IDAKLUSolver, self.solver_kwargs)
         self.mech_model = ThermoelasticStrainModel()
