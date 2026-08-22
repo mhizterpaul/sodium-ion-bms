@@ -1,4 +1,4 @@
-# Distribution System State Estimation Using Wavelet Decomposition with NFPP Sodium-Ion BESS Performance Evaluation
+# Advanced State Estimation and NFPP Sodium-Ion Energy Storage Evaluation for Distribution Networks
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/mhizterpaul/sodium-ion-ess/blob/main/src/report.ipynb)
 
@@ -11,27 +11,29 @@ A hierarchical multi-stage framework for cell design enhancement:
 
 *   **Parameter Optimization**: Hierarchical search for structural ($\theta_s$) and material ($\theta_m$) parameters using sensitivity-based Jacobian screening and a Sensitivity-Guided Cross-Entropy Method (SG-CEM).
 
-This repository implements an  plant condition–integrated, high-fidelity performance benchmarking of Sodium Iron Pyrophosphate (NFPP) battery energy storage systems (BESS). 
+This repository implements an plant condition–integrated, high-fidelity performance benchmarking of Sodium Iron Pyrophosphate (NFPP) battery energy storage systems (BESS).
 
-### 2. Distribution Network State Estimation & Feature Extraction (Core Contribution)
+### 2. Time-Adjusted Cluster Load Allocation with Error Correction in Sparsely Metered Distribution Networks (Core Contribution)
 
-The primary research focus is the realization of latent network states in a multi-feeder distribution network using boundary measurements and sub-cycle transient realization signatures:
+The primary research focus is distribution network state estimation using Time-Adjusted Cluster Load Allocation (CLA) and transformer dynamic signal processing in sparsely metered distribution networks:
 
-*   **Fixed Upstream Plant**: OpenDSS model incorporating utility swing bus, substation step-down transformer and 3 feeders with a fixed set of distribution transformers acting as measurement boundaries.
+*   **Known Upstream Plant & LV Networks**: OpenDSS model incorporating utility swing bus, substation step-down transformer, and 3 feeders with known radial LV topologies and transformer edge interfaces.
 
-*   **Scenario Generator**: Systematic perturbation of the unknown downstream networks connected to the feeders, featuring linear and non-linear loads, varying live loads, changing line lengths (electrical distance), switching events, and topology reconfigurations (radial vs ring/loop).
+*   **Time-Adjusted Cluster Load Allocation**: Unmetered customer energy allocation ($E_U = E_F - E_M - E_L$) using class-based profile weights, time-adjustment integrals $\alpha_i(t)$, and technical loss accounting ($E_L = E_{\mathrm{transformer\_loss}} + E_{\mathrm{line\_loss}}$).
 
-*   **ATP-EMTP Transient Coupling**: Coupling of sub-cycle transients (such as transformer inrush, capacitor switching, motor starting, temporary faults, and non-linear switching  to extract high-frequency spectral and waveform features).
+*   **ATP-EMTP Transient Coupling**: Coupling of sub-cycle transients (such as equipment switching and explicit line faults) at distribution transformer secondaries to extract high-frequency spectral and waveform residual signatures for transient error correction.
 
-*   **Boundary Measurements**: line and phase angle extraction from OpenDSS.
+*   **Boundary & Consumer Measurements**: 36% consumer smart meter coverage combined with feeder boundary and transformer secondary monitoring.
 
-*   **Feature Tabulation & Rendering**: Export of all steady-state and dynamic parameters directly to CSV, rendering tabulations of transformer parameters and meter parameters in `report.ipynb`.
+*   **Feature Tabulation & Rendering**: Export of all steady-state and dynamic parameters directly to CSV datasets, rendering error metrics and error reduction factor calculations in `report.ipynb`.
 
 ## Repository Structure
 
 - `src/cell_optimization/`: Material selection using the materials dataset, chemical regularization, and parameter optimization scripts.
 - `src/power_plant/`: OpenDSS fixed plant model, measurement extraction, and ATP-EMTP dynamic transient extraction.
-- `src/simulation/`: Scenario generator, perturbed downstream line, load, and switching event.
+- `src/lv_networks/`: Known radial LV network topologies, consumer equipment models, and meter selection routines.
+- `src/estimator/`: Cluster Load Allocation (`cla_estimator.py`) and Time-Adjusted CLA (`time_adjusted_cla_estimator.py`) state estimation engines.
+- `src/simulation/`: Scenario definitions, co-simulation runner, and dataset generation routines.
 - `nfpp_sodium_ion/`: Ready-to-be-published PyBaMM parameter set for NFPP/Hard-Carbon chemistry.
 - `src/report.ipynb`: Orchestration notebook for the complete research pipeline.
 
@@ -54,5 +56,5 @@ jupyter notebook src/report.ipynb
 
 ## References
 
-- **Keywords**: Sodium Iron Pyrophosphate (NFPP), Sodium-Ion Battery, Energy Storage System, Distribution System State Estimation (DSSE), Network Realization, Wavelet Decomposition, Multiresolution Analysis, Distribution Network Observability, Transient Analysis, Statistical Analysis, Microgrid.
-- **Modeling Framework**: PyBaMM (Electrochemical), FEniCSx (Mechanical), OpenDSS (Distribution Power Flow), ATP-EMTP(transformer transients)
+- **Keywords**: Sodium Iron Pyrophosphate (NFPP), Sodium-Ion Battery, Energy Storage System, Distribution System State Estimation (DSSE), Cluster Load Allocation, Time-Adjusted CLA, Transient Analysis, Statistical Analysis.
+- **Modeling Framework**: PyBaMM (Electrochemical), FEniCSx (Mechanical), OpenDSS (Distribution Power Flow), ATP-EMTP (transformer transients).

@@ -4,7 +4,7 @@ from typing import Optional
 from opendssdirect import dss
 from src.power_plant.sources import configure_generator, apply_generator_profile
 from src.power_plant.transformers import get_distribution_transformer_spec
-from src.hidden_network.pcc_meters import extract_consumer_meter_data
+from src.lv_networks.meters import extract_consumer_meter_data
 
 @dataclass
 class OperatingPoint:

@@ -1,4 +1,4 @@
-from src.hidden_network.loads.base import EquipmentCircuit
+from src.lv_networks.loads.base import EquipmentCircuit
 
 def get_industrial_fan(rated_power_kw: float = 20.0) -> EquipmentCircuit:
     """

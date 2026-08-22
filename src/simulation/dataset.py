@@ -7,13 +7,13 @@ from pathlib import Path
 
 from src.simulation.scenario import KnownLVNetworkScenario, SimulationScenario
 from src.simulation.runner import CoSimulationRunner
-from src.hidden_network.topology import (
+from src.lv_networks.topology import (
     generate_known_radial_topology,
     identify_candidate_consumer_meters,
     select_metered_consumers
 )
-from src.hidden_network.loads import distribute_loads
-from src.hidden_network.perturbations import apply_latent_parameter_realization
+from src.lv_networks.loads import distribute_loads
+from src.lv_networks.perturbations import apply_latent_parameter_realization
 from src.transient.events import (
     SingleEquipmentSwitchEvent,
     SingleLineFaultEvent,

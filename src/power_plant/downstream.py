@@ -1,5 +1,5 @@
 from opendssdirect import dss
-from src.hidden_network.topology import generate_known_radial_topology
+from src.lv_networks.topology import generate_known_radial_topology
 
 def build_known_downstream_network(feeder_idx: int, topology: dict = None, loads_dict: dict = None):
     """

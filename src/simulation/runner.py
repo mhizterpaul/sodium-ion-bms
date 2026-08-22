@@ -2,16 +2,16 @@ from opendssdirect import dss
 import numpy as np
 
 from src.power_plant.plant import initialize_known_plant, solve_operating_point
-from src.hidden_network.pcc_meters import get_consumer_measurements
+from src.lv_networks.meters import get_consumer_measurements
 
-from src.hidden_network.topology import (
+from src.lv_networks.topology import (
     generate_known_radial_topology,
     identify_candidate_consumer_meters,
     select_metered_consumers
 )
-from src.hidden_network.loads import distribute_loads
+from src.lv_networks.loads import distribute_loads
 from src.power_plant.transformers import get_distribution_transformer_spec
-from src.hidden_network.perturbations import apply_latent_parameter_realization
+from src.lv_networks.perturbations import apply_latent_parameter_realization
 
 from src.transient.atp_case_builder import ATPCaseBuilder
 from src.transient.atp_runner import ATPRunner
