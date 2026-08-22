@@ -1,5 +1,5 @@
 BEGIN NEW DATA CASE
-C  ATP Case File for scenario_14_sig_LLL
+C  ATP Case File for scenario_14_sig_LG
 POWER FREQUENCY                      50.
 $DUMMY, XYZ000
 C  dT  >< Tmax >< Xopt >< Copt ><Epsiln>

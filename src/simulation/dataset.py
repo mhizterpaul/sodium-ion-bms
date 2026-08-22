@@ -21,8 +21,9 @@ from src.transient.events import (
     EquipmentLineFaultCoEvent,
     LineFaultLineFaultCoEvent
 )
-from src.simulation.kron_reduction import compute_kron_reduced_impedance
-from src.estimator.load_estimator import LoadFrequencyReconstructionEstimator
+from src.estimator.load_group import ConsumerLoadPremises
+from src.estimator.cla_estimator import ClusterLoadAllocationEstimator
+from src.estimator.time_adjusted_cla_estimator import TimeAdjustedCLAEstimator
 from src.power_plant.transformers import TRANSFORMER_MODELS, BASELINE_TRANSFORMER_MODEL
 
 TRANSFORMER_SPECS = {
@@ -65,10 +66,9 @@ BASELINE_TX_SPEC = {
 def validate_dataset_1(df_1: pd.DataFrame):
     required_cols = [
         "gt_scenario_id", "gt_feeder_id", "known_number_of_buses", "known_number_of_branches",
-        "gt_total_consumer_units", "gt_metered_consumer_units", "gt_unmetered_consumer_units",
-        "gt_r_eq_ohm", "gt_x_eq_ohm", "gt_z_eq_ohm",
-        "est_total_consumer_units", "est_metered_consumer_units", "est_unmetered_consumer_units",
-        "est_unmetered_power_kw", "est_r_eq_ohm", "est_x_eq_ohm", "est_z_eq_ohm"
+        "gt_total_consumer_energy_kwh", "gt_metered_consumer_energy_kwh", "gt_unmetered_consumer_energy_kwh",
+        "gt_technical_loss_kwh", "gt_non_technical_loss_kwh",
+        "est_baseline_cla_unmetered_energy_kwh", "est_time_adjusted_cla_unmetered_energy_kwh"
     ]
     for col in required_cols:
         if col not in df_1.columns:
@@ -80,8 +80,8 @@ def validate_dataset_1(df_1: pd.DataFrame):
             raise ValueError(f"Dataset 1 validation error: waveform column '{col}' must be removed from Dataset 1!")
 
     for idx, row in df_1.iterrows():
-        if row["known_number_of_buses"] <= 0 or row["gt_total_consumer_units"] <= 0:
-            raise ValueError(f"Dataset 1 row {idx}: known_number_of_buses and gt_total_consumer_units must be > 0")
+        if row["known_number_of_buses"] <= 0 or row["gt_total_consumer_energy_kwh"] <= 0:
+            raise ValueError(f"Dataset 1 row {idx}: known_number_of_buses and gt_total_consumer_energy_kwh must be > 0")
 
     print("INFO: Dataset 1 validation passed successfully.")
 
@@ -125,12 +125,13 @@ def validate_event_pair_dataset(df: pd.DataFrame, dataset_name: str, allow_time_
 
 def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = True):
     """
-    Orchestrates dataset generation for Dataset 1 (36% consumer meter load group frequency reconstruction of unmetered units),
+    Orchestrates dataset generation for Dataset 1 (Cluster Load Allocation energy estimation),
     Dataset 2 (Q1), Dataset 3 (Q2), and Dataset 4 (Q3).
     """
-    print("INFO: Sweeping scenarios and generating Datasets 1, 2, 3, and 4 with 36% consumer coverage...")
+    print("INFO: Sweeping scenarios and generating Datasets 1, 2, 3, and 4...")
     runner = CoSimulationRunner()
-    freq_estimator = LoadFrequencyReconstructionEstimator(seed=42)
+    cla_estimator = ClusterLoadAllocationEstimator()
+    time_cla_estimator = TimeAdjustedCLAEstimator()
 
     rows_1 = []
     rows_2 = []
@@ -212,126 +213,74 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
         else:
             load_comp = {"linear": 0.15, "non_linear": 0.15, "heavy_duty": 0.7}
 
-        # --- A. DATASET 1 GENERATION (36% Metered Consumer Load Group Frequency Reconstruction of Unmetered Units) ---
-        multi_op_consumer_meas = {1: [], 2: [], 3: []}
-        multi_op_feeder_meas = {1: [], 2: [], 3: []}
-        latest_sim_result = None
-
-        for op_idx in range(5):
-            trans_load_val = float(30.0 + 10.0 * op_idx)
-            k_net_scen = KnownLVNetworkScenario(
-                scenario_id=f"{scenario_id}_op_{op_idx}",
-                num_buses=len(modified_topo["buses"]),
-                num_lines=len(modified_topo["lines"]),
-                topology=modified_topo,
-                line_parameters={"r_scale": r_scale, "x_scale": x_scale},
-                loads=loads_dist,
-                load_composition=load_comp,
-                motor_penetration=0.08,
-                capacitor_configuration={},
-                transformer_loading={"trans1": trans_load_val, "trans2": trans_load_val, "trans3": trans_load_val},
-                switching_events=[]
-            )
-
-            dummy_ev = SingleEquipmentSwitchEvent(
-                equipment_type="ac_motor",
-                start_time_s=0.02,
-                duration_s=0.04,
-                target=f"down_{feeder_idx}_1",
-                parameters={}
-            )
-
-            sim_scen = SimulationScenario(
-                known_network=k_net_scen,
-                generator_p_kw=1500.0,
-                generator_q_kvar=0.0,
-                events=[dummy_ev],
-                meter_fraction=0.36, # 36% consumer meter coverage
-                seed=42 + idx + op_idx * 100
-            )
-
-            sim_result = runner.run_scenario(sim_scen, use_baseline_transformers=False)
-            latest_sim_result = sim_result
-
-            for f_id in [1, 2, 3]:
-                m_id = f"trans{f_id}_lv_boundary_meter"
-                pcc_key = f"trans{f_id}_lv_pcc"
-                meas = sim_result.steady_state_measurements.get(m_id, sim_result.steady_state_measurements.get(pcc_key, {}))
-                multi_op_feeder_meas[f_id].append(meas)
-
-                consumer_meas = [
-                    v for k, v in sim_result.steady_state_measurements.items()
-                    if k.startswith("consumer_meter_") and f"_{f_id}_" in k
-                ]
-                if not consumer_meas:
-                    consumer_meas = [{"p_kw": float(meas.get("p_kw", 30.0)) * 0.36 / 3.0}]
-                multi_op_consumer_meas[f_id].append(consumer_meas)
-
-        time_s = latest_sim_result.time_s
-
+        # --- A. DATASET 1 GENERATION (Cluster Load Allocation & Energy Estimation) ---
+        dt_hours = 1.0 # 1-hour energy integration window
         for f_id in [1, 2, 3]:
-            m_id = f"trans{f_id}_lv_boundary_meter"
-            pcc_key = f"trans{f_id}_lv_pcc"
-            meter_res = latest_sim_result.processed_meters.get(m_id, latest_sim_result.processed_meters.get(pcc_key))
-
-            gt_r, gt_x, gt_z, _, _ = compute_kron_reduced_impedance(topologies[f_id])
-            feeder_meas_avg = multi_op_feeder_meas[f_id][-1]
-            consumer_meas_last = multi_op_consumer_meas[f_id][-1]
-
             known_buses_count = len(topologies[f_id]["buses"])
             known_branches_count = len(topologies[f_id]["lines"])
 
-            # Total true consumer units in feeder f_id
-            gt_total_units = max(1, len(topologies[f_id]["lines"]))
-            gt_metered_units = max(1, int(np.ceil(0.36 * gt_total_units)))
-            gt_unmetered_units = gt_total_units - gt_metered_units
+            # True total consumer energy in feeder f_id over dt_hours
+            total_load_kw = sum(ld["kw"] for ld in loads1["loads"] if f_id == 1) if f_id == 1 else (sum(ld["kw"] for ld in loads2["loads"]) if f_id == 2 else sum(ld["kw"] for ld in loads3["loads"]))
+            gt_total_energy_kwh = float(total_load_kw * dt_hours)
+            gt_metered_energy_kwh = round(gt_total_energy_kwh * 0.36, 4)
+            gt_unmetered_energy_kwh = round(gt_total_energy_kwh * 0.64, 4)
 
-            freq_est = freq_estimator.estimate(
-                metered_consumer_measurements=consumer_meas_last,
-                feeder_measurements=feeder_meas_avg,
-                known_num_buses=known_buses_count,
-                known_num_branches=known_branches_count
+            # Technical losses = transformer losses + line losses
+            transformer_loss_kwh = 0.02 * gt_total_energy_kwh # 2% transformer loss
+            line_loss_kwh = 0.03 * gt_total_energy_kwh # 3% line loss
+            gt_tech_loss_kwh = round(transformer_loss_kwh + line_loss_kwh, 4) # 5% total technical loss
+            gt_non_tech_loss_kwh = round(0.08 * gt_total_energy_kwh, 4) # 8% non-technical loss/theft
+
+            feeder_supply_energy_kwh = gt_total_energy_kwh + gt_tech_loss_kwh + gt_non_tech_loss_kwh
+
+            # Create unmetered premises for estimator
+            classes = ["residential_light", "commercial", "industrial_motor"]
+            unmetered_premises = [
+                ConsumerLoadPremises(
+                    consumer_id=f"unmetered_{f_id}_{c_idx}",
+                    class_id=classes[c_idx % 3],
+                    is_metered=False,
+                    connected_load_kw=10.0 + c_idx * 2.0
+                )
+                for c_idx in range(known_branches_count)
+            ]
+
+            # Run Baseline CLA Estimator
+            cla_res = cla_estimator.estimate(
+                feeder_supply_energy_kwh=feeder_supply_energy_kwh,
+                metered_customer_energy_kwh=gt_metered_energy_kwh,
+                estimated_technical_loss_kwh=gt_tech_loss_kwh,
+                unmetered_premises=unmetered_premises
             )
 
-            v_raw_ss = meter_res["raw_voltage"] if meter_res is not None else np.zeros((len(time_s), 3))
-            i_raw_ss = meter_res["raw_current"] if meter_res is not None else np.zeros((len(time_s), 3))
-
-            meas_dict = latest_sim_result.steady_state_measurements.get(m_id, latest_sim_result.steady_state_measurements.get(pcc_key, {}))
+            # Run Time-Adjusted CLA Estimator
+            time_cla_res = time_cla_estimator.estimate(
+                feeder_supply_energy_kwh=feeder_supply_energy_kwh,
+                metered_customer_energy_kwh=gt_metered_energy_kwh,
+                estimated_technical_loss_kwh=gt_tech_loss_kwh,
+                unmetered_premises=unmetered_premises
+            )
 
             row_1 = {
                 "gt_scenario_id": f"{scenario_id}_feeder_{f_id}",
                 "gt_feeder_id": f"feeder_{f_id}",
                 "known_number_of_buses": known_buses_count,
                 "known_number_of_branches": known_branches_count,
-                "gt_total_consumer_units": gt_total_units,
-                "gt_metered_consumer_units": gt_metered_units,
-                "gt_unmetered_consumer_units": gt_unmetered_units,
-                "gt_r_eq_ohm": gt_r,
-                "gt_x_eq_ohm": gt_x,
-                "gt_z_eq_ohm": gt_z,
-                "est_total_consumer_units": freq_est.estimated_total_consumer_units,
-                "est_metered_consumer_units": freq_est.estimated_metered_consumer_units,
-                "est_unmetered_consumer_units": freq_est.estimated_unmetered_consumer_units,
-                "est_unmetered_power_kw": freq_est.estimated_unmetered_power_kw,
-                "est_r_eq_ohm": freq_est.r_eq_ohm,
-                "est_x_eq_ohm": freq_est.x_eq_ohm,
-                "est_z_eq_ohm": freq_est.z_eq_ohm,
-                f"obs_{pcc_key}_voltage_mag_avg": float(np.mean(v_raw_ss)),
-                f"obs_{pcc_key}_current_mag_avg": float(np.mean(i_raw_ss)),
-                f"obs_{pcc_key}_p_kw": float(meas_dict.get("p_kw", 0.0)),
-                f"obs_{pcc_key}_q_kvar": float(meas_dict.get("q_kvar", 0.0))
+                "gt_total_consumer_energy_kwh": round(gt_total_energy_kwh, 4),
+                "gt_metered_consumer_energy_kwh": gt_metered_energy_kwh,
+                "gt_unmetered_consumer_energy_kwh": gt_unmetered_energy_kwh,
+                "gt_technical_loss_kwh": gt_tech_loss_kwh,
+                "gt_non_technical_loss_kwh": gt_non_tech_loss_kwh,
+                "est_baseline_cla_unmetered_energy_kwh": cla_res.estimated_unmetered_energy_kwh,
+                "est_time_adjusted_cla_unmetered_energy_kwh": time_cla_res.estimated_unmetered_energy_kwh
             }
             rows_1.append(row_1)
 
         # Catalog single event signatures for reference baseline composition
-        single_events_all = []
-        known_line_target = f"down_{feeder_idx}_1"
-        for eq in equipment_types:
-            single_events_all.append(SingleEquipmentSwitchEvent(eq, 0.02, 0.04, known_line_target, {}))
-        for ft in fault_types:
-            single_events_all.append(SingleLineFaultEvent(ft, 0.02, 0.04, known_line_target, fault_phase_map[ft], 0.05, {}))
-
-        for s_ev in single_events_all:
+        for s_idx, s_ev in enumerate([
+            SingleEquipmentSwitchEvent("ac_motor", 0.02, 0.04, f"down_{feeder_idx}_1", {}),
+            SingleLineFaultEvent("LG", 0.02, 0.04, f"down_{feeder_idx}_1", (0,), 0.05, {})
+        ]):
             k_net_sig = KnownLVNetworkScenario(
                 scenario_id=f"{scenario_id}_sig_{s_ev.event_type}",
                 num_buses=len(modified_topo["buses"]),
@@ -361,6 +310,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                     }
 
         # --- B. DEFINING EVENT PAIR SCENARIOS ORIGINATING FROM KNOWN LV LINES ---
+        known_line_target = f"down_{feeder_idx}_1"
         eq1 = SingleEquipmentSwitchEvent("ac_motor", 0.02, 0.04, known_line_target, {})
         eq2 = SingleEquipmentSwitchEvent("dc_motor_inverter", 0.02, 0.04, known_line_target, {})
         eq2_shifted = SingleEquipmentSwitchEvent("dc_motor_inverter", 0.03, 0.04, known_line_target, {})
@@ -378,7 +328,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
         pair_lf_simultaneous = EquipmentLineFaultCoEvent(eq1, flt1)
         pair_lf_shifted = EquipmentLineFaultCoEvent(eq1, flt2_shifted)
 
-        # --- C. DATASET 2 GENERATION (Question 1: Event Observability across Event Pairs, 36% Coverage, Single Baseline Tx Spec) ---
+        # --- C. DATASET 2 GENERATION (Question 1: Event Observability across Event Pairs, 1 Baseline Tx Spec) ---
         d2_pairs = [
             ("load_load", pair_ll_simultaneous),
             ("fault_fault", pair_ff_simultaneous),
@@ -448,7 +398,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                         "residual_current_magnitude": round(float(np.sqrt(np.mean(res_i**2))), 6)
                     })
 
-        # --- D. DATASET 3 GENERATION (Question 2: Residual Magnitude Variation with Time Shift Operation, 36% Coverage) ---
+        # --- D. DATASET 3 GENERATION (Question 2: Residual Magnitude Variation with Time Shift Operation) ---
         d3_pairs = [
             ("load_load", pair_ll_simultaneous),
             ("load_load", pair_ll_shifted),
@@ -522,7 +472,7 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
                         "residual_current_magnitude": round(float(np.sqrt(np.mean(res_i**2))), 6)
                     })
 
-        # --- E. DATASET 4 GENERATION (Question 3: Transformer Specification Effect on Event Pairs, 36% Coverage) ---
+        # --- E. DATASET 4 GENERATION (Question 3: Transformer Specification Effect across 3 Tx Models) ---
         d4_pairs = [
             ("load_load", pair_ll_simultaneous),
             ("fault_fault", pair_ff_simultaneous),
