@@ -1,4 +1,4 @@
-# Advanced Distribution System State Estimation and NFPP Sodium-Ion Energy Storage Evaluation for Distribution Networks
+# Advanced State Estimation and NFPP Sodium-Ion Energy Storage Evaluation for Distribution Networks
 
 ## Methodology
 
