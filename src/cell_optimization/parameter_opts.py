@@ -8,7 +8,7 @@ import copy
 import gc
 from collections import OrderedDict
 from typing import Dict, Any, List, Tuple, Optional, Callable
-from src.cell_optimization.cem_optimizer import CrossEntropyOptimizer, EvaluationResult, PyBaMMSensitivityAnalyzer
+from src.cell_optimization.cem_optimizer import CrossEntropyOptimizer
 from nfpp_sodium_ion.src.cell_parameters.cell_alpha import get_parameter_values
 from nfpp_sodium_ion.src.calibration.derivation import get_derived_parameters
 from src.simulation.utilities.mechanical.fenics_model import ThermoelasticStrainModel
@@ -447,53 +447,47 @@ def run_workflow(engine: Optional[Any] = None):
         MAT_INDICES = [11, 12]
         STRUCT_INDICES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-        modes = ["energy", "power", "thermal_stability", "stability"]
+        modes = ["energy", "power", "thermal_stability"]
 
         pop_size = int(os.environ.get("CEM_POP_SIZE", "8"))
         iterations = int(os.environ.get("CEM_ITERATIONS", "2"))
-        cem = CrossEntropyOptimizer(population_size=pop_size, iterations=iterations)
 
-        final_opt_designs = []
-
-        for mode in modes:
-            print(f"\n---> Optimizing objective mode: {mode.upper()}")
-
-            def pybamm_evaluator(x_full: np.ndarray) -> EvaluationResult:
+        def create_objective_func(mode_name: str) -> Callable[[np.ndarray], float]:
+            def obj_func(x_full: np.ndarray) -> float:
                 pt = ParamTransform(base_values=optimizer.base_values, derived=optimizer.derived)
                 pt.apply_physics_deltas(deltas)
                 pt.apply_design_vector(x_full, DESIGN_SPACE)
                 pv = pt.get_parameter_values()
 
                 if not validate_params(dict(pv)):
-                    return EvaluationResult(objective=np.array([1e9, 1e9, 1e9, 1e9]), constraints=[1.0], feasible=False)
+                    return 1e9
 
                 res = optimizer.simulate(pv)
                 if not res["success"]:
-                    return EvaluationResult(objective=np.array([1e9, 1e9, 1e9, 1e9]), constraints=[1.0], feasible=False)
+                    return 1e9
 
-                is_feasible, g_mech = optimizer.evaluate_stability_pde(res["sol"], pv)
+                if mode_name == "energy":
+                    return -res["energy"]
+                elif mode_name == "power":
+                    return -res["power"]
+                else:  # thermal_stability
+                    return res["T_max"]
 
-                # Return full vector objective F(theta) = [-E, -P, T_max, stress]
-                f_vector = np.array([
-                    -res["energy"],
-                    -res["power"],
-                    res["T_max"],
-                    res["stress"]
-                ])
+            return obj_func
 
-                return EvaluationResult(objective=f_vector, constraints=[g_mech], feasible=is_feasible, metrics=res)
+        final_opt_designs = []
 
-            # Calculate PyBaMM sensitivity via PyBaMMSensitivityAnalyzer
-            sensitivity_analyzer = PyBaMMSensitivityAnalyzer(pybamm_evaluator)
+        for mode in modes:
+            print(f"\n---> Optimizing objective mode: {mode.upper()}")
+            obj_func = create_objective_func(mode)
 
             # --- STEP 1: Material parameters optimization (indices 11, 12) ---
             print(f"  Step 1: Material parameters optimization ({[DESIGN_SPACE[i] for i in MAT_INDICES]})...")
-            sens_mat = sensitivity_analyzer.jacobian(x_base, DESIGN_BOUNDS, active_indices=MAT_INDICES)
-            x_mat_opt = cem.optimize(
-                evaluator_func=pybamm_evaluator,
+            cem_mat = CrossEntropyOptimizer(population_size=pop_size, iterations=iterations)
+            x_mat_opt = cem_mat.optimize(
+                objective_func=obj_func,
                 x0=x_base.copy(),
                 bounds=DESIGN_BOUNDS,
-                sensitivity=sens_mat,
                 active_indices=MAT_INDICES,
                 rounding_func=geometry_rounding,
                 verbose=False
@@ -505,16 +499,43 @@ def run_workflow(engine: Optional[Any] = None):
 
             # --- STEP 2: Structural parameters optimization (indices 0..10) ---
             print(f"  Step 2: Structural parameters optimization ({len(STRUCT_INDICES)} variables)...")
-            sens_struct = sensitivity_analyzer.jacobian(x_mat_opt, DESIGN_BOUNDS, active_indices=STRUCT_INDICES)
-            x_struct_opt = cem.optimize(
-                evaluator_func=pybamm_evaluator,
+            cem_struct = CrossEntropyOptimizer(population_size=pop_size, iterations=iterations)
+            x_struct_opt = cem_struct.optimize(
+                objective_func=obj_func,
                 x0=x_mat_opt,
                 bounds=DESIGN_BOUNDS,
-                sensitivity=sens_struct,
                 active_indices=STRUCT_INDICES,
                 rounding_func=geometry_rounding,
                 verbose=False
             )
+
+            # FEM Thermoelastic Strain Adjustment directly after Step 2
+            print("  [POST-STEP 2: FEM Thermoelastic Strain Adjustment & Stability Check...]")
+            pt_mode = ParamTransform(base_values=optimizer.base_values, derived=optimizer.derived)
+            pt_mode.apply_physics_deltas(deltas)
+            pt_mode.apply_design_vector(x_struct_opt, DESIGN_SPACE)
+            pv_mode = pt_mode.get_parameter_values()
+
+            res_mode = optimizer.simulate(pv_mode)
+            if res_mode["success"]:
+                is_feasible, g_mech = optimizer.evaluate_stability_pde(res_mode["sol"], pv_mode)
+                step = 0
+                while not is_feasible and step < 5:
+                    step += 1
+                    print(f"    FEM Adjustment Step {step}: Modifying electrode parameters (g_mech={g_mech:.4f})...")
+                    x_struct_opt[0] *= 1.05
+                    x_struct_opt[1] *= 1.05
+                    x_struct_opt = geometry_rounding(x_struct_opt)
+
+                    pt_mode = ParamTransform(base_values=optimizer.base_values, derived=optimizer.derived)
+                    pt_mode.apply_physics_deltas(deltas)
+                    pt_mode.apply_design_vector(x_struct_opt, DESIGN_SPACE)
+                    pv_mode = pt_mode.get_parameter_values()
+                    res_mode = optimizer.simulate(pv_mode)
+                    if res_mode["success"]:
+                        is_feasible, g_mech = optimizer.evaluate_stability_pde(res_mode["sol"], pv_mode)
+                    else:
+                        break
 
             final_opt_designs.append(x_struct_opt)
             optimizer.runner.clear_memory()
