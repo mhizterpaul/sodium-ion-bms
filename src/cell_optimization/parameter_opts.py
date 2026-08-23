@@ -48,37 +48,6 @@ def carbon_percolation_conductivity(fraction: float, base_cond: float = 100.0) -
     phi_c = 0.03
     return base_cond * (max(fraction - phi_c, 0.0) + 1e-6) ** 1.8
 
-def validate_params(pv: Dict[str, Any], verbose: bool = False):
-    required = ["Nominal cell capacity [A.h]", "Positive electrode exchange-current density [A.m-2]"]
-    derived = get_derived_parameters()
-
-    for r in required:
-        if r not in pv:
-            if verbose: print(f"DEBUG: validate_params failed: {r} missing")
-            return False
-        val = pv[r]
-        if callable(val):
-            sig = inspect.signature(val)
-            params_list = list(sig.parameters.keys())
-            grounded_map = {
-                "c_e": 1200.0,
-                "c_s_surf": 0.5 * derived.get("c_max_p", 25000.0),
-                "c_s_max": derived.get("c_max_p", 25000.0),
-                "T": 298.15,
-                "sto": 0.5
-            }
-            args = [grounded_map.get(p, 0.5) for p in params_list]
-            try:
-                res = val(*args)
-                actual_val = float(res.value) if hasattr(res, "value") else float(res)
-            except Exception as e:
-                if verbose: print(f"DEBUG: validate_params callable {r} failed: {e}")
-                actual_val = 1.0
-        else:
-            actual_val = val
-        if actual_val <= 0:
-            if verbose: print(f"DEBUG: validate_params failed: {r} <= 0 ({actual_val})")
-            return False
 
     if "Positive particle diffusivity [m2.s-1]" in pv:
         D_p = pv["Positive particle diffusivity [m2.s-1]"]
@@ -129,31 +98,6 @@ def validate_params(pv: Dict[str, Any], verbose: bool = False):
 
     return True
 
-class OCPWrapper:
-    def __init__(self, orig_ocp, boost):
-        self.orig_ocp = orig_ocp
-        self.boost = boost
-        try:
-            self.__signature__ = inspect.signature(orig_ocp)
-            self.__name__ = getattr(orig_ocp, "__name__", "ocp_wrapper")
-            self.__doc__ = getattr(orig_ocp, "__doc__", "")
-        except Exception:
-            pass
-    def __call__(self, *args, **kwargs):
-        return self.orig_ocp(*args, **kwargs) + self.boost
-
-class MultiplicativeWrapper:
-    def __init__(self, orig_func, factor):
-        self.orig_func = orig_func
-        self.factor = factor
-        try:
-            self.__signature__ = inspect.signature(orig_func)
-            self.__name__ = getattr(orig_func, "__name__", "wrapper")
-            self.__doc__ = getattr(orig_func, "__doc__", "")
-        except Exception:
-            pass
-    def __call__(self, *args, **kwargs):
-        return self.orig_func(*args, **kwargs) * self.factor
 
 class VolumeChangeModel:
     def __init__(self, factor=0.1):
@@ -238,13 +182,6 @@ class ParamTransform:
 
     def get_parameter_values(self) -> pybamm.ParameterValues:
         derived = self.derived
-
-        self.values_dict.setdefault("Negative electrode volume change", VolumeChangeModel(0.1))
-        self.values_dict.setdefault("Positive electrode volume change", VolumeChangeModel(0.1))
-        self.values_dict.setdefault("Cell thermal expansion coefficient [m.K-1]", 1e-6)
-        self.values_dict.setdefault("Number of cells connected in series to make a battery", 1)
-        self.values_dict.setdefault("Number of strings connected in parallel to make a battery", 1)
-
         c_max_p = self.values_dict.get("Maximum concentration in positive electrode [mol.m-3]", derived["c_max_p"])
         c_max_n = self.values_dict.get("Maximum concentration in negative electrode [mol.m-3]", derived["c_max_n"])
         self.values_dict["Initial concentration in positive electrode [mol.m-3]"] = 0.5 * c_max_p
@@ -259,19 +196,6 @@ class ParamTransform:
                 self.values_dict[key] = MultiplicativeWrapper(original, factor)
             else:
                 self.values_dict[key] *= factor
-
-        self.values_dict.setdefault("Cell volume [m3]", derived["cell_volume"])
-        self.values_dict.setdefault("Cell cooling surface area [m2]", derived["surface_area"])
-        self.values_dict.setdefault("Total heat transfer coefficient [W.m-2.K-1]", derived["total_htc"])
-        self.values_dict.setdefault("SEI solvent diffusivity [m2.s-1]", derived["sei_solvent_diffusivity"])
-        self.values_dict.setdefault("Bulk solvent concentration [mol.m-3]", derived["bulk_solvent_concentration"])
-
-        self.values_dict.setdefault("Negative current collector density [kg.m-3]", derived["cu_density"])
-        self.values_dict.setdefault("Positive current collector density [kg.m-3]", derived["al_density"])
-        self.values_dict.setdefault("Negative current collector specific heat capacity [J.kg-1.K-1]", derived["cu_cp"])
-        self.values_dict.setdefault("Positive current collector specific heat capacity [J.kg-1.K-1]", derived["al_cp"])
-        self.values_dict.setdefault("Negative current collector thermal conductivity [W.m-1.K-1]", derived["cu_tc"])
-        self.values_dict.setdefault("Positive current collector thermal conductivity [W.m-1.K-1]", derived["al_tc"])
 
         return pybamm.ParameterValues(self.values_dict)
 
@@ -300,129 +224,6 @@ def transform_candidates_parallel(
         transformed_dicts = list(executor.map(_transform_candidate_worker, jobs))
     return [pybamm.ParameterValues(values) for values in transformed_dicts]
 
-class SingleObjectiveProblem:
-    def __init__(self, optimizer, x_full, active_indices, deltas, mode, ref_scale=1.0):
-        self.optimizer = optimizer
-        self.x_full = x_full
-        self.active_indices = active_indices
-        self.deltas = deltas
-        self.mode = mode
-        self.ref_scale = max(abs(ref_scale), 1e-9)
-
-    def evaluate_single(self, x_full):
-        from src.cell_optimization.chem_regularization import mechanical_stability_metric
-        g1 = (x_full[0] - x_full[1]) / max(DESIGN_BOUNDS[0][1], DESIGN_BOUNDS[1][1])
-
-        pt = ParamTransform(
-            base_values=self.optimizer.base_values,
-            derived=self.optimizer.derived
-        )
-        pt.apply_physics_deltas(self.deltas)
-        pt.apply_design_vector(x_full, DESIGN_SPACE)
-        pv = pt.get_parameter_values()
-
-        if not validate_params(pv):
-            if hasattr(pv, "_processor") and pv._processor is not None:
-                pv._processor.clear_cache()
-            return 1000.0, [max(0.0, g1), 0.0, 1.0], False
-
-        res = self.optimizer.simulate(pv)
-        if hasattr(pv, "_processor") and pv._processor is not None:
-            pv._processor.clear_cache()
-
-        if not res["success"]:
-            return 1000.0, [max(0.0, g1), 0.0, 1.0], False
-
-        g2 = res["T_max"] - 333.15
-
-        if self.mode == "energy":
-            f_val = -res["energy"]
-        elif self.mode == "power":
-            f_val = -res["power"]
-        elif self.mode == "thermal_stability":
-            f_val = res["T_max"]
-        elif self.mode == "stability":
-            f_val = -mechanical_stability_metric(stresses=res["stresses"])
-        else:
-            f_val = 1000.0
-
-        sc = max(abs(self.ref_scale), 0.1)
-        score_unpenalized = f_val / sc
-
-        g_list = [g1, g2, 0.0]
-        feasible = (g1 <= 0.0) and (g2 <= 0.0)
-        return score_unpenalized, g_list, feasible
-
-class SimulationRunner:
-    def __init__(self, model: pybamm.BaseModel, solver_class, solver_kwargs: dict):
-        self.model = model
-        self.solver_class = solver_class
-        self.solver_kwargs = solver_kwargs
-        self.var_pts = model.default_var_pts
-        self.submesh_types = model.default_submesh_types
-        self.spatial_methods = model.default_spatial_methods
-
-    def run_simulation(self, params: pybamm.ParameterValues, c_rate: float = 1.0) -> Dict[str, Any]:
-        params = params.copy()
-        geometry = None
-        mesh = None
-        disc = None
-        processed_model = None
-        solver = None
-        sol = None
-
-        try:
-            c_max_p = params["Maximum concentration in positive electrode [mol.m-3]"]
-            c_max_n = params["Maximum concentration in negative electrode [mol.m-3]"]
-            c_p_init = params["Initial concentration in positive electrode [mol.m-3]"]
-            c_n_init = params["Initial concentration in negative electrode [mol.m-3]"]
-            ocp_p_func = params["Positive electrode OCP [V]"]
-            ocp_n_func = params["Negative electrode OCP [V]"]
-            sto_p = c_p_init / c_max_p
-            sto_n = c_n_init / c_max_n
-            v_init = ocp_p_func(sto_p) - ocp_n_func(sto_n)
-            v_init_val = float(v_init.value) if hasattr(v_init, "value") else float(v_init)
-            ir_drop_est = 0.5
-            v_min = params["Lower voltage cut-off [V]"]
-            if (v_init_val - ir_drop_est) <= v_min:
-                params["Lower voltage cut-off [V]"] = max(0.1, v_init_val - 1.0)
-                print(f"INFO: Relaxed lower voltage cut-off from {v_min:.2f}V to {params['Lower voltage cut-off [V]']:.2f}V (Initial OCV: {v_init_val:.2f}V)")
-
-            # Create geometry, mesh and discretisation directly for this evaluation
-            geometry = copy.deepcopy(self.model.default_geometry)
-            params.process_geometry(geometry)
-            mesh = pybamm.Mesh(geometry, self.submesh_types, self.var_pts)
-            disc = pybamm.Discretisation(mesh, self.spatial_methods)
-
-            processed_model = params.process_model(self.model, inplace=False)
-            disc.process_model(processed_model, inplace=True)
-
-            solver = self.solver_class(**self.solver_kwargs)
-            sol = solver.solve(processed_model, [0, 3600 / c_rate], inputs={"Current [A]": c_rate * float(params["Nominal cell capacity [A.h]"])})
-            return {"success": True, "sol": sol}
-        except Exception as e:
-            err_msg = f"ERROR: DFN Simulation failed: {e}\n{traceback.format_exc()}"
-            return {"success": False, "reason": err_msg}
-        finally:
-            if solver is not None:
-                try:
-                    if hasattr(solver, "_model_set_up") and isinstance(solver._model_set_up, dict):
-                        solver._model_set_up.clear()
-                except Exception:
-                    pass
-                try:
-                    if hasattr(solver, "_setup") and isinstance(solver._setup, dict):
-                        solver._setup.clear()
-                    else:
-                        solver._setup = None
-                except Exception:
-                    pass
-            del processed_model
-            del solver
-            del params
-            del geometry
-            del mesh
-            del disc
 
     def clear_memory(self):
         """Release PyBaMM caches and run garbage collection."""
@@ -472,51 +273,14 @@ class HierarchicalOptimizer:
         self.base_values = dict(self.base_params)
         self.derived = get_derived_parameters()
         options = {"SEI": "solvent-diffusion limited", "loss of active material": "stress-driven", "thermal": "lumped"}
-        self.model = pybamm.lithium_ion.DFN(options)
+        self.model = pybamm.sodium_ion.DFN(options)
+        
+        self.solver_kwargs = {"rtol": 1e-7, "atol": 1e-9, "options": {"dt_max": 5.0}}
 
-        if os.environ.get("CEM_FAST_RUN") == "True":
-            self.solver_kwargs = {"rtol": 1e-3, "atol": 1e-4, "options": {"dt_max": 20.0}}
-        else:
-            self.solver_kwargs = {"rtol": 1e-7, "atol": 1e-9, "options": {"dt_max": 5.0}}
-
-        self.runner = SimulationRunner(self.model, pybamm.IDAKLUSolver, self.solver_kwargs)
+        self.runner = #(self.model, pybamm.IDAKLUSolver, self.solver_kwargs)
         self.mech_model = ThermoelasticStrainModel()
 
-    def run(self):
-        return run_workflow(self.engine)
-
-    def simulate(self, params: pybamm.ParameterValues, c_rate: float = 1.0, return_sol: bool = False) -> Dict[str, Any]:
-        res = self.runner.run_simulation(params, c_rate)
-        if not res["success"]:
-            print(res["reason"])
-            return res
-
-        sol = res.get("sol")
-        metrics = post_process_sol(res, return_sol=return_sol)
-
-        # Dispose Solution
-        if not return_sol:
-            if sol is not None:
-                try:
-                    if hasattr(sol, "_all_models"):
-                        sol._all_models = []
-                except Exception:
-                    pass
-                del sol
-                res["sol"] = None
-
-        # Clear PyBaMM parameter values substitutor cache
-        try:
-            if hasattr(params, "_processor") and params._processor is not None:
-                params._processor.clear_cache()
-        except Exception:
-            pass
-
-        return metrics
-
     def evaluate_stability_pde(self, params: pybamm.ParameterValues, mode: str, c_rate: float = 1.0) -> Tuple[bool, float]:
-        res = self.simulate(params, c_rate=c_rate, return_sol=True)
-        if not res["success"]: return False, -1e9
         try:
             mech_res = self.mech_model.solve_strain(res["sol"], params, c_rate=c_rate)
             max_strain = mech_res["max_strain"]
@@ -567,28 +331,6 @@ class HierarchicalOptimizer:
                 print(f"WARNING: Baseline DFN simulation failed: {base_res.get('reason')}. Skipping candidate.")
                 return None
 
-            from src.cell_optimization.chem_regularization import mechanical_stability_metric
-            j_base = np.array([
-                base_res["energy"],
-                base_res["power"],
-                base_res["T_max"],
-                mechanical_stability_metric(stresses=base_res["stresses"])
-            ])
-            G = np.zeros((4, len(DESIGN_SPACE)))
-
-            for j in range(num_vars):
-                res = sim_results[j + 1]
-                if res["success"]:
-                    j_pert = np.array([
-                        res["energy"],
-                        res["power"],
-                        res["T_max"],
-                        mechanical_stability_metric(stresses=res["stresses"])
-                    ])
-                    G[:, j] = (np.log(np.abs(j_pert) + 1e-12) - np.log(np.abs(j_base) + 1e-12)) / eps
-                else:
-                    print(f"WARNING: Perturbation for {DESIGN_SPACE[j]} failed: {res.get('reason')}")
-
             G = np.nan_to_num(G, nan=0.0, posinf=0.0, neginf=0.0)
             if not np.isfinite(G).all(): raise RuntimeError("Degenerate Jacobian detected.")
             U, S, Vt = np.linalg.svd(G, full_matrices=False)
@@ -630,76 +372,7 @@ def geometry_rounding(x: np.ndarray) -> np.ndarray:
             x_rounded[idx] = np.round(val * 1e8) / 1e8
     return x_rounded
 
-def _optimize_mode_pipeline_worker(job):
-    """ThreadPool worker running step 1 and step 2 parameters co-optimization sequentially for a single objective mode."""
-    i, mode, x_base, deltas, G, STRUCT_INDICES, MAT_INDICES, engine = job
-
-    local_optimizer = None
-    problem = None
-    problem_m = None
-    cem = None
-    cem_m = None
-
-    try:
-        # Instantiate a thread-local HierarchicalOptimizer to guarantee absolute solver thread safety
-        local_optimizer = HierarchicalOptimizer(engine=engine)
-
-        pop_size = int(os.environ.get("CEM_POP_SIZE", 8))
-        iters = int(os.environ.get("CEM_ITERATIONS", 2))
-
-        # 1. Step 1: Structural Parameters (θs) Optimization first
-        max_s = np.max(np.abs(G[i, STRUCT_INDICES])) + 1e-12
-        active_indices = [j for j in STRUCT_INDICES if np.abs(G[i, j]) / max_s > 0.5]
-        if not active_indices:
-            active_indices = [int(STRUCT_INDICES[np.argmax(np.abs(G[i, STRUCT_INDICES]))])]
-
-        ref_val = 1.0
-        problem = SingleObjectiveProblem(local_optimizer, x_base, active_indices, deltas, mode, ref_scale=ref_val)
-        cem = CrossEntropyOptimizer(population_size=pop_size, iterations=iters)
-        best_active = cem.optimize(problem.evaluate_single, x_base, DESIGN_BOUNDS, active_indices, G[i, :], rounding_func=geometry_rounding, verbose=False)
-
-        x_opt_struct = x_base.copy()
-        x_opt_struct[active_indices] = best_active
-
-        # 2. Step 2: Material Parameters (θm) Optimization second, on top of x_opt_struct
-        active_indices_m = MAT_INDICES
-        problem_m = SingleObjectiveProblem(local_optimizer, x_opt_struct, active_indices_m, deltas, mode, ref_scale=ref_val)
-        cem_m = CrossEntropyOptimizer(population_size=pop_size, iterations=iters)
-        best_active_m = cem_m.optimize(problem_m.evaluate_single, x_opt_struct, DESIGN_BOUNDS, active_indices_m, G[i, :], rounding_func=geometry_rounding, verbose=False)
-
-        x_opt_final = x_opt_struct.copy()
-        x_opt_final[active_indices_m] = best_active_m
-
-        return x_opt_final
-    finally:
-        # Stage Boundary Cleanup: delete Solution, processed model, discretisation, mesh, clear PyBaMM caches, gc.collect()
-        if "problem" in locals() and problem is not None:
-            del problem
-        if "problem_m" in locals() and problem_m is not None:
-            del problem_m
-        if "local_optimizer" in locals() and local_optimizer is not None:
-            if hasattr(local_optimizer, "runner") and local_optimizer.runner is not None:
-                local_optimizer.runner.clear_memory()
-            del local_optimizer
-        if "cem_m" in locals():
-            del cem_m
-        if "cem" in locals():
-            del cem
-
-        # Clear all global caches
-        import sys
-        for module_name, module in list(sys.modules.items()):
-            if module_name.startswith("pybamm"):
-                for attr_name in dir(module):
-                    try:
-                        attr = getattr(module, attr_name)
-                        if hasattr(attr, "cache_clear") and callable(attr.cache_clear):
-                            attr.cache_clear()
-                        elif hasattr(attr, "clear_cache") and callable(attr.clear_cache):
-                            attr.clear_cache()
-                    except Exception:
-                        pass
-        gc.collect()
+ 
 
 def run_workflow(engine: Optional[Any] = None):
     optimizer = None
@@ -720,7 +393,7 @@ def run_workflow(engine: Optional[Any] = None):
         print(f"{'MATERIAL JUXTAPOSITION & DERIVED CELL PARAMETER DELTAS':^120s}")
         print("="*120)
 
-        # 1. Parallel Dopant Optimization & Scoring (No DFN)
+        # 1. Parallel Dopant Optimization & Scoring
         # Refactored analytical score to focus strictly on Energy, Power, and Thermal Stability as instructed
         print(f"\nLAYER 1: PARALLEL DOPANT OPTIMIZATION")
         print(f"{'Candidate':25s} | {'QM: Form E':12s} | {'QM: Volume':12s} | {'Derived Delta Key':40s} | {'Value':12s}")
@@ -735,6 +408,7 @@ def run_workflow(engine: Optional[Any] = None):
                 if i == 0: print(f"{cand.name:25s} | {p.get('formation_energy', 0.0):12.4f} | {p.get('volume_per_atom', 0.0):12.4f} | {k:40s} | {v:+.4e}")
                 else: print(f"{'':25s} | {'':12s} | {'':12s} | {k:40s} | {v:+.4e}")
 
+            # replace static values with pybamm verification 
             voltage_boost = d.get("thermodynamic", {}).get("voltage_boost", 0.0)
             diffusivity_log_delta = d.get("transport", {}).get("diffusivity_log_delta", 0.0)
             conductivity_log_delta = d.get("transport", {}).get("conductivity_log_delta", 0.0)
@@ -751,7 +425,7 @@ def run_workflow(engine: Optional[Any] = None):
                 best_dopant_score = score
                 best_dopant = cand
 
-        # 2. Parallel Salt Optimization & Scoring (No DFN)
+        # 2. Parallel Salt Optimization & Scoring 
         # Refactored analytical score to focus strictly on Energy, Power, and Thermal Stability as instructed
         print(f"\nLAYER 1: PARALLEL SALT OPTIMIZATION")
         print(f"{'Candidate':25s} | {'QM: Form E':12s} | {'QM: Volume':12s} | {'Derived Delta Key':40s} | {'Value':12s}")
@@ -766,6 +440,7 @@ def run_workflow(engine: Optional[Any] = None):
                 if i == 0: print(f"{cand.name:25s} | {p.get('formation_energy', 0.0):12.4f} | {p.get('volume_per_atom', 0.0):12.4f} | {k:40s} | {v:+.4e}")
                 else: print(f"{'':25s} | {'':12s} | {'':12s} | {k:40s} | {v:+.4e}")
 
+            #replace static delta with pybamm evaluation 
             electrolyte_conductivity_log_delta = d.get("transport", {}).get("electrolyte_conductivity_log_delta", 0.0)
             electrolyte_diffusivity_log_delta = d.get("transport", {}).get("electrolyte_diffusivity_log_delta", 0.0)
 
@@ -792,7 +467,7 @@ def run_workflow(engine: Optional[Any] = None):
 
         x_base = np.array([np.mean(b) for b in DESIGN_BOUNDS])
 
-        print("COMPUTING SENSITIVITY MATRIX (JACOBIAN) ONCE...")
+        print("COMPUTING SENSITIVITY MATRIX (JACOBIAN)...")
         G = optimizer.compute_jacobian(x_base, deltas)
         if G is None:
              raise RuntimeError("Jacobian computation failed for optimized cell chemistry.")
@@ -802,16 +477,8 @@ def run_workflow(engine: Optional[Any] = None):
         MAT_INDICES = [11, 12]
         modes = ["energy", "power", "thermal_stability", "stability"]
 
-        jobs = [
-            (i, mode, x_base, deltas, G, STRUCT_INDICES, MAT_INDICES, engine)
-            for i, mode in enumerate(modes)
-        ]
-
-        # Reverted to strictly sequential execution to minimize peak memory footprint and prevent virtual memory exhaustion
-        print("  Executing Structural & Material Co-Optimization sequentially across independent modes...")
-        final_opt_designs = []
-        for job in jobs:
-            final_opt_designs.append(_optimize_mode_pipeline_worker(job))
+        
+        
 
         print("RUNNING PARETO FRONT FILTERING...")
         candidate_metrics = []
@@ -915,6 +582,3 @@ if __name__ == "__main__":
         if optimizer is not None:
             try: optimizer.runner.clear_memory()
             except Exception: pass
-        del optimizer
-        gc.collect()
-        print("FINAL CLEANUP: Hierarchical optimization process released cached simulation memory.")

@@ -129,7 +129,7 @@ where:
 - $E_L$: estimated technical losses (incorporating both transformer losses and line losses),
 - $E_U$: energy attributable to unknown/unmetered customers.
 
-You can then estimate an expected consumption for each unmetered customer:
+Then estimate an expected consumption for each unmetered customer:
 
 [ w_i = \mathbb{E}[E_i \mid C_i, X_i] ]
 
@@ -139,8 +139,7 @@ where $X_i$ could include:
 - premises characteristics,
 - connected load,
 - time of year,
-- supply availability,
-- transformer loading,
+- supply availability
 - feeder characteristics.
 
 Then:

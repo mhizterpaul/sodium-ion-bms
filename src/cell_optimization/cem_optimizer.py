@@ -24,33 +24,12 @@ class CrossEntropyOptimizer:
 
     def _to_x(self, z, xl, xu):
         return xl + z * (xu - xl)
+        
 
-    def _reflect_sample(self, mu, cov, size):
-        """
-        Draw samples in z-space and fold them back into [0, 1] using reflection.
-        """
-        d = len(mu)
-        try:
-            raw_samples = np.random.multivariate_normal(mu, cov, size=size)
-        except np.linalg.LinAlgError:
-            stds = np.sqrt(np.maximum(np.diag(cov), 1e-12))
-            raw_samples = np.random.normal(mu, stds, size=(size, d))
-
-        # Reflection sampling
-        for i in range(size):
-            for j in range(d):
-                val = raw_samples[i, j]
-                while val < 0.0 or val > 1.0:
-                    if val < 0.0:
-                        val = -val
-                    elif val > 1.0:
-                        val = 2.0 - val
-                raw_samples[i, j] = val
-        return raw_samples
 
     def optimize(self, evaluator_func, x0, bounds, active_indices, G_vector, rounding_func=None, verbose=True):
         """
-        Generic, completely decoupled Sensitivity-Guided Cross-Entropy Method (SG-CEM) Optimizer.
+        Sensitivity-Guided Cross-Entropy Method (SG-CEM) Optimizer.
         """
         xl_full, xu_full = bounds[:, 0], bounds[:, 1]
         xl = xl_full[active_indices]
@@ -73,53 +52,7 @@ class CrossEntropyOptimizer:
         best_x = x0[active_indices].copy()
         best_history = []
 
-        for it in range(self.iterations):
-            # 2. Adaptive Population Size via smooth continuous schedule
-            max_std_ratio = np.max(np.sqrt(np.diag(cov_z)) / (initial_std_z + 1e-12))
-            if max_std_ratio >= 0.5:
-                pop_size = self.population_size
-            elif max_std_ratio <= 0.05:
-                pop_size = 8
-            else:
-                fraction = (max_std_ratio - 0.05) / 0.45
-                pop_size = int(8 + fraction * (self.population_size - 8))
-
-            # 3. Covariance Regularization
-            eigvals, eigvecs = np.linalg.eigh(cov_z)
-            eigvals = np.maximum(eigvals, self.min_std**2)
-            cov_z_reg = eigvecs @ np.diag(eigvals) @ eigvecs.T
-
-            # 4. Draw samples in z-space
-            samples_z = self._reflect_sample(mu_z, cov_z_reg, pop_size)
-
-            # 5. Round samples in x-space immediately (using rounding_func if provided) and project them back to z-space
-            # Rounding occurs BEFORE evaluation and BEFORE elite updates
-            rounded_samples_z = []
-            for sample_z in samples_z:
-                x_active = self._to_x(sample_z, xl, xu)
-                x_full = x0.copy()
-                x_full[active_indices] = x_active
-
-                if rounding_func is not None:
-                    x_full = rounding_func(x_full)
-
-                rounded_active = x_full[active_indices]
-                rounded_sample_z = self._to_z(rounded_active, xl, xu)
-                rounded_samples_z.append(rounded_sample_z)
-
-            samples_z = np.array(rounded_samples_z)
-
-            # 6. Run parallel evaluations using ProcessPoolExecutor
-            jobs = []
-            for sample_z in samples_z:
-                x_active = self._to_x(sample_z, xl, xu)
-                x_full = x0.copy()
-                x_full[active_indices] = x_active
-                if rounding_func is not None:
-                    x_full = rounding_func(x_full)
-                jobs.append(x_full)
-
-            try:
+        try:
                 with ProcessPoolExecutor(max_workers=2) as executor:
                     raw_results = list(executor.map(evaluator_func, jobs))
             except Exception:
@@ -128,7 +61,7 @@ class CrossEntropyOptimizer:
                 for job in jobs:
                     res_val = evaluator_func(job)
                     raw_results.append(res_val)
-                    # AGGRESSIVE CLEANUP AFTER EACH SEQUENTIAL EVALUATION!
+                    # CLEANUP AFTER EACH SEQUENTIAL EVALUATION!
                     import sys
                     import gc
                     import shutil
@@ -147,29 +80,7 @@ class CrossEntropyOptimizer:
                                 except Exception:
                                     pass
                     gc.collect()
-
-            # Clear PyBaMM caches and run GC on the main thread after all parallel jobs have completed/joined!
-            import sys
-            import gc
-            import shutil
-            from pathlib import Path
-
-            # Clear downloaded data cache
-            shutil.rmtree(Path.home() / ".cache" / "pybamm", ignore_errors=True)
-
-            for module_name, module in list(sys.modules.items()):
-                if module_name.startswith("pybamm"):
-                    for attr_name in dir(module):
-                        try:
-                            attr = getattr(module, attr_name)
-                            if hasattr(attr, "cache_clear") and callable(attr.cache_clear):
-                                attr.cache_clear()
-                            elif hasattr(attr, "clear_cache") and callable(attr.clear_cache):
-                                attr.clear_cache()
-                        except Exception:
-                            pass
-            gc.collect()
-
+                    
             results = []
             for res_raw in raw_results:
                 if isinstance(res_raw, tuple):
@@ -238,7 +149,7 @@ class CrossEntropyOptimizer:
                 else:
                     norm_scores = np.zeros_like(elite_scores)
 
-                # Stronger selection pressure weighting: exp(-5.0 * norm_scores)
+                # Selection pressure weighting: exp(-5.0 * norm_scores)
                 w = np.exp(-5.0 * norm_scores)
                 w /= np.sum(w)
 
