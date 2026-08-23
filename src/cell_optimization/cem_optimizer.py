@@ -11,6 +11,113 @@ class EvaluationResult:
     feasible: bool = True
     metrics: Dict[str, Any] = field(default_factory=dict)
 
+class PyBaMMSensitivityAnalyzer:
+    """
+    Computes central finite difference sensitivities (Jacobians) and dimensionless elasticities
+    from PyBaMM DFN evaluations.
+    """
+
+    def __init__(self, evaluator_func: Callable[[np.ndarray], EvaluationResult]):
+        self.evaluator_func = evaluator_func
+
+    def evaluate(self, x: np.ndarray) -> EvaluationResult:
+        return self.evaluator_func(x)
+
+    def jacobian(
+        self,
+        x0: np.ndarray,
+        bounds: np.ndarray,
+        active_indices: Optional[List[int]] = None,
+        eps: float = 1e-3,
+        obj_weights: Optional[np.ndarray] = None,
+    ) -> Dict[str, np.ndarray]:
+        """
+        Calculates central finite-difference Jacobian J_F and J_g around x0 with bound-aware fallback,
+        and dimensionless elasticity S_ij = | (theta_j / max(|F_i|, eps_F)) * (dF_i / dtheta_j) |.
+        """
+        if active_indices is None:
+            active_indices = list(range(len(x0)))
+
+        xl_full, xu_full = bounds[:, 0], bounds[:, 1]
+        dim = len(active_indices)
+
+        # Baseline evaluation
+        res0 = self.evaluate(x0)
+        obj0 = res0.objective
+        f0 = np.array([float(obj0)]) if (np.isscalar(obj0) or isinstance(obj0, (int, float, np.floating))) else np.array(obj0, dtype=float)
+        g0 = np.array(res0.constraints, dtype=float) if res0.constraints else np.array([])
+
+        num_objs = len(f0)
+        num_cons = len(g0)
+
+        J_F = np.zeros((num_objs, dim))
+        J_g = np.zeros((num_cons, dim)) if num_cons > 0 else np.zeros((0, dim))
+
+        for idx, j in enumerate(active_indices):
+            xl_j, xu_j = xl_full[j], xu_full[j]
+            delta = eps * max(xu_j - xl_j, 1e-6)
+
+            x_plus = x0.copy()
+            x_minus = x0.copy()
+
+            can_plus = (x0[j] + delta) <= xu_j
+            can_minus = (x0[j] - delta) >= xl_j
+
+            if can_plus and can_minus:
+                x_plus[j] = x0[j] + delta
+                x_minus[j] = x0[j] - delta
+
+                res_plus = self.evaluate(x_plus)
+                res_minus = self.evaluate(x_minus)
+
+                f_plus = np.array([res_plus.objective]) if np.isscalar(res_plus.objective) else np.array(res_plus.objective, dtype=float)
+                f_minus = np.array([res_minus.objective]) if np.isscalar(res_minus.objective) else np.array(res_minus.objective, dtype=float)
+
+                g_plus = np.array(res_plus.constraints, dtype=float) if res_plus.constraints else np.array([])
+                g_minus = np.array(res_minus.constraints, dtype=float) if res_minus.constraints else np.array([])
+
+                h = 2.0 * delta
+                J_F[:, idx] = (f_plus - f_minus) / h
+                if num_cons > 0 and len(g_plus) == num_cons and len(g_minus) == num_cons:
+                    J_g[:, idx] = (g_plus - g_minus) / h
+
+            elif can_plus:
+                x_plus[j] = x0[j] + delta
+                res_plus = self.evaluate(x_plus)
+                f_plus = np.array([res_plus.objective]) if np.isscalar(res_plus.objective) else np.array(res_plus.objective, dtype=float)
+                g_plus = np.array(res_plus.constraints, dtype=float) if res_plus.constraints else np.array([])
+
+                h = delta
+                J_F[:, idx] = (f_plus - f0) / h
+                if num_cons > 0 and len(g_plus) == num_cons:
+                    J_g[:, idx] = (g_plus - g0) / h
+
+            elif can_minus:
+                x_minus[j] = x0[j] - delta
+                res_minus = self.evaluate(x_minus)
+                f_minus = np.array([res_minus.objective]) if np.isscalar(res_minus.objective) else np.array(res_minus.objective, dtype=float)
+                g_minus = np.array(res_minus.constraints, dtype=float) if res_minus.constraints else np.array([])
+
+                h = delta
+                J_F[:, idx] = (f0 - f_minus) / h
+                if num_cons > 0 and len(g_minus) == num_cons:
+                    J_g[:, idx] = (g0 - g_minus) / h
+
+        # Calculate dimensionless elasticity S_ij = | (theta_j / max(|F_i|, 1e-6)) * (dF_i / dtheta_j) |
+        S_F = np.zeros((num_objs, dim))
+        for i in range(num_objs):
+            denom = max(abs(f0[i]), 1e-6)
+            for idx, j in enumerate(active_indices):
+                S_F[i, idx] = abs((x0[j] / denom) * J_F[i, idx])
+
+        return {
+            "objective": J_F,
+            "constraints": J_g,
+            "elasticity": S_F,
+            "f0": f0,
+            "g0": g0
+        }
+
 class CrossEntropyOptimizer:
     def __init__(
         self,
@@ -37,76 +144,6 @@ class CrossEntropyOptimizer:
     def _to_x(self, z: np.ndarray, xl: np.ndarray, xu: np.ndarray) -> np.ndarray:
         return xl + z * (xu - xl)
 
-    def compute_sensitivity(
-        self,
-        evaluator_func: Callable[[np.ndarray], EvaluationResult],
-        x0: np.ndarray,
-        bounds: np.ndarray,
-        active_indices: Optional[List[int]] = None,
-        eps: float = 1e-3,
-    ) -> Dict[str, np.ndarray]:
-        """
-        Calculates finite difference sensitivities J_F and J_g around x0.
-        Returns dimensionless sensitivity elasticity S_ij.
-        """
-        if active_indices is None:
-            active_indices = list(range(len(x0)))
-
-        xl_full, xu_full = bounds[:, 0], bounds[:, 1]
-        xl = xl_full[active_indices]
-        xu = xu_full[active_indices]
-        dim = len(active_indices)
-
-        # Baseline evaluation
-        res0 = evaluator_func(x0)
-        
-        # Determine scalar vs vector objective
-        obj0 = res0.objective
-        if np.isscalar(obj0) or isinstance(obj0, (int, float, np.floating)):
-            f0 = np.array([float(obj0)])
-        else:
-            f0 = np.array(obj0, dtype=float)
-
-        g0 = np.array(res0.constraints, dtype=float) if res0.constraints else np.array([])
-
-        num_objs = len(f0)
-        num_cons = len(g0)
-
-        J_F = np.zeros((num_objs, dim))
-        J_g = np.zeros((num_cons, dim)) if num_cons > 0 else np.zeros((0, dim))
-
-        for idx, j in enumerate(active_indices):
-            x_pert = x0.copy()
-            step = eps * max(xu[idx] - xl[idx], 1e-6)
-            x_pert[j] = np.clip(x0[j] + step, xl_full[j], xu_full[j])
-            actual_step = x_pert[j] - x0[j]
-
-            if abs(actual_step) < 1e-12:
-                continue
-
-            res_pert = evaluator_func(x_pert)
-            fj = np.array([res_pert.objective]) if np.isscalar(res_pert.objective) else np.array(res_pert.objective, dtype=float)
-            gj = np.array(res_pert.constraints, dtype=float) if res_pert.constraints else np.array([])
-
-            J_F[:, idx] = (fj - f0) / actual_step
-            if num_cons > 0 and len(gj) == num_cons:
-                J_g[:, idx] = (gj - g0) / actual_step
-
-        # Calculate dimensionless elasticity S_ij = | (theta_j / f_i) * (df_i / dtheta_j) |
-        S_F = np.zeros((num_objs, dim))
-        for i in range(num_objs):
-            denom = abs(f0[i]) if abs(f0[i]) > 1e-8 else 1.0
-            for idx, j in enumerate(active_indices):
-                S_F[i, idx] = abs((x0[j] / denom) * J_F[i, idx])
-
-        return {
-            "objective": J_F,
-            "constraints": J_g,
-            "elasticity": S_F,
-            "f0": f0,
-            "g0": g0
-        }
-
     def optimize(
         self,
         evaluator_func: Callable[[np.ndarray], EvaluationResult],
@@ -117,6 +154,8 @@ class CrossEntropyOptimizer:
         constraints: Optional[Callable[[np.ndarray], List[float]]] = None,
         rounding_func: Optional[Callable[[np.ndarray], np.ndarray]] = None,
         surrogate_func: Optional[Callable[[np.ndarray], EvaluationResult]] = None,
+        obj_weights: Optional[np.ndarray] = None,
+        obj_refs: Optional[np.ndarray] = None,
         verbose: bool = True,
     ) -> np.ndarray:
         """
@@ -131,43 +170,47 @@ class CrossEntropyOptimizer:
         x0_act = x0[active_indices]
         dim = len(active_indices)
 
-        # Compute sensitivity if not provided
+        # Compute sensitivity via PyBaMMSensitivityAnalyzer if not provided
         if sensitivity is None:
-            sensitivity = self.compute_sensitivity(evaluator_func, x0, bounds, active_indices=active_indices)
+            analyzer = PyBaMMSensitivityAnalyzer(evaluator_func)
+            sensitivity = analyzer.jacobian(x0, bounds, active_indices=active_indices)
 
         J_F = sensitivity.get("objective", np.zeros((1, dim)))
         J_g = sensitivity.get("constraints", np.zeros((0, dim)))
         S_F = sensitivity.get("elasticity", np.zeros((1, dim)))
 
-        # Aggregate objective elasticity: S_j = sum_i w_i S_ij (uniform weights if not specified)
-        if S_F.ndim == 2 and S_F.shape[0] > 0:
-            S_j = np.mean(S_F, axis=0)
+        num_objs = J_F.shape[0]
+        if obj_weights is None:
+            weights = np.ones(num_objs) / float(num_objs)
         else:
-            S_j = np.zeros(dim)
+            weights = np.array(obj_weights, dtype=float)
+            weights = weights / np.sum(weights)
 
+        # 1. Normalized Elasticity S_j = sum_i w_i S_ij
+        S_j = np.sum(weights[:, None] * S_F, axis=0) if S_F.ndim == 2 else np.zeros(dim)
         s_max = np.max(S_j) if len(S_j) > 0 and np.max(S_j) > 0 else 1.0
         w_sens = S_j / s_max
 
-        # 1. Direction-guided initial mean in z-space
-        # Direction: d_j = - dF/dtheta_j + sum_k max(0, g_k) * dg_k/dtheta_j
-        d_j = -np.mean(J_F, axis=0) if J_F.shape[0] > 0 else np.zeros(dim)
+        # 2. Signed gradient determines search direction: d = - sum_i w_i grad f_i + sum_k max(0, g_k) grad g_k
+        grad_f_agg = np.sum(weights[:, None] * J_F, axis=0)
+        d_j = -grad_f_agg
+
         if J_g.shape[0] > 0 and "g0" in sensitivity:
             g0 = sensitivity["g0"]
             for k in range(min(len(g0), J_g.shape[0])):
                 if g0[k] > 0:
                     d_j += g0[k] * J_g[k]
 
-        # Normalize direction
         d_norm = np.linalg.norm(d_j)
         if d_norm > 1e-12:
             d_j = d_j / d_norm
 
-        # Initial mean with sensitivity step
+        # Direction-guided initial mean
         alpha = 0.1 * (xu - xl)
         x_init = np.clip(x0_act + alpha * d_j, xl, xu)
         mu_z = self._to_z(x_init, xl, xu)
 
-        # 2. Standard deviation initialized using normalized sensitivity
+        # 3. Variance scaling based on normalized sensitivity magnitude
         sigma_max = 0.25
         sigma_min = 0.02
         std_fractions = sigma_max - (sigma_max - sigma_min) * w_sens
@@ -183,7 +226,6 @@ class CrossEntropyOptimizer:
         pop_size = self.population_size
 
         for it in range(self.iterations):
-            # Sample in normalized z-space
             raw_samples_z = np.random.multivariate_normal(mu_z, cov_z, size=pop_size)
             samples_z = np.clip(raw_samples_z, 0.0, 1.0)
             samples_x = np.array([self._to_x(z, xl, xu) for z in samples_z])
@@ -200,8 +242,7 @@ class CrossEntropyOptimizer:
                     sc = np.sum(res.objective) if isinstance(res.objective, np.ndarray) else res.objective
                     pen = self.lambda_penalty * sum(max(0.0, g)**2 for g in res.constraints)
                     cheap_scores.append(sc + pen)
-                screened_indices = np.argsort(cheap_scores)[:num_screened]
-                eval_indices = screened_indices
+                eval_indices = np.argsort(cheap_scores)[:num_screened].tolist()
             else:
                 eval_indices = list(range(pop_size))
 
@@ -217,8 +258,17 @@ class CrossEntropyOptimizer:
                 except Exception as e:
                     res = EvaluationResult(objective=1e9, constraints=[1.0], feasible=False, metrics={"error": str(e)})
 
-                # Standardized penalty calculation
-                obj_val = np.sum(res.objective) if isinstance(res.objective, np.ndarray) else float(res.objective)
+                # Normalized objective calculation
+                if isinstance(res.objective, np.ndarray):
+                    if obj_refs is not None and len(obj_refs) == len(res.objective):
+                        norm_obj = res.objective / obj_refs
+                    else:
+                        norm_obj = res.objective
+                    obj_val = np.dot(weights, norm_obj)
+                else:
+                    obj_val = float(res.objective)
+
+                # Standardized penalty calculation: P(theta) = lambda * sum(max(0, g_k)^2)
                 penalty = 0.0
                 if res.constraints:
                     violations = [max(0.0, g) for g in res.constraints]
@@ -231,14 +281,14 @@ class CrossEntropyOptimizer:
                 score = obj_val + penalty
                 eval_results.append((idx, score, res))
 
-            # Extract scores for update
-            scores = np.full(pop_size, 1e12)
-            for idx, score, res in eval_results:
-                scores[idx] = score
+            # CRITICAL FIX: Only evaluated candidates participate in elite selection
+            evaluated_indices = np.array([idx for idx, _, _ in eval_results])
+            evaluated_scores = np.array([sc for _, sc, _ in eval_results])
 
-            indices = np.argsort(scores)
-            sorted_scores = scores[indices]
-            sorted_samples_z = samples_z[indices]
+            order = np.argsort(evaluated_scores)
+            sorted_eval_scores = evaluated_scores[order]
+            sorted_eval_indices = evaluated_indices[order]
+            sorted_eval_samples_z = samples_z[sorted_eval_indices]
 
             # Adaptive Elite Fraction
             progress = it / max(1, self.iterations)
@@ -249,9 +299,11 @@ class CrossEntropyOptimizer:
             else:
                 elite_frac = 0.05
 
-            elite_count = max(2, int(pop_size * elite_frac))
-            elites_z = sorted_samples_z[:elite_count]
-            elite_scores = sorted_scores[:elite_count]
+            num_evaluated = len(eval_results)
+            elite_count = max(2, min(int(pop_size * elite_frac), num_evaluated))
+
+            elites_z = sorted_eval_samples_z[:elite_count]
+            elite_scores = sorted_eval_scores[:elite_count]
 
             if elite_scores[0] < best_score:
                 best_score = elite_scores[0]
@@ -289,11 +341,11 @@ class CrossEntropyOptimizer:
                 d_factors = 1.0 / np.sqrt(1.0 + alpha_jac * w_sens)
                 cov_z = (d_factors[:, None] * cov_z) * d_factors[None, :]
             else:
-                mu_z = 0.5 * sorted_samples_z[0] + 0.5 * mu_z
+                mu_z = 0.5 * sorted_eval_samples_z[0] + 0.5 * mu_z
 
             if verbose:
-                num_feas = sum(1 for idx, sc, r in eval_results if r.feasible)
-                print(f"INFO[CEM]: Iteration {it+1}/{self.iterations} - Best Score: {best_score:.6f} - Feasible evaluated: {num_feas}/{len(eval_results)}")
+                num_feas = sum(1 for _, _, r in eval_results if r.feasible)
+                print(f"INFO[CEM]: Iteration {it+1}/{self.iterations} - Best Score: {best_score:.6f} - Feasible evaluated: {num_feas}/{num_evaluated}")
 
             # Convergence checks
             best_history.append(best_score)

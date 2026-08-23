@@ -36,7 +36,7 @@ class BESSScenarioGenerator:
         return f"Discharge at {rate} until {limit}V" if limit else f"Discharge at {rate}"
 
     @staticmethod
-    def get_dispatch_scenario(v_min, v_max, fast=False):
+    def get_dispatch_scenario(v_min, v_max):
         return pybamm.Experiment([
             BESSScenarioGenerator.discharge_step("0.5C", limit=v_min),
             "Rest for 20 minutes",
@@ -105,7 +105,6 @@ class BESSEvaluator:
         model_dict = self.electro_model.build_model(parameter_updates=updates)
 
         try:
-            fast_run = (os.environ.get("CEM_FAST_RUN") == "True")
             if experiment:
                 results = self.electro_model.simulate(model_dict, experiment=experiment)
             else:
@@ -121,8 +120,8 @@ class BESSEvaluator:
                     current = c_rate * cap_ah
 
                 # Time for 1C is 3600s
-                duration = 120 if fast_run else (3600 / eff_c_rate)
-                n_pts = 10 if fast_run else 50
+                duration = 3600 / eff_c_rate
+                n_pts = 50
                 times = np.linspace(0, duration, n_pts)
                 results = self.electro_model.simulate(model_dict, times, current_function=current)
 
@@ -140,10 +139,8 @@ class BESSEvaluator:
         v_min = self.optimized_params["Lower voltage cut-off [V]"]
         v_max = self.optimized_params["Upper voltage cut-off [V]"]
 
-        fast_run = (os.environ.get("CEM_FAST_RUN") == "True")
-
         # 1. Base Evaluation: BESS Dispatch (Issue 3, 11)
-        dispatch_experiment = BESSScenarioGenerator.get_dispatch_scenario(v_min, v_max, fast=fast_run)
+        dispatch_experiment = BESSScenarioGenerator.get_dispatch_scenario(v_min, v_max)
         res_dispatch = self.run_full_simulation(self.optimized_params, experiment=dispatch_experiment)
 
         # 2. Physically Meaningful Efficiency Metrics (Issue 4, 5, 12)

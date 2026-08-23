@@ -8,7 +8,7 @@ import copy
 import gc
 from collections import OrderedDict
 from typing import Dict, Any, List, Tuple, Optional, Callable
-from src.cell_optimization.cem_optimizer import CrossEntropyOptimizer, EvaluationResult
+from src.cell_optimization.cem_optimizer import CrossEntropyOptimizer, EvaluationResult, PyBaMMSensitivityAnalyzer
 from nfpp_sodium_ion.src.cell_parameters.cell_alpha import get_parameter_values
 from nfpp_sodium_ion.src.calibration.derivation import get_derived_parameters
 from src.simulation.utilities.mechanical.fenics_model import ThermoelasticStrainModel
@@ -264,7 +264,8 @@ def post_process_sol(res: Dict[str, Any], return_sol: bool = False) -> Dict[str,
         for sv in ["Positive particle surface tangential stress [Pa]", "Negative particle surface tangential stress [Pa]"]:
              try: stresses.append(np.max(np.abs(sol[sv].entries)))
              except (KeyError, pybamm.ModelError, AttributeError): pass
-        final_res = {"energy": float(energy), "power": float(power), "T_max": float(T_max), "stresses": stresses, "success": True}
+        max_stress = np.max(stresses) if stresses else 0.0
+        final_res = {"energy": float(energy), "power": float(power), "T_max": float(T_max), "stress": float(max_stress), "stresses": stresses, "success": True}
         if return_sol: final_res["sol"] = sol
         return final_res
     except Exception as e:
@@ -298,7 +299,6 @@ class HierarchicalOptimizer:
             eta = max_strain / critical_strain
             eta_threshold = float(os.environ.get("CEM_ETA_THRESHOLD", 1.8))
             is_feasible = (eta <= eta_threshold)
-            # Constraint formulation g_m(theta) = eta / eta_threshold - 1.0 <= 0
             g_mech = (eta / eta_threshold) - 1.0
             return is_feasible, g_mech
         except Exception as e:
@@ -306,10 +306,6 @@ class HierarchicalOptimizer:
             return False, 1e3
 
     def evaluate_candidate_robustness(self, best_x: np.ndarray, deltas: Dict[str, Any], num_samples: int = 5, delta_rel: float = 0.02) -> Dict[str, float]:
-        """
-        Evaluate post-optimization robustness under manufacturing/parameter uncertainty.
-        Perturbs theta* -> theta* + delta_theta and computes E[F], Var(F), and P(g > 0).
-        """
         scores = []
         violations = []
 
@@ -391,7 +387,7 @@ def run_workflow(engine: Optional[Any] = None):
                 if i == 0: print(f"{cand.name:25s} | {p.get('formation_energy', 0.0):12.4f} | {p.get('volume_per_atom', 0.0):12.4f} | {k:40s} | {v:+.4e}")
                 else: print(f"{'':25s} | {'':12s} | {'':12s} | {k:40s} | {v:+.4e}")
 
-            # Scoring based strictly on OQMD-derived property deltas (no hardcoded constants)
+            # Scoring based strictly on OQMD-derived property deltas
             voltage_boost = d.get("thermodynamic", {}).get("voltage_boost", 0.0)
             diffusivity_log_delta = d.get("transport", {}).get("diffusivity_log_delta", 0.0)
             conductivity_log_delta = d.get("transport", {}).get("conductivity_log_delta", 0.0)
@@ -448,17 +444,13 @@ def run_workflow(engine: Optional[Any] = None):
         x_base = np.array([np.mean(b) for b in DESIGN_BOUNDS])
 
         print("\nSTAGE 2: PARAMETER CO-OPTIMIZATION (SEQUENTIAL OBJECTIVES)")
-        # Stage 2 divides parameters into:
-        # Step 1: Material parameters (indices 11, 12)
-        # Step 2: Structural parameters (indices 0 to 10)
         MAT_INDICES = [11, 12]
         STRUCT_INDICES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-        is_fast_run = os.environ.get("CEM_FAST_RUN") == "True"
-        modes = ["energy"] if is_fast_run else ["energy", "power", "thermal_stability", "stability"]
+        modes = ["energy", "power", "thermal_stability", "stability"]
 
-        pop_size = 2 if is_fast_run else int(os.environ.get("CEM_POP_SIZE", "8"))
-        iterations = 1 if is_fast_run else int(os.environ.get("CEM_ITERATIONS", "2"))
+        pop_size = int(os.environ.get("CEM_POP_SIZE", "8"))
+        iterations = int(os.environ.get("CEM_ITERATIONS", "2"))
         cem = CrossEntropyOptimizer(population_size=pop_size, iterations=iterations)
 
         final_opt_designs = []
@@ -466,38 +458,42 @@ def run_workflow(engine: Optional[Any] = None):
         for mode in modes:
             print(f"\n---> Optimizing objective mode: {mode.upper()}")
 
-            def evaluator_wrapper(x_full: np.ndarray) -> EvaluationResult:
+            def pybamm_evaluator(x_full: np.ndarray) -> EvaluationResult:
                 pt = ParamTransform(base_values=optimizer.base_values, derived=optimizer.derived)
                 pt.apply_physics_deltas(deltas)
                 pt.apply_design_vector(x_full, DESIGN_SPACE)
                 pv = pt.get_parameter_values()
 
                 if not validate_params(dict(pv)):
-                    return EvaluationResult(objective=1e9, constraints=[1.0], feasible=False)
+                    return EvaluationResult(objective=np.array([1e9, 1e9, 1e9, 1e9]), constraints=[1.0], feasible=False)
 
                 res = optimizer.simulate(pv)
                 if not res["success"]:
-                    return EvaluationResult(objective=1e9, constraints=[1.0], feasible=False)
+                    return EvaluationResult(objective=np.array([1e9, 1e9, 1e9, 1e9]), constraints=[1.0], feasible=False)
 
                 is_feasible, g_mech = optimizer.evaluate_stability_pde(res["sol"], pv)
 
-                if mode == "energy":
-                    obj = -res["energy"]  # Minimization framework
-                elif mode == "power":
-                    obj = -res["power"]
-                elif mode == "thermal_stability":
-                    obj = res["T_max"]
-                else:  # stability
-                    obj = g_mech
+                # Return full vector objective F(theta) = [-E, -P, T_max, stress]
+                f_vector = np.array([
+                    -res["energy"],
+                    -res["power"],
+                    res["T_max"],
+                    res["stress"]
+                ])
 
-                return EvaluationResult(objective=obj, constraints=[g_mech], feasible=is_feasible, metrics=res)
+                return EvaluationResult(objective=f_vector, constraints=[g_mech], feasible=is_feasible, metrics=res)
+
+            # Calculate PyBaMM sensitivity via PyBaMMSensitivityAnalyzer
+            sensitivity_analyzer = PyBaMMSensitivityAnalyzer(pybamm_evaluator)
 
             # --- STEP 1: Material parameters optimization (indices 11, 12) ---
             print(f"  Step 1: Material parameters optimization ({[DESIGN_SPACE[i] for i in MAT_INDICES]})...")
+            sens_mat = sensitivity_analyzer.jacobian(x_base, DESIGN_BOUNDS, active_indices=MAT_INDICES)
             x_mat_opt = cem.optimize(
-                evaluator_func=evaluator_wrapper,
+                evaluator_func=pybamm_evaluator,
                 x0=x_base.copy(),
                 bounds=DESIGN_BOUNDS,
+                sensitivity=sens_mat,
                 active_indices=MAT_INDICES,
                 rounding_func=geometry_rounding,
                 verbose=False
@@ -509,10 +505,12 @@ def run_workflow(engine: Optional[Any] = None):
 
             # --- STEP 2: Structural parameters optimization (indices 0..10) ---
             print(f"  Step 2: Structural parameters optimization ({len(STRUCT_INDICES)} variables)...")
+            sens_struct = sensitivity_analyzer.jacobian(x_mat_opt, DESIGN_BOUNDS, active_indices=STRUCT_INDICES)
             x_struct_opt = cem.optimize(
-                evaluator_func=evaluator_wrapper,
+                evaluator_func=pybamm_evaluator,
                 x0=x_mat_opt,
                 bounds=DESIGN_BOUNDS,
+                sensitivity=sens_struct,
                 active_indices=STRUCT_INDICES,
                 rounding_func=geometry_rounding,
                 verbose=False
