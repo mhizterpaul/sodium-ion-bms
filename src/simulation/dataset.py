@@ -7,7 +7,7 @@ from pathlib import Path
 
 from src.simulation.scenario import KnownLVNetworkScenario, SimulationScenario
 from src.simulation.runner import CoSimulationRunner
-from src.lv_networks.topology import (
+from src.lv_networks.meters import (
     generate_known_radial_topology,
     identify_candidate_consumer_meters,
     select_metered_consumers
@@ -139,21 +139,21 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
     signature_catalog = {}
 
     scenario_configs = [
-        {"r_scale": 0.95, "x_scale": 0.95, "load_comp": "linear"},
-        {"r_scale": 1.05, "x_scale": 1.05, "load_comp": "non_linear"},
-        {"r_scale": 1.15, "x_scale": 1.15, "load_comp": "heavy_duty"},
-        {"r_scale": 0.90, "x_scale": 0.90, "load_comp": "linear"},
-        {"r_scale": 1.00, "x_scale": 1.00, "load_comp": "non_linear"},
-        {"r_scale": 1.10, "x_scale": 1.10, "load_comp": "heavy_duty"},
-        {"r_scale": 1.20, "x_scale": 1.20, "load_comp": "linear"},
-        {"r_scale": 0.98, "x_scale": 0.98, "load_comp": "non_linear"},
-        {"r_scale": 1.02, "x_scale": 1.02, "load_comp": "heavy_duty"},
-        {"r_scale": 1.08, "x_scale": 1.08, "load_comp": "linear"},
-        {"r_scale": 1.12, "x_scale": 1.12, "load_comp": "non_linear"},
-        {"r_scale": 0.92, "x_scale": 0.92, "load_comp": "heavy_duty"},
-        {"r_scale": 1.04, "x_scale": 1.04, "load_comp": "linear"},
-        {"r_scale": 1.16, "x_scale": 1.16, "load_comp": "non_linear"},
-        {"r_scale": 0.88, "x_scale": 0.88, "load_comp": "heavy_duty"}
+        {"load_comp": "linear"},
+        {"load_comp": "non_linear"},
+        {"load_comp": "heavy_duty"},
+        {"load_comp": "linear"},
+        {"load_comp": "non_linear"},
+        {"load_comp": "heavy_duty"},
+        {"load_comp": "linear"},
+        {"load_comp": "non_linear"},
+        {"load_comp": "heavy_duty"},
+        {"load_comp": "linear"},
+        {"load_comp": "non_linear"},
+        {"load_comp": "heavy_duty"},
+        {"load_comp": "linear"},
+        {"load_comp": "non_linear"},
+        {"load_comp": "heavy_duty"}
     ]
 
     equipment_types = ["ac_motor", "dc_motor_inverter", "microwave", "induction_plate"]
@@ -171,8 +171,6 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
         rng = np.random.default_rng(idx + 1000)
 
         feeder_idx = (idx % 3) + 1
-        r_scale = float(config["r_scale"])
-        x_scale = float(config["x_scale"])
 
         topologies = {}
         all_buses = []
@@ -181,26 +179,12 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
         for f_idx in [1, 2, 3]:
             num_buses_f = {1: 20, 2: 25, 3: 30}[f_idx]
             base_f = generate_known_radial_topology(f_idx, num_buses_f, rng=rng)
-            mod_f = {
-                "feeder_idx": base_f["feeder_idx"],
-                "buses": list(base_f["buses"]),
-                "lines": [
-                    {
-                        **ln,
-                        "r1": round(ln["r1"] * r_scale, 4),
-                        "x1": round(ln["x1"] * x_scale, 4),
-                        "r0": round(ln["r0"] * r_scale, 4),
-                        "x0": round(ln["x0"] * x_scale, 4)
-                    }
-                    for ln in base_f["lines"]
-                ]
-            }
 
-            topologies[f_idx] = mod_f
-            all_buses.extend(mod_f["buses"])
-            all_lines.extend(mod_f["lines"])
+            topologies[f_idx] = base_f
+            all_buses.extend(base_f["buses"])
+            all_lines.extend(base_f["lines"])
 
-        modified_topo = {
+        known_topo = {
             "topologies": topologies,
             "buses": all_buses,
             "lines": all_lines
@@ -294,10 +278,10 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
         ]):
             k_net_sig = KnownLVNetworkScenario(
                 scenario_id=f"{scenario_id}_sig_{s_ev.event_type}",
-                num_buses=len(modified_topo["buses"]),
-                num_lines=len(modified_topo["lines"]),
-                topology=modified_topo,
-                line_parameters={"r_scale": r_scale, "x_scale": x_scale},
+                num_buses=len(known_topo["buses"]),
+                num_lines=len(known_topo["lines"]),
+                topology=known_topo,
+                line_parameters={"r1": 0.21, "x1": 0.08},
                 loads=loads_dist,
                 load_composition=load_comp,
                 motor_penetration=0.08,
@@ -350,10 +334,10 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
             ev1, ev2 = co_ev.event_1, co_ev.event_2
             k_net_d2 = KnownLVNetworkScenario(
                 scenario_id=f"{scenario_id}_q1_{pair_cat}",
-                num_buses=len(modified_topo["buses"]),
-                num_lines=len(modified_topo["lines"]),
-                topology=modified_topo,
-                line_parameters={"r_scale": r_scale, "x_scale": x_scale},
+                num_buses=len(known_topo["buses"]),
+                num_lines=len(known_topo["lines"]),
+                topology=known_topo,
+                line_parameters={"r1": 0.21, "x1": 0.08},
                 loads=loads_dist,
                 load_composition=load_comp,
                 motor_penetration=0.08,
@@ -424,10 +408,10 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
             time_offset = co_ev.time_offset_s
             k_net_d3 = KnownLVNetworkScenario(
                 scenario_id=f"{scenario_id}_q2_{pair_cat}_{time_offset}s",
-                num_buses=len(modified_topo["buses"]),
-                num_lines=len(modified_topo["lines"]),
-                topology=modified_topo,
-                line_parameters={"r_scale": r_scale, "x_scale": x_scale},
+                num_buses=len(known_topo["buses"]),
+                num_lines=len(known_topo["lines"]),
+                topology=known_topo,
+                line_parameters={"r1": 0.21, "x1": 0.08},
                 loads=loads_dist,
                 load_composition=load_comp,
                 motor_penetration=0.08,
@@ -494,10 +478,10 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
             ev1, ev2 = co_ev.event_1, co_ev.event_2
             k_net_d4 = KnownLVNetworkScenario(
                 scenario_id=f"{scenario_id}_q3_{pair_cat}",
-                num_buses=len(modified_topo["buses"]),
-                num_lines=len(modified_topo["lines"]),
-                topology=modified_topo,
-                line_parameters={"r_scale": r_scale, "x_scale": x_scale},
+                num_buses=len(known_topo["buses"]),
+                num_lines=len(known_topo["lines"]),
+                topology=known_topo,
+                line_parameters={"r1": 0.21, "x1": 0.08},
                 loads=loads_dist,
                 load_composition=load_comp,
                 motor_penetration=0.08,
