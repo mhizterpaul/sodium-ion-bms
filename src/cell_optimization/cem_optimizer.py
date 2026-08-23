@@ -8,30 +8,50 @@ import numpy as np
 
 
 @dataclass
+class EvaluationResult:
+    """
+    Result of ONE evaluation.
+    """
+    objective: float
+    constraints: np.ndarray = field(
+        default_factory=lambda: np.empty(0, dtype=float)
+    )
+    feasible: bool = True
+    metrics: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class CEMResult:
     """
-    Result of ONE scalar Cross-Entropy Method (CEM) optimization run.
+    Result of ONE local Sensitivity-Conditioned Cross-Entropy Method (SG-CEM) optimization run.
     """
     best_x: np.ndarray
     elite_x: List[np.ndarray]
     best_value: float
+    symbolic_x: np.ndarray
+    symbolic_value: float
+    improvement: float
+    sensitivity: np.ndarray
+    search_radius: np.ndarray
 
 
 class CrossEntropyOptimizer:
     """
-    Stage 1: Sensitivity-Guided Cross-Entropy Method (SG-CEM) Optimizer.
-    Optimizes exactly ONE scalar objective function f(theta) -> R per run.
-
-    No FEM, no thermoelastic model, and no structural optimization in cem_optimizer.py.
+    Sensitivity-Conditioned Cross-Entropy Method (SG-CEM) Optimizer.
+    Uses x_symbolic as anchor, calculates local sensitivity at x_symbolic,
+    constructs a narrow sensitivity-conditioned local trust region around x_symbolic,
+    and performs local stochastic verification/refinement.
     """
 
     def __init__(
         self,
-        population_size: int = 8,
-        iterations: int = 3,
+        population_size: int = 4,
+        iterations: int = 2,
         elite_fraction: float = 0.25,
         smoothing: float = 0.7,
-        min_std: float = 0.01,
+        min_std: float = 0.005,
+        min_radius: float = 0.005,
+        max_radius: float = 0.03,
         random_seed: Optional[int] = None,
     ):
         self.population_size = population_size
@@ -39,72 +59,66 @@ class CrossEntropyOptimizer:
         self.elite_fraction = elite_fraction
         self.smoothing = smoothing
         self.min_std = min_std
+        self.min_radius = min_radius
+        self.max_radius = max_radius
         self.rng = np.random.default_rng(random_seed)
-
-    @staticmethod
-    def _to_z(x: np.ndarray, xl: np.ndarray, xu: np.ndarray) -> np.ndarray:
-        return (x - xl) / np.maximum(xu - xl, 1e-12)
-
-    @staticmethod
-    def _to_x(z: np.ndarray, xl: np.ndarray, xu: np.ndarray) -> np.ndarray:
-        return xl + z * (xu - xl)
 
     def compute_sensitivity(
         self,
         objective_func: Callable[[np.ndarray], float],
-        x0: np.ndarray,
+        x_symbolic: np.ndarray,
         bounds: np.ndarray,
         active_indices: Sequence[int],
         relative_step: float = 1e-3,
     ) -> Dict[str, Any]:
         """
-        Calculates central finite-difference gradient and dimensionless elasticity for 1 scalar objective function.
+        Calculates central finite-difference gradient, diagonal Hessian, and dimensionless elasticity at x_symbolic.
         """
         act_idx = np.asarray(active_indices, dtype=int)
         dim = len(act_idx)
 
-        f0 = float(objective_func(x0))
+        f0 = float(objective_func(x_symbolic))
 
-        J_f = np.zeros(dim, dtype=float)
+        grad = np.zeros(dim, dtype=float)
         elasticity = np.zeros(dim, dtype=float)
 
         for col, j in enumerate(act_idx):
             lower = float(bounds[j, 0])
             upper = float(bounds[j, 1])
 
-            scale = max(abs(x0[j]), abs(upper - lower), 1e-12)
+            scale = max(abs(x_symbolic[j]), abs(upper - lower), 1e-12)
             h = relative_step * scale
 
-            can_minus = (x0[j] - h >= lower)
-            can_plus = (x0[j] + h <= upper)
+            can_minus = (x_symbolic[j] - h >= lower)
+            can_plus = (x_symbolic[j] + h <= upper)
 
             if can_plus and can_minus:
-                x_plus = x0.copy()
-                x_minus = x0.copy()
+                x_plus = x_symbolic.copy()
+                x_minus = x_symbolic.copy()
                 x_plus[j] += h
                 x_minus[j] -= h
 
                 f_plus = float(objective_func(x_plus))
                 f_minus = float(objective_func(x_minus))
 
-                J_f[col] = (f_plus - f_minus) / (2.0 * h)
+                grad[col] = (f_plus - f_minus) / (2.0 * h)
             elif can_plus:
-                x_plus = x0.copy()
+                x_plus = x_symbolic.copy()
                 x_plus[j] += h
                 f_plus = float(objective_func(x_plus))
-                J_f[col] = (f_plus - f0) / h
+                grad[col] = (f_plus - f0) / h
             elif can_minus:
-                x_minus = x0.copy()
+                x_minus = x_symbolic.copy()
                 x_minus[j] -= h
                 f_minus = float(objective_func(x_minus))
-                J_f[col] = (f0 - f_minus) / h
+                grad[col] = (f0 - f_minus) / h
 
             denom = max(abs(f0), 1e-12)
-            elasticity[col] = abs(x0[j] / denom * J_f[col])
+            elasticity[col] = abs(x_symbolic[j] / denom * grad[col])
 
         return {
             "f0": f0,
-            "gradient": J_f,
+            "gradient": grad,
             "elasticity": elasticity,
         }
 
@@ -118,106 +132,114 @@ class CrossEntropyOptimizer:
         verbose: bool = False,
     ) -> CEMResult:
         """
-        Solves 1 scalar optimization function f(theta) -> R.
-        Computes finite-difference sensitivity, performs local gradient step,
-        and samples CEM candidates around that guided point.
-        Returns CEMResult(best_x, elite_x, best_value).
+        Performs local SG-CEM refinement around x_symbolic within a narrow sensitivity-conditioned trust region.
+        Returns CEMResult containing best_x, elite_x, best_value, symbolic_x, symbolic_value, improvement, sensitivity, search_radius.
         """
         act_idx = np.asarray(active_indices, dtype=int)
         dim = len(act_idx)
 
         xl = bounds[act_idx, 0]
         xu = bounds[act_idx, 1]
+        domain_span = xu - xl
 
-        # 1. PyBaMM baseline sensitivity
+        x_symbolic = x0.copy()
+        symbolic_value = float(objective_func(x_symbolic))
+
+        # 1. Compute sensitivity AT x_symbolic
         sens = self.compute_sensitivity(
             objective_func=objective_func,
-            x0=x0,
+            x_symbolic=x_symbolic,
             bounds=bounds,
             active_indices=act_idx,
         )
 
-        grad = sens["gradient"]
         elasticity = sens["elasticity"]
-
         e_max = max(float(np.max(elasticity)), 1e-12)
-        w_sens = elasticity / e_max
+        e_norm = elasticity / e_max
 
-        # 2. Signed gradient local improvement step
-        norm_grad = np.linalg.norm(grad)
-        direction = -grad / norm_grad if norm_grad > 1e-12 else np.zeros(dim)
+        # 2. Sensitivity-conditioned trust region radius:
+        # High sensitivity -> tiny search radius
+        # Low sensitivity -> slightly larger search radius
+        radius = self.min_radius + (1.0 - e_norm) * (self.max_radius - self.min_radius)
+        search_radius_vals = radius * domain_span
 
-        initial_step = 0.05 * (xu - xl)
-        x_guided = np.clip(x0[act_idx] + direction * initial_step, xl, xu)
-        mu_z = self._to_z(x_guided, xl, xu)
+        local_xl = np.maximum(xl, x_symbolic[act_idx] - search_radius_vals)
+        local_xu = np.minimum(xu, x_symbolic[act_idx] + search_radius_vals)
 
-        # 3. Sensitivity-based initial covariance scaling
-        sigma_max = 0.20
-        sigma_min = self.min_std
-        sigma = np.maximum(sigma_max - (sigma_max - sigma_min) * w_sens, sigma_min)
-        cov_z = np.diag(sigma ** 2)
+        # Center at symbolic optimum
+        mu = x_symbolic[act_idx].copy()
+        sigma = search_radius_vals.copy()
 
-        best_score = float(sens["f0"])
-        best_x = x0.copy()
-        elite_samples: List[np.ndarray] = [x0.copy()]
+        best_x = x_symbolic.copy()
+        best_value = symbolic_value
+        elite_samples: List[np.ndarray] = [x_symbolic.copy()]
 
-        # 4. CEM iterations
+        # 3. Local CEM refinement loop
         for iteration in range(self.iterations):
-            raw_z = self.rng.multivariate_normal(mean=mu_z, cov=cov_z, size=self.population_size)
-            samples_z = np.clip(raw_z, 0.0, 1.0)
+            samples = self.rng.normal(
+                loc=mu,
+                scale=sigma,
+                size=(self.population_size, dim),
+            )
+
+            samples = np.clip(samples, local_xl, local_xu)
 
             evaluated = []
-            for z in samples_z:
-                x_cand = x0.copy()
-                x_cand[act_idx] = self._to_x(z, xl, xu)
+            # x_symbolic must always remain in the candidate set
+            evaluated.append((symbolic_value, x_symbolic.copy()))
+
+            for candidate_active in samples:
+                candidate = x_symbolic.copy()
+                candidate[act_idx] = candidate_active
+
                 if rounding_func is not None:
-                    x_cand = rounding_func(x_cand)
+                    candidate = rounding_func(candidate)
 
                 try:
-                    score = float(objective_func(x_cand))
-                    evaluated.append((score, x_cand, z))
+                    val = float(objective_func(candidate))
+                    evaluated.append((val, candidate))
                 except Exception as exc:
                     if verbose:
-                        print(f"WARNING[CEM]: Candidate evaluation failed: {exc}")
-
-            if not evaluated:
-                raise RuntimeError("CEM produced no valid candidate evaluations.")
+                        print(f"WARNING[CEM]: Perturbation candidate evaluation failed: {exc}")
 
             evaluated.sort(key=lambda item: item[0])
 
-            if evaluated[0][0] < best_score:
-                best_score = evaluated[0][0]
-                best_x = evaluated[0][1].copy()
+            best_value, best_x = evaluated[0][0], evaluated[0][1].copy()
 
-            elite_count = max(2, min(len(evaluated), int(np.ceil(self.elite_fraction * len(evaluated)))))
+            elite_count = max(2, int(np.ceil(self.elite_fraction * len(evaluated))))
             elites = evaluated[:elite_count]
 
             elite_samples = [item[1].copy() for item in elites]
-            elites_z = np.array([item[2] for item in elites])
-            scores = np.array([item[0] for item in elites])
+            elite_values = np.array([item[0] for item in elites])
+            elite_x = np.array([item[1][act_idx] for item in elites])
 
-            score_shift = scores - np.min(scores)
-            weights = np.exp(-5.0 * score_shift / max(np.std(scores), 1e-12))
-            weights /= np.sum(weights)
+            # Weighted local covariance update
+            score_shift = elite_values - elite_values.min()
+            temperature = max(np.std(elite_values), 1e-12)
+            weights = np.exp(-score_shift / temperature)
+            weights /= weights.sum()
 
-            new_mu_z = np.sum(weights[:, None] * elites_z, axis=0)
-            centered = elites_z - new_mu_z
-            new_cov_z = centered.T @ (centered * weights[:, None])
-            new_cov_z += np.eye(dim) * (self.min_std ** 2)
+            mu = np.sum(weights[:, None] * elite_x, axis=0)
+            variance = np.sum(weights[:, None] * (elite_x - mu) ** 2, axis=0)
 
-            mu_z = self.smoothing * new_mu_z + (1.0 - self.smoothing) * mu_z
-            cov_z = self.smoothing * new_cov_z + (1.0 - self.smoothing) * cov_z
-
-            diag = np.maximum(np.diag(cov_z), sigma ** 2)
-            cov_z = np.diag(diag)
+            sigma = np.maximum(np.sqrt(variance), self.min_std * domain_span)
+            sigma = np.minimum(sigma, search_radius_vals)
+            mu = np.clip(mu, local_xl, local_xu)
 
             if verbose:
-                print(f"[CEM] Iteration {iteration+1}/{self.iterations} | Best Score: {best_score:.6e}")
+                print(f"[CEM] Iteration {iteration+1}/{self.iterations} | Best Score: {best_value:.6e}")
 
             gc.collect()
+
+        improvement = max(0.0, symbolic_value - best_value)
 
         return CEMResult(
             best_x=best_x,
             elite_x=elite_samples,
-            best_value=best_score,
+            best_value=best_value,
+            symbolic_x=x_symbolic,
+            symbolic_value=symbolic_value,
+            improvement=improvement,
+            sensitivity=elasticity,
+            search_radius=search_radius_vals,
         )
