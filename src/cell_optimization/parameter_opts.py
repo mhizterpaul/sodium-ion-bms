@@ -346,44 +346,6 @@ class HierarchicalOptimizer:
 
         return x_fem if is_feasible else x_cand
 
-    def evaluate_candidate_robustness(self, best_x: np.ndarray, deltas: Dict[str, Any], num_samples: int = 5, delta_rel: float = 0.02) -> Dict[str, float]:
-        scores = []
-        violations = []
-
-        pt_base = ParamTransform(base_values=self.base_values, derived=self.derived)
-        pt_base.apply_physics_deltas(deltas)
-        pt_base.apply_design_vector(best_x, DESIGN_SPACE)
-        res_nom = self.simulate(pt_base.get_parameter_values())
-
-        if not res_nom["success"]:
-            return {"E_energy": 0.0, "Var_energy": 0.0, "P_instability": 1.0}
-
-        scores.append(res_nom["energy"])
-        violations.append(0.0)
-
-        for _ in range(num_samples):
-            perturbation = np.random.uniform(-delta_rel, delta_rel, size=len(best_x))
-            x_pert = best_x * (1.0 + perturbation)
-            x_pert = np.clip(x_pert, DESIGN_BOUNDS[:, 0], DESIGN_BOUNDS[:, 1])
-
-            pt = ParamTransform(base_values=self.base_values, derived=self.derived)
-            pt.apply_physics_deltas(deltas)
-            pt.apply_design_vector(x_pert, DESIGN_SPACE)
-            res_pert = self.simulate(pt.get_parameter_values())
-
-            if res_pert["success"]:
-                scores.append(res_pert["energy"])
-                is_feasible, g_mech = self.evaluate_stability_pde(res_pert["sol"], pt.get_parameter_values())
-                violations.append(1.0 if not is_feasible else 0.0)
-            else:
-                violations.append(1.0)
-
-        return {
-            "E_energy": float(np.mean(scores)),
-            "Var_energy": float(np.var(scores)),
-            "P_instability": float(np.mean(violations))
-        }
-
     def run(self) -> Dict[str, Any]:
         return run_workflow(engine=self)
 
@@ -602,11 +564,6 @@ def run_workflow(engine: Optional[Any] = None):
         ranked_candidates = sorted(candidate_metrics, key=lambda c: utility(c[1]), reverse=True)
         best_candidate_design, best_metrics = ranked_candidates[0]
 
-        # Post-optimization Candidate Robustness Evaluation in parameter_opts.py
-        print("\nEVALUATING FINAL CANDIDATE ROBUSTNESS...")
-        robustness = optimizer.evaluate_candidate_robustness(best_candidate_design, deltas)
-        print(f"  Robustness Metrics: E[Energy]={robustness['E_energy']:.4f} Wh, Var[Energy]={robustness['Var_energy']:.6e}, P[Instability]={robustness['P_instability']:.2%}")
-
         groups = {"Energy": [], "Power": [], "Thermal Stability": [], "Stability": [], "Coupled": []}
 
         output = {
@@ -621,7 +578,6 @@ def run_workflow(engine: Optional[Any] = None):
                 for mode, design in opt_designs_per_mode.items()
             },
             "combined_deltas_representative": deltas,
-            "robustness": robustness,
             "parameter_grouping": groups
         }
         with open("result.json", "w") as f: json.dump(output, f, indent=2)
