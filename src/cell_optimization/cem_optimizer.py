@@ -8,23 +8,21 @@ import numpy as np
 
 
 @dataclass
-class EvaluationResult:
+class CEMResult:
     """
-    Result of ONE evaluation.
+    Result of ONE scalar Cross-Entropy Method (CEM) optimization run.
     """
-    objective: float
-    constraints: np.ndarray = field(
-        default_factory=lambda: np.empty(0, dtype=float)
-    )
-    feasible: bool = True
-    metrics: Dict[str, Any] = field(default_factory=dict)
+    best_x: np.ndarray
+    elite_x: List[np.ndarray]
+    best_value: float
 
 
 class CrossEntropyOptimizer:
     """
-    Sensitivity-Guided Cross-Entropy Method (SG-CEM) Optimizer.
-    Receives cell parameters and 1 optimization function per call,
-    calculates sensitivity, and returns the optimized parameter values.
+    Stage 1: Sensitivity-Guided Cross-Entropy Method (SG-CEM) Optimizer.
+    Optimizes exactly ONE scalar objective function f(theta) -> R per run.
+
+    No FEM, no thermoelastic model, and no structural optimization in cem_optimizer.py.
     """
 
     def __init__(
@@ -60,7 +58,7 @@ class CrossEntropyOptimizer:
         relative_step: float = 1e-3,
     ) -> Dict[str, Any]:
         """
-        Computes finite difference gradient and dimensionless elasticity for 1 optimization function.
+        Calculates central finite-difference gradient and dimensionless elasticity for 1 scalar objective function.
         """
         act_idx = np.asarray(active_indices, dtype=int)
         dim = len(act_idx)
@@ -118,10 +116,12 @@ class CrossEntropyOptimizer:
         active_indices: Sequence[int],
         rounding_func: Optional[Callable[[np.ndarray], np.ndarray]] = None,
         verbose: bool = False,
-    ) -> np.ndarray:
+    ) -> CEMResult:
         """
-        Performs SG-CEM optimization accepting 1 optimization function and cell parameters.
-        Returns the optimized parameter vector.
+        Solves 1 scalar optimization function f(theta) -> R.
+        Computes finite-difference sensitivity, performs local gradient step,
+        and samples CEM candidates around that guided point.
+        Returns CEMResult(best_x, elite_x, best_value).
         """
         act_idx = np.asarray(active_indices, dtype=int)
         dim = len(act_idx)
@@ -129,7 +129,7 @@ class CrossEntropyOptimizer:
         xl = bounds[act_idx, 0]
         xu = bounds[act_idx, 1]
 
-        # 1. Calculate sensitivity for objective_func
+        # 1. PyBaMM baseline sensitivity
         sens = self.compute_sensitivity(
             objective_func=objective_func,
             x0=x0,
@@ -143,16 +143,15 @@ class CrossEntropyOptimizer:
         e_max = max(float(np.max(elasticity)), 1e-12)
         w_sens = elasticity / e_max
 
-        # 2. Signed gradient determines search direction
+        # 2. Signed gradient local improvement step
         norm_grad = np.linalg.norm(grad)
         direction = -grad / norm_grad if norm_grad > 1e-12 else np.zeros(dim)
 
-        # 3. Sensitivity-guided initial CEM mean
         initial_step = 0.05 * (xu - xl)
         x_guided = np.clip(x0[act_idx] + direction * initial_step, xl, xu)
         mu_z = self._to_z(x_guided, xl, xu)
 
-        # 4. Variance scaling based on sensitivity magnitude
+        # 3. Sensitivity-based initial covariance scaling
         sigma_max = 0.20
         sigma_min = self.min_std
         sigma = np.maximum(sigma_max - (sigma_max - sigma_min) * w_sens, sigma_min)
@@ -160,8 +159,9 @@ class CrossEntropyOptimizer:
 
         best_score = float(sens["f0"])
         best_x = x0.copy()
+        elite_samples: List[np.ndarray] = [x0.copy()]
 
-        # 5. CEM iterations
+        # 4. CEM iterations
         for iteration in range(self.iterations):
             raw_z = self.rng.multivariate_normal(mean=mu_z, cov=cov_z, size=self.population_size)
             samples_z = np.clip(raw_z, 0.0, 1.0)
@@ -181,7 +181,7 @@ class CrossEntropyOptimizer:
                         print(f"WARNING[CEM]: Candidate evaluation failed: {exc}")
 
             if not evaluated:
-                raise RuntimeError("CEM produced no valid evaluations.")
+                raise RuntimeError("CEM produced no valid candidate evaluations.")
 
             evaluated.sort(key=lambda item: item[0])
 
@@ -192,6 +192,7 @@ class CrossEntropyOptimizer:
             elite_count = max(2, min(len(evaluated), int(np.ceil(self.elite_fraction * len(evaluated)))))
             elites = evaluated[:elite_count]
 
+            elite_samples = [item[1].copy() for item in elites]
             elites_z = np.array([item[2] for item in elites])
             scores = np.array([item[0] for item in elites])
 
@@ -215,4 +216,8 @@ class CrossEntropyOptimizer:
 
             gc.collect()
 
-        return best_x
+        return CEMResult(
+            best_x=best_x,
+            elite_x=elite_samples,
+            best_value=best_score,
+        )

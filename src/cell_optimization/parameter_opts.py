@@ -8,7 +8,7 @@ import copy
 import gc
 from collections import OrderedDict
 from typing import Dict, Any, List, Tuple, Optional, Callable
-from src.cell_optimization.cem_optimizer import CrossEntropyOptimizer
+from src.cell_optimization.cem_optimizer import CrossEntropyOptimizer, CEMResult
 from nfpp_sodium_ion.src.cell_parameters.cell_alpha import get_parameter_values
 from nfpp_sodium_ion.src.calibration.derivation import get_derived_parameters
 from src.simulation.utilities.mechanical.fenics_model import ThermoelasticStrainModel
@@ -40,6 +40,9 @@ DESIGN_BOUNDS = np.array([
     [0.02, 0.15],                                                  # Carbon fraction bounds
     [800.0, 1800.0]                                                # Electrolyte concentration bounds
 ])
+
+# Indices for Stage 2 Structural Parameters (FEM active indices)
+FEM_ACTIVE_INDICES = [0, 1, 2, 3, 4, 5, 7, 8]
 
 # --- WRAPPER CLASSES FOR CALLABLE PARAMETERS ---
 class OCPWrapper:
@@ -305,6 +308,44 @@ class HierarchicalOptimizer:
             print(f"ERROR: FEM solve failed: {e}\n{traceback.format_exc()}")
             return False, 1e3
 
+    def optimize_structural_stability_with_fem(self, x_cand: np.ndarray, deltas: Dict[str, Any]) -> Optional[np.ndarray]:
+        """
+        Stage 2: Independent FEM Structural Optimization.
+        Modifies structural parameters in FEM_ACTIVE_INDICES until the thermoelastic constraints are satisfied.
+        """
+        x_fem = x_cand.copy()
+
+        pt = ParamTransform(base_values=self.base_values, derived=self.derived)
+        pt.apply_physics_deltas(deltas)
+        pt.apply_design_vector(x_fem, DESIGN_SPACE)
+        pv = pt.get_parameter_values()
+
+        res = self.simulate(pv)
+        if not res["success"]:
+            return None
+
+        is_feasible, g_mech = self.evaluate_stability_pde(res["sol"], pv)
+        step = 0
+
+        while not is_feasible and step < 5:
+            step += 1
+            # Adjust electrode structural parameters (e.g. increase thicknesses to reduce strain)
+            for idx in [0, 1]:  # positive & negative electrode thickness
+                x_fem[idx] *= 1.05
+            x_fem = geometry_rounding(x_fem)
+
+            pt = ParamTransform(base_values=self.base_values, derived=self.derived)
+            pt.apply_physics_deltas(deltas)
+            pt.apply_design_vector(x_fem, DESIGN_SPACE)
+            pv = pt.get_parameter_values()
+
+            res = self.simulate(pv)
+            if not res["success"]:
+                return None
+            is_feasible, g_mech = self.evaluate_stability_pde(res["sol"], pv)
+
+        return x_fem if is_feasible else x_cand
+
     def evaluate_candidate_robustness(self, best_x: np.ndarray, deltas: Dict[str, Any], num_samples: int = 5, delta_rel: float = 0.02) -> Dict[str, float]:
         scores = []
         violations = []
@@ -344,7 +385,7 @@ class HierarchicalOptimizer:
         }
 
     def run(self) -> Dict[str, Any]:
-        return run_workflow(engine=self.engine)
+        return run_workflow(engine=self)
 
 def geometry_rounding(x: np.ndarray) -> np.ndarray:
     x_rounded = x.copy()
@@ -443,48 +484,56 @@ def run_workflow(engine: Optional[Any] = None):
 
         x_base = np.array([np.mean(b) for b in DESIGN_BOUNDS])
 
-        print("\nSTAGE 2: PARAMETER CO-OPTIMIZATION (SEQUENTIAL OBJECTIVES)")
+        print("\nSTAGE 1: ELECTROCHEMICAL CEM OPTIMIZATION (INDEPENDENT SCALAR FUNCTIONS)")
         MAT_INDICES = [11, 12]
         STRUCT_INDICES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-
-        modes = ["energy", "power", "thermal_stability"]
 
         pop_size = int(os.environ.get("CEM_POP_SIZE", "8"))
         iterations = int(os.environ.get("CEM_ITERATIONS", "2"))
 
-        def create_objective_func(mode_name: str) -> Callable[[np.ndarray], float]:
-            def obj_func(x_full: np.ndarray) -> float:
-                pt = ParamTransform(base_values=optimizer.base_values, derived=optimizer.derived)
-                pt.apply_physics_deltas(deltas)
-                pt.apply_design_vector(x_full, DESIGN_SPACE)
-                pv = pt.get_parameter_values()
+        # Define independent scalar objective functions for CEM
+        def energy_objective(x_full: np.ndarray) -> float:
+            pt = ParamTransform(base_values=optimizer.base_values, derived=optimizer.derived)
+            pt.apply_physics_deltas(deltas)
+            pt.apply_design_vector(x_full, DESIGN_SPACE)
+            pv = pt.get_parameter_values()
+            if not validate_params(dict(pv)): return 1e9
+            res = optimizer.simulate(pv)
+            return -res["energy"] if res["success"] else 1e9
 
-                if not validate_params(dict(pv)):
-                    return 1e9
+        def power_objective(x_full: np.ndarray) -> float:
+            pt = ParamTransform(base_values=optimizer.base_values, derived=optimizer.derived)
+            pt.apply_physics_deltas(deltas)
+            pt.apply_design_vector(x_full, DESIGN_SPACE)
+            pv = pt.get_parameter_values()
+            if not validate_params(dict(pv)): return 1e9
+            res = optimizer.simulate(pv)
+            return -res["power"] if res["success"] else 1e9
 
-                res = optimizer.simulate(pv)
-                if not res["success"]:
-                    return 1e9
+        def thermal_objective(x_full: np.ndarray) -> float:
+            pt = ParamTransform(base_values=optimizer.base_values, derived=optimizer.derived)
+            pt.apply_physics_deltas(deltas)
+            pt.apply_design_vector(x_full, DESIGN_SPACE)
+            pv = pt.get_parameter_values()
+            if not validate_params(dict(pv)): return 1e9
+            res = optimizer.simulate(pv)
+            return res["T_max"] if res["success"] else 1e9
 
-                if mode_name == "energy":
-                    return -res["energy"]
-                elif mode_name == "power":
-                    return -res["power"]
-                else:  # thermal_stability
-                    return res["T_max"]
+        objectives = {
+            "energy": energy_objective,
+            "power": power_objective,
+            "thermal_stability": thermal_objective,
+        }
 
-            return obj_func
+        composed_cem_candidates: List[np.ndarray] = []
+        opt_designs_per_mode = {}
 
-        final_opt_designs = []
+        for mode_name, obj_func in objectives.items():
+            print(f"\n---> Running CEM for objective: {mode_name.upper()}")
 
-        for mode in modes:
-            print(f"\n---> Optimizing objective mode: {mode.upper()}")
-            obj_func = create_objective_func(mode)
-
-            # --- STEP 1: Material parameters optimization (indices 11, 12) ---
-            print(f"  Step 1: Material parameters optimization ({[DESIGN_SPACE[i] for i in MAT_INDICES]})...")
+            # 1. Step 1: Material parameters optimization
             cem_mat = CrossEntropyOptimizer(population_size=pop_size, iterations=iterations)
-            x_mat_opt = cem_mat.optimize(
+            res_mat: CEMResult = cem_mat.optimize(
                 objective_func=obj_func,
                 x0=x_base.copy(),
                 bounds=DESIGN_BOUNDS,
@@ -493,56 +542,39 @@ def run_workflow(engine: Optional[Any] = None):
                 verbose=False
             )
 
-            # CLEAR MEMORY BETWEEN STEP 1 AND STEP 2
-            print("  [CLEARING MEMORY BETWEEN STEP 1 (MATERIAL OPTS) AND STEP 2 (STRUCTURAL OPTS)...]")
             optimizer.runner.clear_memory()
 
-            # --- STEP 2: Structural parameters optimization (indices 0..10) ---
-            print(f"  Step 2: Structural parameters optimization ({len(STRUCT_INDICES)} variables)...")
+            # 2. Step 2: Structural parameters optimization
             cem_struct = CrossEntropyOptimizer(population_size=pop_size, iterations=iterations)
-            x_struct_opt = cem_struct.optimize(
+            res_struct: CEMResult = cem_struct.optimize(
                 objective_func=obj_func,
-                x0=x_mat_opt,
+                x0=res_mat.best_x,
                 bounds=DESIGN_BOUNDS,
                 active_indices=STRUCT_INDICES,
                 rounding_func=geometry_rounding,
                 verbose=False
             )
 
-            # FEM Thermoelastic Strain Adjustment directly after Step 2
-            print("  [POST-STEP 2: FEM Thermoelastic Strain Adjustment & Stability Check...]")
-            pt_mode = ParamTransform(base_values=optimizer.base_values, derived=optimizer.derived)
-            pt_mode.apply_physics_deltas(deltas)
-            pt_mode.apply_design_vector(x_struct_opt, DESIGN_SPACE)
-            pv_mode = pt_mode.get_parameter_values()
+            opt_designs_per_mode[mode_name] = res_struct.best_x
+            composed_cem_candidates.append(res_struct.best_x)
+            composed_cem_candidates.extend(res_struct.elite_x)
 
-            res_mode = optimizer.simulate(pv_mode)
-            if res_mode["success"]:
-                is_feasible, g_mech = optimizer.evaluate_stability_pde(res_mode["sol"], pv_mode)
-                step = 0
-                while not is_feasible and step < 5:
-                    step += 1
-                    print(f"    FEM Adjustment Step {step}: Modifying electrode parameters (g_mech={g_mech:.4f})...")
-                    x_struct_opt[0] *= 1.05
-                    x_struct_opt[1] *= 1.05
-                    x_struct_opt = geometry_rounding(x_struct_opt)
-
-                    pt_mode = ParamTransform(base_values=optimizer.base_values, derived=optimizer.derived)
-                    pt_mode.apply_physics_deltas(deltas)
-                    pt_mode.apply_design_vector(x_struct_opt, DESIGN_SPACE)
-                    pv_mode = pt_mode.get_parameter_values()
-                    res_mode = optimizer.simulate(pv_mode)
-                    if res_mode["success"]:
-                        is_feasible, g_mech = optimizer.evaluate_stability_pde(res_mode["sol"], pv_mode)
-                    else:
-                        break
-
-            final_opt_designs.append(x_struct_opt)
             optimizer.runner.clear_memory()
 
-        print("\nRUNNING PARETO FRONT FILTERING...")
+        print("\nSTAGE 2: INDEPENDENT FEM STRUCTURAL-STABILITY OPTIMIZATION")
+        fem_optimized_candidates = []
+        for idx, cand in enumerate(composed_cem_candidates):
+            print(f"  Optimizing candidate {idx+1}/{len(composed_cem_candidates)} with FEM thermoelastic model...")
+            opt_cand = optimizer.optimize_structural_stability_with_fem(cand, deltas)
+            if opt_cand is not None:
+                fem_optimized_candidates.append(opt_cand)
+
+        if not fem_optimized_candidates:
+            fem_optimized_candidates = composed_cem_candidates
+
+        print("\nRUNNING PARETO FRONT FILTERING ON STABLE CANDIDATES...")
         candidate_metrics = []
-        for x in final_opt_designs:
+        for x in fem_optimized_candidates:
             pt = ParamTransform(base_values=optimizer.base_values, derived=optimizer.derived)
             pt.apply_physics_deltas(deltas)
             pt.apply_design_vector(x, DESIGN_SPACE)
@@ -586,7 +618,7 @@ def run_workflow(engine: Optional[Any] = None):
             "design_specs_representative": dict(zip(DESIGN_SPACE, best_candidate_design.tolist())),
             "opt_designs_per_objective": {
                 mode: dict(zip(DESIGN_SPACE, design.tolist()))
-                for mode, design in zip(modes, final_opt_designs)
+                for mode, design in opt_designs_per_mode.items()
             },
             "combined_deltas_representative": deltas,
             "robustness": robustness,
