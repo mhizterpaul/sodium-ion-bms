@@ -13,7 +13,7 @@ A hierarchical multi-stage framework for cell design enhancement:
 
 This repository implements an plant condition–integrated, high-fidelity performance benchmarking of Sodium Iron Pyrophosphate (NFPP) battery energy storage systems (BESS).
 
-### 2. Time-Adjusted Cluster Load Allocation with Error Correction in Sparsely Metered Distribution Networks (Core Contribution)
+### 2. Time-Adjusted Cluster Load Allocation with Error Correction in Sparsely Metered Distribution Networks
 
 The primary research focus is distribution network state estimation using Time-Adjusted Cluster Load Allocation (CLA) and transformer dynamic signal processing in sparsely metered distribution networks:
 
