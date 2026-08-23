@@ -38,9 +38,8 @@ class CEMResult:
 class CrossEntropyOptimizer:
     """
     Sensitivity-Conditioned Cross-Entropy Method (SG-CEM) Optimizer.
-    Uses x_symbolic as anchor, calculates local sensitivity at x_symbolic,
-    constructs a narrow sensitivity-conditioned local trust region around x_symbolic,
-    and performs local stochastic verification/refinement.
+    Constructs a sensitivity-conditioned adaptive local trust region where critical (high-sensitivity)
+    parameters receive greater exploration radius and higher stochastic resolution.
     """
 
     def __init__(
@@ -52,6 +51,7 @@ class CrossEntropyOptimizer:
         min_std: float = 0.005,
         min_radius: float = 0.005,
         max_radius: float = 0.03,
+        sensitivity_exponent: float = 0.5,
         random_seed: Optional[int] = None,
     ):
         self.population_size = population_size
@@ -61,6 +61,7 @@ class CrossEntropyOptimizer:
         self.min_std = min_std
         self.min_radius = min_radius
         self.max_radius = max_radius
+        self.sensitivity_exponent = sensitivity_exponent
         self.rng = np.random.default_rng(random_seed)
 
     def compute_sensitivity(
@@ -72,7 +73,7 @@ class CrossEntropyOptimizer:
         relative_step: float = 1e-3,
     ) -> Dict[str, Any]:
         """
-        Calculates central finite-difference gradient, diagonal Hessian, and dimensionless elasticity at x_symbolic.
+        Calculates central finite-difference gradient and dimensionless elasticity at x_symbolic.
         """
         act_idx = np.asarray(active_indices, dtype=int)
         dim = len(act_idx)
@@ -132,7 +133,8 @@ class CrossEntropyOptimizer:
         verbose: bool = False,
     ) -> CEMResult:
         """
-        Performs local SG-CEM refinement around x_symbolic within a narrow sensitivity-conditioned trust region.
+        Performs local SG-CEM refinement around x_symbolic within an adaptive sensitivity-conditioned trust region.
+        High sensitivity parameters receive larger trust-region radius and higher stochastic resolution.
         Returns CEMResult containing best_x, elite_x, best_value, symbolic_x, symbolic_value, improvement, sensitivity, search_radius.
         """
         act_idx = np.asarray(active_indices, dtype=int)
@@ -158,23 +160,26 @@ class CrossEntropyOptimizer:
         e_norm = elasticity / e_max
 
         # 2. Sensitivity-conditioned trust region radius:
-        # High sensitivity -> tiny search radius
-        # Low sensitivity -> slightly larger search radius
-        radius = self.min_radius + (1.0 - e_norm) * (self.max_radius - self.min_radius)
-        search_radius_vals = radius * domain_span
+        # High sensitivity => larger trust-region radius
+        # Low sensitivity => narrower trust-region radius
+        radius_fraction = self.min_radius + e_norm * (self.max_radius - self.min_radius)
+        search_radius_vals = radius_fraction * domain_span
 
         local_xl = np.maximum(xl, x_symbolic[act_idx] - search_radius_vals)
         local_xu = np.minimum(xu, x_symbolic[act_idx] + search_radius_vals)
 
+        # 3. High sensitivity => higher stochastic resolution / initial scale
+        sigma_fraction = self.min_std + np.power(e_norm, self.sensitivity_exponent) * (self.max_radius - self.min_std)
+        sigma = np.minimum(sigma_fraction * domain_span, search_radius_vals)
+
         # Center at symbolic optimum
         mu = x_symbolic[act_idx].copy()
-        sigma = search_radius_vals.copy()
 
         best_x = x_symbolic.copy()
         best_value = symbolic_value
         elite_samples: List[np.ndarray] = [x_symbolic.copy()]
 
-        # 3. Local CEM refinement loop
+        # 4. Local CEM refinement loop
         for iteration in range(self.iterations):
             samples = self.rng.normal(
                 loc=mu,
