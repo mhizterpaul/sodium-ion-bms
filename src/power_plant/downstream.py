@@ -1,5 +1,14 @@
 from opendssdirect import dss
-from src.lv_networks.meters import generate_known_radial_topology
+from src.power_plant.plant import (
+    generate_known_radial_topology,
+    identify_candidate_consumer_meters,
+    select_metered_consumers
+)
+
+# Aliases for backward compatibility
+generate_radial_topology = generate_known_radial_topology
+identify_candidate_pccs = identify_candidate_consumer_meters
+select_metered_pccs = select_metered_consumers
 
 def build_known_downstream_network(feeder_idx: int, topology: dict = None, loads_dict: dict = None):
     """

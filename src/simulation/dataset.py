@@ -7,7 +7,7 @@ from pathlib import Path
 
 from src.simulation.scenario import KnownLVNetworkScenario, SimulationScenario
 from src.simulation.runner import CoSimulationRunner
-from src.lv_networks.meters import (
+from src.power_plant.plant import (
     generate_known_radial_topology,
     identify_candidate_consumer_meters,
     select_metered_consumers

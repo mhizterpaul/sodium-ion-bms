@@ -1,13 +1,14 @@
 from opendssdirect import dss
 import numpy as np
 
-from src.power_plant.plant import initialize_known_plant, solve_operating_point
-from src.lv_networks.meters import (
+from src.power_plant.plant import (
+    initialize_known_plant,
+    solve_operating_point,
     generate_known_radial_topology,
     identify_candidate_consumer_meters,
-    select_metered_consumers,
-    get_consumer_measurements
+    select_metered_consumers
 )
+from src.lv_networks.meters import get_consumer_measurements
 from src.lv_networks.loads import distribute_loads
 from src.power_plant.transformers import get_distribution_transformer_spec
 
