@@ -35,18 +35,12 @@ class ElectrochemicalThermalDriverModel:
         if key in self._cache:
             return self._cache[key]
 
-        if os.environ.get("CEM_FAST_RUN") == "True":
-            options = {
-                "thermal": "lumped",
-                "SEI": "reaction limited"
-            }
-        else:
-            options = {
-                "thermal": "x-full",
-                "SEI": "reaction limited",
-                "SEI porosity change": "true",
-                "loss of active material": "stress-driven"
-            }
+        options = {
+            "thermal": "x-full",
+            "SEI": "reaction limited",
+            "SEI porosity change": "true",
+            "loss of active material": "stress-driven"
+        }
 
         try:
             model = pybamm.sodium_ion.DFN(options=options)

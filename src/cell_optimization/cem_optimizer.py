@@ -1,192 +1,250 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+
+import gc
 import numpy as np
-from concurrent.futures import ProcessPoolExecutor
+
+
+@dataclass
+class EvaluationResult:
+    """
+    Result of ONE evaluation.
+    """
+    objective: float
+    constraints: np.ndarray = field(
+        default_factory=lambda: np.empty(0, dtype=float)
+    )
+    feasible: bool = True
+    metrics: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class CEMResult:
+    """
+    Result of ONE local Sensitivity-Conditioned Cross-Entropy Method (SG-CEM) optimization run.
+    """
+    best_x: np.ndarray
+    elite_x: List[np.ndarray]
+    best_value: float
+    symbolic_x: np.ndarray
+    symbolic_value: float
+    improvement: float
+    sensitivity: np.ndarray
+    search_radius: np.ndarray
+
 
 class CrossEntropyOptimizer:
+    """
+    Sensitivity-Conditioned Cross-Entropy Method (SG-CEM) Optimizer.
+    Constructs a sensitivity-conditioned adaptive local trust region where critical (high-sensitivity)
+    parameters receive greater exploration radius and higher stochastic resolution.
+    """
+
     def __init__(
         self,
-        population_size=32,
-        elite_fraction=0.15,
-        iterations=5,
-        smoothing=0.7,
-        min_std=1e-4,
-        lambda_penalty=1e5
+        population_size: int = 4,
+        iterations: int = 2,
+        elite_fraction: float = 0.25,
+        smoothing: float = 0.7,
+        min_std: float = 0.005,
+        min_radius: float = 0.005,
+        max_radius: float = 0.03,
+        sensitivity_exponent: float = 0.5,
+        random_seed: Optional[int] = None,
     ):
         self.population_size = population_size
-        self.elite_fraction = elite_fraction
         self.iterations = iterations
+        self.elite_fraction = elite_fraction
         self.smoothing = smoothing
         self.min_std = min_std
-        self.lambda_penalty = lambda_penalty
+        self.min_radius = min_radius
+        self.max_radius = max_radius
+        self.sensitivity_exponent = sensitivity_exponent
+        self.rng = np.random.default_rng(random_seed)
 
-    def _to_z(self, x, xl, xu):
-        range_val = np.maximum(xu - xl, 1e-12)
-        return (x - xl) / range_val
-
-    def _to_x(self, z, xl, xu):
-        return xl + z * (xu - xl)
-        
-
-
-    def optimize(self, evaluator_func, x0, bounds, active_indices, G_vector, rounding_func=None, verbose=True):
+    def compute_sensitivity(
+        self,
+        objective_func: Callable[[np.ndarray], float],
+        x_symbolic: np.ndarray,
+        bounds: np.ndarray,
+        active_indices: Sequence[int],
+        relative_step: float = 1e-3,
+    ) -> Dict[str, Any]:
         """
-        Sensitivity-Guided Cross-Entropy Method (SG-CEM) Optimizer.
+        Calculates central finite-difference gradient and dimensionless elasticity at x_symbolic.
         """
-        xl_full, xu_full = bounds[:, 0], bounds[:, 1]
-        xl = xl_full[active_indices]
-        xu = xu_full[active_indices]
+        act_idx = np.asarray(active_indices, dtype=int)
+        dim = len(act_idx)
 
-        # 1. Sensitivity-Weighted Initialization
-        G_active = np.abs(G_vector[active_indices])
-        max_g = np.max(G_active) if np.max(G_active) > 0 else 1.0
-        w_sens = G_active / max_g
+        f0 = float(objective_func(x_symbolic))
 
-        sigma_max = 0.25
-        sigma_min = 0.02
-        std_fractions = (1.0 - w_sens) * sigma_max + w_sens * sigma_min
+        grad = np.zeros(dim, dtype=float)
+        elasticity = np.zeros(dim, dtype=float)
 
-        mu_z = self._to_z(x0[active_indices], xl, xu)
-        cov_z = np.diag(std_fractions ** 2)
-        initial_std_z = np.sqrt(np.diag(cov_z))
+        for col, j in enumerate(act_idx):
+            lower = float(bounds[j, 0])
+            upper = float(bounds[j, 1])
 
-        best_score = 1e12
-        best_x = x0[active_indices].copy()
-        best_history = []
+            scale = max(abs(x_symbolic[j]), abs(upper - lower), 1e-12)
+            h = relative_step * scale
 
-        try:
-                with ProcessPoolExecutor(max_workers=2) as executor:
-                    raw_results = list(executor.map(evaluator_func, jobs))
-            except Exception:
-                # Fallback to sequential execution if parallel pool fails
-                raw_results = []
-                for job in jobs:
-                    res_val = evaluator_func(job)
-                    raw_results.append(res_val)
-                    # CLEANUP AFTER EACH SEQUENTIAL EVALUATION!
-                    import sys
-                    import gc
-                    import shutil
-                    from pathlib import Path
+            can_minus = (x_symbolic[j] - h >= lower)
+            can_plus = (x_symbolic[j] + h <= upper)
 
-                    shutil.rmtree(Path.home() / ".cache" / "pybamm", ignore_errors=True)
-                    for module_name, module in list(sys.modules.items()):
-                        if module_name.startswith("pybamm"):
-                            for attr_name in dir(module):
-                                try:
-                                    attr = getattr(module, attr_name)
-                                    if hasattr(attr, "cache_clear") and callable(attr.cache_clear):
-                                        attr.cache_clear()
-                                    elif hasattr(attr, "clear_cache") and callable(attr.clear_cache):
-                                        attr.clear_cache()
-                                except Exception:
-                                    pass
-                    gc.collect()
-                    
-            results = []
-            for res_raw in raw_results:
-                if isinstance(res_raw, tuple):
-                    score_unpenalized = res_raw[0]
-                    feasible = res_raw[1] if len(res_raw) == 2 else res_raw[2]
-                    g_list = [] if len(res_raw) == 2 else res_raw[1]
-                else:
-                    score_unpenalized = res_raw
-                    feasible = True
-                    g_list = []
+            if can_plus and can_minus:
+                x_plus = x_symbolic.copy()
+                x_minus = x_symbolic.copy()
+                x_plus[j] += h
+                x_minus[j] -= h
 
-                # Penalize infeasible samples: f_penalized = f + lambda * sum(max(0, g)^2)
-                penalty = 0.0
-                if g_list:
-                    violations = [max(0.0, g) for g in g_list]
-                    penalty = self.lambda_penalty * sum(v**2 for v in violations)
-                    if not feasible:
-                        assert sum(violations) > 0.0 or any(g > 0.0 for g in g_list), "Inconsistent feasibility and constraint violation list."
-                        if penalty == 0.0:
-                            penalty = 1e5
-                elif not feasible:
-                    penalty = 1e5
+                f_plus = float(objective_func(x_plus))
+                f_minus = float(objective_func(x_minus))
 
-                score = score_unpenalized + penalty
-                results.append((score, feasible))
+                grad[col] = (f_plus - f_minus) / (2.0 * h)
+            elif can_plus:
+                x_plus = x_symbolic.copy()
+                x_plus[j] += h
+                f_plus = float(objective_func(x_plus))
+                grad[col] = (f_plus - f0) / h
+            elif can_minus:
+                x_minus = x_symbolic.copy()
+                x_minus[j] -= h
+                f_minus = float(objective_func(x_minus))
+                grad[col] = (f0 - f_minus) / h
 
-            scores = np.array([r[0] for r in results])
-            feasibles = np.array([r[1] for r in results])
+            denom = max(abs(f0), 1e-12)
+            elasticity[col] = abs(x_symbolic[j] / denom * grad[col])
 
-            indices = np.argsort(scores)
-            sorted_scores = scores[indices]
-            sorted_samples_z = samples_z[indices]
+        return {
+            "f0": f0,
+            "gradient": grad,
+            "elasticity": elasticity,
+        }
 
-            # 7. Adaptive Elite Fraction
-            progress = it / self.iterations
-            if progress < 0.3:
-                elite_frac = 0.25
-            elif progress < 0.7:
-                elite_frac = 0.15
-            else:
-                elite_frac = 0.05
+    def optimize(
+        self,
+        objective_func: Callable[[np.ndarray], float],
+        x0: np.ndarray,
+        bounds: np.ndarray,
+        active_indices: Sequence[int],
+        rounding_func: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+        verbose: bool = False,
+    ) -> CEMResult:
+        """
+        Performs local SG-CEM refinement around x_symbolic within an adaptive sensitivity-conditioned trust region.
+        High sensitivity parameters receive larger trust-region radius and higher stochastic resolution.
+        Returns CEMResult containing best_x, elite_x, best_value, symbolic_x, symbolic_value, improvement, sensitivity, search_radius.
+        """
+        act_idx = np.asarray(active_indices, dtype=int)
+        dim = len(act_idx)
 
-            elite_count = max(2, int(pop_size * elite_frac))
-            elites_z = sorted_samples_z[:elite_count]
-            elite_scores = sorted_scores[:elite_count]
+        xl = bounds[act_idx, 0]
+        xu = bounds[act_idx, 1]
+        domain_span = xu - xl
 
-            if elite_scores[0] < best_score:
-                best_score = elite_scores[0]
-                best_x = self._to_x(elites_z[0], xl, xu)
+        x_symbolic = x0.copy()
+        symbolic_value = float(objective_func(x_symbolic))
 
-            # 8. Elite Diversity Check
-            if len(elites_z) >= 2:
-                elite_std = np.std(elites_z, axis=0)
-                if np.max(elite_std) < 0.005:
+        # 1. Compute sensitivity AT x_symbolic
+        sens = self.compute_sensitivity(
+            objective_func=objective_func,
+            x_symbolic=x_symbolic,
+            bounds=bounds,
+            active_indices=act_idx,
+        )
+
+        elasticity = sens["elasticity"]
+        e_max = max(float(np.max(elasticity)), 1e-12)
+        e_norm = elasticity / e_max
+
+        # 2. Sensitivity-conditioned trust region radius:
+        # High sensitivity => larger trust-region radius
+        # Low sensitivity => narrower trust-region radius
+        radius_fraction = self.min_radius + e_norm * (self.max_radius - self.min_radius)
+        search_radius_vals = radius_fraction * domain_span
+
+        local_xl = np.maximum(xl, x_symbolic[act_idx] - search_radius_vals)
+        local_xu = np.minimum(xu, x_symbolic[act_idx] + search_radius_vals)
+
+        # 3. High sensitivity => higher stochastic resolution / initial scale
+        sigma_fraction = self.min_std + np.power(e_norm, self.sensitivity_exponent) * (self.max_radius - self.min_std)
+        sigma = np.minimum(sigma_fraction * domain_span, search_radius_vals)
+
+        # Center at symbolic optimum
+        mu = x_symbolic[act_idx].copy()
+
+        best_x = x_symbolic.copy()
+        best_value = symbolic_value
+        elite_samples: List[np.ndarray] = [x_symbolic.copy()]
+
+        # 4. Local CEM refinement loop
+        for iteration in range(self.iterations):
+            samples = self.rng.normal(
+                loc=mu,
+                scale=sigma,
+                size=(self.population_size, dim),
+            )
+
+            samples = np.clip(samples, local_xl, local_xu)
+
+            evaluated = []
+            # x_symbolic must always remain in the candidate set
+            evaluated.append((symbolic_value, x_symbolic.copy()))
+
+            for candidate_active in samples:
+                candidate = x_symbolic.copy()
+                candidate[act_idx] = candidate_active
+
+                if rounding_func is not None:
+                    candidate = rounding_func(candidate)
+
+                try:
+                    val = float(objective_func(candidate))
+                    evaluated.append((val, candidate))
+                except Exception as exc:
                     if verbose:
-                        print(f"INFO[CEM]: Elite diversity collapse detected. Boosting covariance.")
-                    cov_z += np.diag((0.1 * initial_std_z) ** 2)
+                        print(f"WARNING[CEM]: Perturbation candidate evaluation failed: {exc}")
 
-            # 9. Update distribution parameters using weighted elites
-            if len(elites_z) >= 2:
-                min_es = np.min(elite_scores)
-                max_es = np.max(elite_scores)
-                range_es = max_es - min_es
-                if range_es > 1e-12:
-                    norm_scores = (elite_scores - min_es) / range_es
-                else:
-                    norm_scores = np.zeros_like(elite_scores)
+            evaluated.sort(key=lambda item: item[0])
 
-                # Selection pressure weighting: exp(-5.0 * norm_scores)
-                w = np.exp(-5.0 * norm_scores)
-                w /= np.sum(w)
+            best_value, best_x = evaluated[0][0], evaluated[0][1].copy()
 
-                new_mu_z = np.sum(w[:, None] * elites_z, axis=0)
+            elite_count = max(2, int(np.ceil(self.elite_fraction * len(evaluated))))
+            elites = evaluated[:elite_count]
 
-                diff = elites_z - new_mu_z
-                new_cov_z = np.zeros_like(cov_z)
-                for j in range(len(elites_z)):
-                    new_cov_z += w[j] * np.outer(diff[j], diff[j])
+            elite_samples = [item[1].copy() for item in elites]
+            elite_values = np.array([item[0] for item in elites])
+            elite_x = np.array([item[1][act_idx] for item in elites])
 
-                mu_z = self.smoothing * new_mu_z + (1.0 - self.smoothing) * mu_z
-                cov_z = self.smoothing * new_cov_z + (1.0 - self.smoothing) * cov_z
+            # Weighted local covariance update
+            score_shift = elite_values - elite_values.min()
+            temperature = max(np.std(elite_values), 1e-12)
+            weights = np.exp(-score_shift / temperature)
+            weights /= weights.sum()
 
-                # Diagonal scaling D * Sigma * D for sensitivity-based contraction
-                alpha_jac = 0.1
-                d_factors = 1.0 / np.sqrt(1.0 + alpha_jac * w_sens)
-                cov_z = (d_factors[:, None] * cov_z) * d_factors[None, :]
-            else:
-                mu_z = 0.5 * sorted_samples_z[0] + 0.5 * mu_z
+            mu = np.sum(weights[:, None] * elite_x, axis=0)
+            variance = np.sum(weights[:, None] * (elite_x - mu) ** 2, axis=0)
+
+            sigma = np.maximum(np.sqrt(variance), self.min_std * domain_span)
+            sigma = np.minimum(sigma, search_radius_vals)
+            mu = np.clip(mu, local_xl, local_xu)
 
             if verbose:
-                num_feas = np.sum(feasibles)
-                print(f"INFO[CEM]: Iteration {it+1}/{self.iterations} - Best Score: {best_score:.6f} - Feasible: {num_feas}/{pop_size}")
+                print(f"[CEM] Iteration {iteration+1}/{self.iterations} | Best Score: {best_value:.6e}")
 
-            # 10. Sliding window variance convergence check
-            best_history.append(best_score)
-            if len(best_history) >= 5:
-                window_var = np.var(best_history[-5:])
-                if window_var < 1e-8:
-                    if verbose:
-                        print(f"INFO[CEM]: Converged on stable best objective score variance: {window_var:.3e} < 1e-8")
-                    break
+            gc.collect()
 
-            max_std = np.max(np.sqrt(np.diag(cov_z)))
-            if max_std < self.min_std:
-                if verbose:
-                    print(f"INFO[CEM]: Converged on max std of covariance: {max_std:.6e} < {self.min_std}")
-                break
+        improvement = max(0.0, symbolic_value - best_value)
 
-        return best_x
+        return CEMResult(
+            best_x=best_x,
+            elite_x=elite_samples,
+            best_value=best_value,
+            symbolic_x=x_symbolic,
+            symbolic_value=symbolic_value,
+            improvement=improvement,
+            sensitivity=elasticity,
+            search_radius=search_radius_vals,
+        )

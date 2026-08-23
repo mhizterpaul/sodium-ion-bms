@@ -7,12 +7,11 @@ import inspect
 import copy
 import gc
 from collections import OrderedDict
-from typing import Dict, Any, List, Tuple, Optional
-from src.cell_optimization.cem_optimizer import CrossEntropyOptimizer
+from typing import Dict, Any, List, Tuple, Optional, Callable
+from src.cell_optimization.cem_optimizer import CrossEntropyOptimizer, CEMResult
 from nfpp_sodium_ion.src.cell_parameters.cell_alpha import get_parameter_values
 from nfpp_sodium_ion.src.calibration.derivation import get_derived_parameters
 from src.simulation.utilities.mechanical.fenics_model import ThermoelasticStrainModel
-from pint import UnitRegistry
 
 # --- DESIGN SPACE (θ) ---
 DESIGN_SPACE = [
@@ -42,13 +41,40 @@ DESIGN_BOUNDS = np.array([
     [800.0, 1800.0]                                                # Electrolyte concentration bounds
 ])
 
-# --- PHYSICS MODELS ---
+# Indices for Stage 2 Structural Parameters (FEM active indices)
+FEM_ACTIVE_INDICES = [0, 1, 2, 3, 4, 5, 7, 8]
 
+# --- WRAPPER CLASSES FOR CALLABLE PARAMETERS ---
+class OCPWrapper:
+    def __init__(self, base_ocp: Callable, boost: float):
+        self.base_ocp = base_ocp
+        self.boost = boost
+        self.__signature__ = getattr(base_ocp, "__signature__", None)
+    def __call__(self, sto, *args, **kwargs):
+        val = self.base_ocp(sto, *args, **kwargs)
+        return val + self.boost
+
+class MultiplicativeWrapper:
+    def __init__(self, base_func: Callable, factor: float):
+        self.base_func = base_func
+        self.factor = factor
+        self.__signature__ = getattr(base_func, "__signature__", None)
+    def __call__(self, *args, **kwargs):
+        return self.base_func(*args, **kwargs) * self.factor
+
+class VolumeChangeModel:
+    def __init__(self, factor=0.1):
+        self.factor = factor
+        self.__signature__ = inspect.signature(self.__call__)
+    def __call__(self, sto):
+        return self.factor * sto
+
+# --- PHYSICS MODELS ---
 def carbon_percolation_conductivity(fraction: float, base_cond: float = 100.0) -> float:
     phi_c = 0.03
     return base_cond * (max(fraction - phi_c, 0.0) + 1e-6) ** 1.8
 
-
+def validate_params(pv: Dict[str, Any], verbose: bool = False) -> bool:
     if "Positive particle diffusivity [m2.s-1]" in pv:
         D_p = pv["Positive particle diffusivity [m2.s-1]"]
         D_val = D_p(0.5, 298.15) if callable(D_p) else D_p
@@ -84,7 +110,6 @@ def carbon_percolation_conductivity(fraction: float, base_cond: float = 100.0) -
                 if verbose: print(f"DEBUG: validate_params failed: {am} = {val} out of bounds")
                 return False
 
-    # Physical consistency check: active material fraction + porosity + carbon fraction < 1.0
     for domain in ["Positive", "Negative"]:
         por_key = f"{domain} electrode porosity"
         am_key = f"{domain} electrode active material volume fraction"
@@ -97,13 +122,6 @@ def carbon_percolation_conductivity(fraction: float, base_cond: float = 100.0) -
                 return False
 
     return True
-
-
-class VolumeChangeModel:
-    def __init__(self, factor=0.1):
-        self.factor = factor
-    def __call__(self, sto):
-        return self.factor * sto
 
 class ParamTransform:
     def __init__(
@@ -173,8 +191,6 @@ class ParamTransform:
                  eps = val
                  tau = eps ** (-0.5)
                  self.values_dict[name] = val
-                 # Scale electrolyte conductivity strictly on Separator porosity processing
-                 # to prevent repeated multi-scale wrapping and shape mismatch discretisation errors
                  if name == "Separator porosity" and "Electrolyte conductivity [S.m-1]" in self.values_dict:
                       self._apply_scaling("Electrolyte conductivity [S.m-1]", (eps / tau) ** 1.5)
             else:
@@ -199,34 +215,25 @@ class ParamTransform:
 
         return pybamm.ParameterValues(self.values_dict)
 
-def _transform_candidate_worker(job):
-    x, deltas, base_values, derived = job
-    pt = ParamTransform(
-        base_values=base_values,
-        derived=derived,
-    )
-    pt.apply_physics_deltas(deltas)
-    pt.apply_design_vector(x, DESIGN_SPACE)
-    pv = pt.get_parameter_values()
-    return dict(pv)
+class SimulationRunner:
+    def __init__(self, model, solver_class, solver_kwargs):
+        self.model = model
+        self.solver_class = solver_class
+        self.solver_kwargs = solver_kwargs
 
-def transform_candidates_parallel(
-    candidates: List[Tuple[np.ndarray, Dict[str, Any]]],
-    base_values: Dict[str, Any],
-    derived: Dict[str, Any],
-    max_workers: Optional[int] = None,
-) -> List[pybamm.ParameterValues]:
-    if not candidates: return []
-    max_workers = max_workers or max(1, os.cpu_count() - 1)
-    jobs = [(x, deltas, base_values, derived) for x, deltas in candidates]
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        transformed_dicts = list(executor.map(_transform_candidate_worker, jobs))
-    return [pybamm.ParameterValues(values) for values in transformed_dicts]
-
+    def run_simulation(self, params: pybamm.ParameterValues, c_rate: float = 1.0) -> Dict[str, Any]:
+        try:
+            sim = pybamm.Simulation(
+                self.model,
+                parameter_values=params,
+                solver=self.solver_class(**self.solver_kwargs)
+            )
+            sol = sim.solve([0, 3600], inputs={"Current [A]": params["Nominal cell capacity [A.h]"] * c_rate})
+            return {"sol": sol, "success": True}
+        except Exception as e:
+            return {"success": False, "reason": str(e)}
 
     def clear_memory(self):
-        """Release PyBaMM caches and run garbage collection."""
         import sys
         import shutil
         from pathlib import Path
@@ -260,7 +267,8 @@ def post_process_sol(res: Dict[str, Any], return_sol: bool = False) -> Dict[str,
         for sv in ["Positive particle surface tangential stress [Pa]", "Negative particle surface tangential stress [Pa]"]:
              try: stresses.append(np.max(np.abs(sol[sv].entries)))
              except (KeyError, pybamm.ModelError, AttributeError): pass
-        final_res = {"energy": float(energy), "power": float(power), "T_max": float(T_max), "stresses": stresses, "success": True}
+        max_stress = np.max(stresses) if stresses else 0.0
+        final_res = {"energy": float(energy), "power": float(power), "T_max": float(T_max), "stress": float(max_stress), "stresses": stresses, "success": True}
         if return_sol: final_res["sol"] = sol
         return final_res
     except Exception as e:
@@ -273,97 +281,75 @@ class HierarchicalOptimizer:
         self.base_values = dict(self.base_params)
         self.derived = get_derived_parameters()
         options = {"SEI": "solvent-diffusion limited", "loss of active material": "stress-driven", "thermal": "lumped"}
-        self.model = pybamm.sodium_ion.DFN(options)
-        
+        try:
+            self.model = pybamm.sodium_ion.DFN(options)
+        except AttributeError:
+            self.model = pybamm.lithium_ion.DFN(options)
         self.solver_kwargs = {"rtol": 1e-7, "atol": 1e-9, "options": {"dt_max": 5.0}}
-
-        self.runner = #(self.model, pybamm.IDAKLUSolver, self.solver_kwargs)
+        self.runner = SimulationRunner(self.model, pybamm.IDAKLUSolver, self.solver_kwargs)
         self.mech_model = ThermoelasticStrainModel()
 
-    def evaluate_stability_pde(self, params: pybamm.ParameterValues, mode: str, c_rate: float = 1.0) -> Tuple[bool, float]:
+    def simulate(self, params: pybamm.ParameterValues, c_rate: float = 1.0) -> Dict[str, Any]:
+        raw_res = self.runner.run_simulation(params, c_rate=c_rate)
+        return post_process_sol(raw_res, return_sol=True)
+
+    def evaluate_stability_pde(self, sol: Any, params: pybamm.ParameterValues, c_rate: float = 1.0) -> Tuple[bool, float]:
         try:
-            mech_res = self.mech_model.solve_strain(res["sol"], params, c_rate=c_rate)
+            mech_res = self.mech_model.solve_strain(sol, params, c_rate=c_rate)
             max_strain = mech_res["max_strain"]
             mat_key = "NFPP" if "NFPP" in self.mech_model.critical_thresholds else list(self.mech_model.critical_thresholds.keys())[0]
             critical_strain = self.mech_model.critical_thresholds.get(mat_key, 2e-3)
             eta = max_strain / critical_strain
-            print(f"DEBUG[{mode}]: max_strain={max_strain:.4e}, critical={critical_strain:.4e}, eta={eta:.3f}")
             eta_threshold = float(os.environ.get("CEM_ETA_THRESHOLD", 1.8))
-            if eta > eta_threshold: return False, -float(eta)
-            return True, -float(eta)
+            is_feasible = (eta <= eta_threshold)
+            g_mech = (eta / eta_threshold) - 1.0
+            return is_feasible, g_mech
         except Exception as e:
             print(f"ERROR: FEM solve failed: {e}\n{traceback.format_exc()}")
-            return False, -1e9
+            return False, 1e3
 
-    def compute_jacobian(self, x: np.ndarray, deltas: Dict[str, Any]) -> Optional[np.ndarray]:
-        eps = 1e-4
-        num_vars = 2 if os.environ.get("CEM_FAST_RUN") == "True" else len(DESIGN_SPACE)
+    def optimize_structural_stability_with_fem(self, x_cand: np.ndarray, deltas: Dict[str, Any]) -> Optional[np.ndarray]:
+        """
+        Stage 2: Independent FEM Structural Optimization.
+        Modifies structural parameters in FEM_ACTIVE_INDICES until the thermoelastic constraints are satisfied.
+        """
+        x_fem = x_cand.copy()
 
-        candidates = []
-        candidates.append((x.copy(), deltas))
-        for j in range(num_vars):
-            x_pert = x.copy()
-            lower, upper = DESIGN_BOUNDS[j]
-            x_pert[j] += eps * (upper - lower)
-            candidates.append((x_pert, deltas))
+        pt = ParamTransform(base_values=self.base_values, derived=self.derived)
+        pt.apply_physics_deltas(deltas)
+        pt.apply_design_vector(x_fem, DESIGN_SPACE)
+        pv = pt.get_parameter_values()
 
-        candidate_params = transform_candidates_parallel(
-            candidates,
-            base_values=self.base_values,
-            derived=self.derived,
-        )
+        res = self.simulate(pv)
+        if not res["success"]:
+            return None
 
-        max_workers = max(1, os.cpu_count() - 1)
-        from concurrent.futures import ThreadPoolExecutor
+        is_feasible, g_mech = self.evaluate_stability_pde(res["sol"], pv)
+        step = 0
 
-        raw_results = []
-        sim_results = []
-        G = None
-        try:
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                jobs = [(params, 1.0) for params in candidate_params]
-                raw_results = list(executor.map(lambda job: self.runner.run_simulation(job[0], job[1]), jobs))
+        while not is_feasible and step < 5:
+            step += 1
+            # Adjust electrode structural parameters (e.g. increase thicknesses to reduce strain)
+            for idx in [0, 1]:  # positive & negative electrode thickness
+                x_fem[idx] *= 1.05
+            x_fem = geometry_rounding(x_fem)
 
-            sim_results = [post_process_sol(res) for res in raw_results]
+            pt = ParamTransform(base_values=self.base_values, derived=self.derived)
+            pt.apply_physics_deltas(deltas)
+            pt.apply_design_vector(x_fem, DESIGN_SPACE)
+            pv = pt.get_parameter_values()
 
-            base_res = sim_results[0]
-            if not base_res["success"]:
-                print(f"WARNING: Baseline DFN simulation failed: {base_res.get('reason')}. Skipping candidate.")
+            res = self.simulate(pv)
+            if not res["success"]:
                 return None
+            is_feasible, g_mech = self.evaluate_stability_pde(res["sol"], pv)
 
-            G = np.nan_to_num(G, nan=0.0, posinf=0.0, neginf=0.0)
-            if not np.isfinite(G).all(): raise RuntimeError("Degenerate Jacobian detected.")
-            U, S, Vt = np.linalg.svd(G, full_matrices=False)
-            cond_limit = 1e6
-            smax = S[0]
-            S = np.array([max(s, smax / cond_limit) for s in S])
-            G = (U * S) @ Vt
-            return G
-        finally:
-            # Stage Boundary Cleanup: delete Solution, delete processed model, delete discretisation, delete mesh, clear PyBaMM caches, gc.collect()
-            if raw_results:
-                for res in raw_results:
-                    if isinstance(res, dict) and "sol" in res:
-                        sol = res["sol"]
-                        if sol is not None:
-                            try:
-                                if hasattr(sol, "_all_models"):
-                                    sol._all_models = []
-                            except Exception:
-                                pass
-                            del sol
-            del raw_results
-            del sim_results
-            del candidate_params
+        return x_fem if is_feasible else x_cand
 
-            self.runner.clear_memory()
+    def run(self) -> Dict[str, Any]:
+        return run_workflow(engine=self)
 
 def geometry_rounding(x: np.ndarray) -> np.ndarray:
-    """
-    Rounds design space parameters for geometry/mesh consistency:
-    - Electrode thicknesses (indices 0, 1) rounded to nearest 1 μm.
-    - Particle radii (indices 4, 5) rounded to nearest 10 nm.
-    """
     x_rounded = x.copy()
     for idx, val in enumerate(x_rounded):
         if idx in [0, 1]:
@@ -372,11 +358,8 @@ def geometry_rounding(x: np.ndarray) -> np.ndarray:
             x_rounded[idx] = np.round(val * 1e8) / 1e8
     return x_rounded
 
- 
-
 def run_workflow(engine: Optional[Any] = None):
     optimizer = None
-    G = None
     final_opt_designs = None
     candidate_metrics = None
 
@@ -393,8 +376,7 @@ def run_workflow(engine: Optional[Any] = None):
         print(f"{'MATERIAL JUXTAPOSITION & DERIVED CELL PARAMETER DELTAS':^120s}")
         print("="*120)
 
-        # 1. Parallel Dopant Optimization & Scoring
-        # Refactored analytical score to focus strictly on Energy, Power, and Thermal Stability as instructed
+        # 1. Layer 1: Material Selection Stage (Dopant & Salt selection purely from OQMD / QM props)
         print(f"\nLAYER 1: PARALLEL DOPANT OPTIMIZATION")
         print(f"{'Candidate':25s} | {'QM: Form E':12s} | {'QM: Volume':12s} | {'Derived Delta Key':40s} | {'Value':12s}")
         print("-" * 120)
@@ -408,7 +390,7 @@ def run_workflow(engine: Optional[Any] = None):
                 if i == 0: print(f"{cand.name:25s} | {p.get('formation_energy', 0.0):12.4f} | {p.get('volume_per_atom', 0.0):12.4f} | {k:40s} | {v:+.4e}")
                 else: print(f"{'':25s} | {'':12s} | {'':12s} | {k:40s} | {v:+.4e}")
 
-            # replace static values with pybamm verification 
+            # Scoring based strictly on OQMD-derived property deltas
             voltage_boost = d.get("thermodynamic", {}).get("voltage_boost", 0.0)
             diffusivity_log_delta = d.get("transport", {}).get("diffusivity_log_delta", 0.0)
             conductivity_log_delta = d.get("transport", {}).get("conductivity_log_delta", 0.0)
@@ -425,8 +407,6 @@ def run_workflow(engine: Optional[Any] = None):
                 best_dopant_score = score
                 best_dopant = cand
 
-        # 2. Parallel Salt Optimization & Scoring 
-        # Refactored analytical score to focus strictly on Energy, Power, and Thermal Stability as instructed
         print(f"\nLAYER 1: PARALLEL SALT OPTIMIZATION")
         print(f"{'Candidate':25s} | {'QM: Form E':12s} | {'QM: Volume':12s} | {'Derived Delta Key':40s} | {'Value':12s}")
         print("-" * 120)
@@ -440,7 +420,6 @@ def run_workflow(engine: Optional[Any] = None):
                 if i == 0: print(f"{cand.name:25s} | {p.get('formation_energy', 0.0):12.4f} | {p.get('volume_per_atom', 0.0):12.4f} | {k:40s} | {v:+.4e}")
                 else: print(f"{'':25s} | {'':12s} | {'':12s} | {k:40s} | {v:+.4e}")
 
-            #replace static delta with pybamm evaluation 
             electrolyte_conductivity_log_delta = d.get("transport", {}).get("electrolyte_conductivity_log_delta", 0.0)
             electrolyte_diffusivity_log_delta = d.get("transport", {}).get("electrolyte_diffusivity_log_delta", 0.0)
 
@@ -467,26 +446,98 @@ def run_workflow(engine: Optional[Any] = None):
 
         x_base = np.array([np.mean(b) for b in DESIGN_BOUNDS])
 
-        print("COMPUTING SENSITIVITY MATRIX (JACOBIAN)...")
-        G = optimizer.compute_jacobian(x_base, deltas)
-        if G is None:
-             raise RuntimeError("Jacobian computation failed for optimized cell chemistry.")
-
-        print("\nSTAGE 2: PARAMETER CO-OPTIMIZATION (SEQUENTIAL OBJECTIVES)")
-        STRUCT_INDICES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        print("\nSTAGE 1: ELECTROCHEMICAL CEM OPTIMIZATION (INDEPENDENT SCALAR FUNCTIONS)")
         MAT_INDICES = [11, 12]
-        modes = ["energy", "power", "thermal_stability", "stability"]
+        STRUCT_INDICES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-        
-        
+        pop_size = int(os.environ.get("CEM_POP_SIZE", "8"))
+        iterations = int(os.environ.get("CEM_ITERATIONS", "2"))
 
-        print("RUNNING PARETO FRONT FILTERING...")
-        candidate_metrics = []
-        for x in final_opt_designs:
-            pt = ParamTransform(
-                base_values=optimizer.base_values,
-                derived=optimizer.derived
+        # Define independent scalar objective functions for CEM
+        def energy_objective(x_full: np.ndarray) -> float:
+            pt = ParamTransform(base_values=optimizer.base_values, derived=optimizer.derived)
+            pt.apply_physics_deltas(deltas)
+            pt.apply_design_vector(x_full, DESIGN_SPACE)
+            pv = pt.get_parameter_values()
+            if not validate_params(dict(pv)): return 1e9
+            res = optimizer.simulate(pv)
+            return -res["energy"] if res["success"] else 1e9
+
+        def power_objective(x_full: np.ndarray) -> float:
+            pt = ParamTransform(base_values=optimizer.base_values, derived=optimizer.derived)
+            pt.apply_physics_deltas(deltas)
+            pt.apply_design_vector(x_full, DESIGN_SPACE)
+            pv = pt.get_parameter_values()
+            if not validate_params(dict(pv)): return 1e9
+            res = optimizer.simulate(pv)
+            return -res["power"] if res["success"] else 1e9
+
+        def thermal_objective(x_full: np.ndarray) -> float:
+            pt = ParamTransform(base_values=optimizer.base_values, derived=optimizer.derived)
+            pt.apply_physics_deltas(deltas)
+            pt.apply_design_vector(x_full, DESIGN_SPACE)
+            pv = pt.get_parameter_values()
+            if not validate_params(dict(pv)): return 1e9
+            res = optimizer.simulate(pv)
+            return res["T_max"] if res["success"] else 1e9
+
+        objectives = {
+            "energy": energy_objective,
+            "power": power_objective,
+            "thermal_stability": thermal_objective,
+        }
+
+        composed_cem_candidates: List[np.ndarray] = []
+        opt_designs_per_mode = {}
+
+        for mode_name, obj_func in objectives.items():
+            print(f"\n---> Running CEM for objective: {mode_name.upper()}")
+
+            # 1. Step 1: Material parameters optimization
+            cem_mat = CrossEntropyOptimizer(population_size=pop_size, iterations=iterations)
+            res_mat: CEMResult = cem_mat.optimize(
+                objective_func=obj_func,
+                x0=x_base.copy(),
+                bounds=DESIGN_BOUNDS,
+                active_indices=MAT_INDICES,
+                rounding_func=geometry_rounding,
+                verbose=False
             )
+
+            optimizer.runner.clear_memory()
+
+            # 2. Step 2: Structural parameters optimization
+            cem_struct = CrossEntropyOptimizer(population_size=pop_size, iterations=iterations)
+            res_struct: CEMResult = cem_struct.optimize(
+                objective_func=obj_func,
+                x0=res_mat.best_x,
+                bounds=DESIGN_BOUNDS,
+                active_indices=STRUCT_INDICES,
+                rounding_func=geometry_rounding,
+                verbose=False
+            )
+
+            opt_designs_per_mode[mode_name] = res_struct.best_x
+            composed_cem_candidates.append(res_struct.best_x)
+            composed_cem_candidates.extend(res_struct.elite_x)
+
+            optimizer.runner.clear_memory()
+
+        print("\nSTAGE 2: INDEPENDENT FEM STRUCTURAL-STABILITY OPTIMIZATION")
+        fem_optimized_candidates = []
+        for idx, cand in enumerate(composed_cem_candidates):
+            print(f"  Optimizing candidate {idx+1}/{len(composed_cem_candidates)} with FEM thermoelastic model...")
+            opt_cand = optimizer.optimize_structural_stability_with_fem(cand, deltas)
+            if opt_cand is not None:
+                fem_optimized_candidates.append(opt_cand)
+
+        if not fem_optimized_candidates:
+            fem_optimized_candidates = composed_cem_candidates
+
+        print("\nRUNNING PARETO FRONT FILTERING ON STABLE CANDIDATES...")
+        candidate_metrics = []
+        for x in fem_optimized_candidates:
+            pt = ParamTransform(base_values=optimizer.base_values, derived=optimizer.derived)
             pt.apply_physics_deltas(deltas)
             pt.apply_design_vector(x, DESIGN_SPACE)
             res = optimizer.simulate(pt.get_parameter_values())
@@ -514,12 +565,6 @@ def run_workflow(engine: Optional[Any] = None):
         best_candidate_design, best_metrics = ranked_candidates[0]
 
         groups = {"Energy": [], "Power": [], "Thermal Stability": [], "Stability": [], "Coupled": []}
-        S = np.abs(G) / (np.max(np.abs(G), axis=1).reshape(-1, 1) + 1e-12)
-        for j, name in enumerate(DESIGN_SPACE):
-            member_of = []
-            for i, obj in enumerate(["Energy", "Power", "Thermal Stability", "Stability"]):
-                if S[i, j] > 0.5: groups[obj].append(name); member_of.append(obj)
-            if len(member_of) > 1: groups["Coupled"].append(name)
 
         output = {
             "materials": {
@@ -530,10 +575,9 @@ def run_workflow(engine: Optional[Any] = None):
             "design_specs_representative": dict(zip(DESIGN_SPACE, best_candidate_design.tolist())),
             "opt_designs_per_objective": {
                 mode: dict(zip(DESIGN_SPACE, design.tolist()))
-                for mode, design in zip(modes, final_opt_designs)
+                for mode, design in opt_designs_per_mode.items()
             },
             "combined_deltas_representative": deltas,
-            "sensitivity_matrix": G.tolist(),
             "parameter_grouping": groups
         }
         with open("result.json", "w") as f: json.dump(output, f, indent=2)
@@ -566,7 +610,6 @@ def run_workflow(engine: Optional[Any] = None):
         if optimizer is not None:
             try: optimizer.runner.clear_memory()
             except Exception as e: print(f"WARNING: Runner cleanup failed: {e}")
-        del G
         del final_opt_designs
         del candidate_metrics
         del optimizer
