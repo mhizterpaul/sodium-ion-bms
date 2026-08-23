@@ -71,6 +71,7 @@ class CrossEntropyOptimizer:
         bounds: np.ndarray,
         active_indices: Sequence[int],
         relative_step: float = 1e-3,
+        f0: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         Calculates central finite-difference gradient and dimensionless elasticity at x_symbolic.
@@ -78,7 +79,10 @@ class CrossEntropyOptimizer:
         act_idx = np.asarray(active_indices, dtype=int)
         dim = len(act_idx)
 
-        f0 = float(objective_func(x_symbolic))
+        if f0 is None:
+            f0 = float(objective_func(x_symbolic))
+        else:
+            f0 = float(f0)
 
         grad = np.zeros(dim, dtype=float)
         elasticity = np.zeros(dim, dtype=float)
@@ -153,6 +157,7 @@ class CrossEntropyOptimizer:
             x_symbolic=x_symbolic,
             bounds=bounds,
             active_indices=act_idx,
+            f0=symbolic_value,
         )
 
         elasticity = sens["elasticity"]

@@ -347,7 +347,7 @@ class HierarchicalOptimizer:
         return x_fem if is_feasible else x_cand
 
     def run(self) -> Dict[str, Any]:
-        return run_workflow(engine=self)
+        return run_workflow(engine=self.engine)
 
 def geometry_rounding(x: np.ndarray) -> np.ndarray:
     x_rounded = x.copy()
@@ -360,12 +360,12 @@ def geometry_rounding(x: np.ndarray) -> np.ndarray:
 
 def run_workflow(engine: Optional[Any] = None):
     optimizer = None
-    final_opt_designs = None
     candidate_metrics = None
 
     try:
         from src.cell_optimization.material_opt import MaterialMappingEngine, MaterialCategory
-        if engine is None: engine = MaterialMappingEngine()
+        if not isinstance(engine, MaterialMappingEngine):
+            engine = MaterialMappingEngine()
         db, bases = engine.run()
         if not bases:
             print("ERROR: Hierarchical optimization aborted: Base material resolution failed.")
@@ -608,20 +608,20 @@ def run_workflow(engine: Optional[Any] = None):
     finally:
         print("\nCLEANUP: Releasing optimization memory...")
         if optimizer is not None:
-            try: optimizer.runner.clear_memory()
-            except Exception as e: print(f"WARNING: Runner cleanup failed: {e}")
-        del final_opt_designs
-        del candidate_metrics
-        del optimizer
+            try:
+                optimizer.runner.clear_memory()
+            except Exception as e:
+                print(f"WARNING: Runner cleanup failed: {e}")
+        candidate_metrics = None
+        optimizer = None
         gc.collect()
         print("CLEANUP: Memory release completed.")
 
 if __name__ == "__main__":
-    optimizer = None
     try:
-        optimizer = HierarchicalOptimizer()
-        optimizer.run()
-    finally:
-        if optimizer is not None:
-            try: optimizer.runner.clear_memory()
-            except Exception: pass
+        opt = HierarchicalOptimizer()
+        opt.run()
+    except Exception as e:
+        print(f"Execution failed: {e}")
+        traceback.print_exc()
+        raise
