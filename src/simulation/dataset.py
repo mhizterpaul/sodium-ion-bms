@@ -13,7 +13,6 @@ from src.lv_networks.topology import (
     select_metered_consumers
 )
 from src.lv_networks.loads import distribute_loads
-from src.lv_networks.perturbations import apply_latent_parameter_realization
 from src.transient.events import (
     SingleEquipmentSwitchEvent,
     SingleLineFaultEvent,
@@ -182,7 +181,20 @@ def generate_experiments_dataset(n_scenarios: int = 15, write_to_disk: bool = Tr
         for f_idx in [1, 2, 3]:
             num_buses_f = {1: 20, 2: 25, 3: 30}[f_idx]
             base_f = generate_known_radial_topology(f_idx, num_buses_f, rng=rng)
-            mod_f = apply_latent_parameter_realization(base_f, line_mult=1.0, r_scale=r_scale, x_scale=x_scale)
+            mod_f = {
+                "feeder_idx": base_f["feeder_idx"],
+                "buses": list(base_f["buses"]),
+                "lines": [
+                    {
+                        **ln,
+                        "r1": round(ln["r1"] * r_scale, 4),
+                        "x1": round(ln["x1"] * x_scale, 4),
+                        "r0": round(ln["r0"] * r_scale, 4),
+                        "x0": round(ln["x0"] * x_scale, 4)
+                    }
+                    for ln in base_f["lines"]
+                ]
+            }
 
             topologies[f_idx] = mod_f
             all_buses.extend(mod_f["buses"])

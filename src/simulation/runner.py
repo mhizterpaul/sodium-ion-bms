@@ -11,7 +11,6 @@ from src.lv_networks.topology import (
 )
 from src.lv_networks.loads import distribute_loads
 from src.power_plant.transformers import get_distribution_transformer_spec
-from src.lv_networks.perturbations import apply_latent_parameter_realization
 
 from src.transient.atp_case_builder import ATPCaseBuilder
 from src.transient.atp_runner import ATPRunner
