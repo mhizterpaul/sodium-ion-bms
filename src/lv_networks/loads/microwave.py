@@ -1,4 +1,4 @@
-from src.hidden_network.loads.base import EquipmentCircuit
+from src.lv_networks.loads.base import EquipmentCircuit
 
 def get_microwave(rated_power_kw: float = 1.8) -> EquipmentCircuit:
     """

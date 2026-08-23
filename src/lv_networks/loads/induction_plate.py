@@ -1,4 +1,4 @@
-from src.hidden_network.loads.base import EquipmentCircuit
+from src.lv_networks.loads.base import EquipmentCircuit
 
 def get_induction_plate(rated_power_kw: float = 3.5) -> EquipmentCircuit:
     """

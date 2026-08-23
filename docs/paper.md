@@ -78,18 +78,19 @@ The BESS is evaluated under simulated grid-outage, PV-firming, and variable C-ra
 Each performance metric is calculated directly from the simulated measurements.
 
  * **Round-Trip Energy Efficiency (RTE)**: Measures the fraction of charging energy recovered during discharge
-[eta_{RTE}=frac{E_{\mathrm{dis}}}{E_{\mathrm{chg}}}] whereb[E_{\mathrm{dis}}=int_{\mathrm{discharge}} V(t)I(t),dt]
+[\eta_{\mathrm{RTE}}=\frac{E_{\mathrm{dis}}}{E_{\mathrm{chg}}}] where
+[E_{\mathrm{dis}}=\int_{\mathrm{discharge}} V(t)I(t)\,dt]
 and [E_{\mathrm{chg}}=\int_{\mathrm{charge}} |V(t)I(t)|\,dt.]
 
- * **Coulombic Efficiency**: Measures the fraction of charge recovered in terms of electrical charge [\eta_C=\frac{Q_{\mathrm{dis}}}{Q_{\mathrm{chg}}}] with [Q_{\mathrm{dis}}= int_{\mathrm{discharge}} |I(t)|\,dt,\qquad Q_{\mathrm{chg}}=\int_{\mathrm{charge}} |I(t)|\,dt.]
+ * **Coulombic Efficiency**: Measures the fraction of charge recovered in terms of electrical charge [\eta_C=\frac{Q_{\mathrm{dis}}}{Q_{\mathrm{chg}}}] with [Q_{\mathrm{dis}}=\int_{\mathrm{discharge}} |I(t)|\,dt,\qquad Q_{\mathrm{chg}}=\int_{\mathrm{charge}} |I(t)|\,dt.]
 
- * **Voltage Efficiency**: Represents the voltage-related loss independently of charge throughput [\eta_V=\frac{\eta_{RTE}}{\eta_C}.]
+ * **Voltage Efficiency**: Represents the voltage-related loss independently of charge throughput [\eta_V=\frac{\eta_{\mathrm{RTE}}}{\eta_C}.]
 
  * **Usable Energy Capacity**: Measures the energy delivered over the defined operating SOC window [E_{\mathrm{usable}}=\int_{t_0}^{t_1}|V(t)I(t)|\,dt] where \(t_0\) and \(t_1\) correspond to the specified upper and lower SOC limits.
 
  * **Power Capability**: Measures the maximum deliverable electrical power during the simulated operating window [P_{\max}=\max_t |V(t)I(t)|.]
 
- * **Thermal Response**: Measures the temperature excursion produced during operation [\Delta T=T_{\max}-T_{\min}] and the maximum operating temperature is[T_{\max}=\max_t T(t).]
+ * **Thermal Response**: Measures the temperature excursion produced during operation [\Delta T=T_{\max}-T_{\min}] and the maximum operating temperature is [T_{\max}=\max_t T(t).]
 
  * **Depth of Discharge**: For each simulated cycle [DoD=SoC_{\max}-SoC_{\min}.]
 
@@ -97,12 +98,12 @@ and [E_{\mathrm{chg}}=\int_{\mathrm{charge}} |V(t)I(t)|\,dt.]
 
  * **Capacity Fade**: The loss of usable capacity relative to the initial condition is [F_Q(t)=1-\frac{Q_{\max}(t)}{Q_{\max}(0)}.]
 
- * **Cycle Life**: cell life cycle is estimated from the simulated degradation trajectory as the point at which the battery reaches the prescribed minimum \(SoH\), [N_{\mathrm{life}}=\min\left\{N:SoH(N)\le SoH_{\mathrm{limit}}\right\}.]
+ * **Cycle Life**: Cell life cycle is estimated from the simulated degradation trajectory as the point at which the battery reaches the prescribed minimum \(SoH\), [N_{\mathrm{life}}=\min\left\{N:SoH(N)\le SoH_{\mathrm{limit}}\right\}.]
 
  * **Calendar Life**: Where calendar-aging simulations are performed, the corresponding lifetime is:
 [t_{\mathrm{life}}=\min\left\{t:SoH(t)\le SoH_{\mathrm{limit}}\right\}.]
 
- * **Levelized Cost of Storage**: For the economic assessment [LCOS=\frac{C_{\mathrm{capital}}+C_{\mathrm{replacement}}+C_{\mathrm{operation}}}{E_{\mathrm{lifetime,dis}}}\]
+ * **Levelized Cost of Storage**: For the economic assessment [LCOS=\frac{C_{\mathrm{capital}}+C_{\mathrm{replacement}}+C_{\mathrm{operation}}}{E_{\mathrm{lifetime,dis}}}]
 where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered by the BESS.
 
 **Limitations:**  While this work focuses on a foundational design space, the cell architecture remains amenable to further performance enhancement via composite electrode structuring, advanced pore network engineering, perturbing other dopant sites (beyond the Fe-site), and exploring a broader range of electrolyte systems (solvents and additives) to further enhance cycle life and energy density. The current optimization scope is intentionally streamlined to accommodate the computational constraints of the DFN solver.
@@ -112,46 +113,65 @@ where \(E_{\mathrm{lifetime,dis}}\) is the cumulative simulated energy delivered
 ## Time-Adjusted Cluster Load Allocation with Error Correction in Sparsely Metered Distribution Networks (core contribution)
 
 In a sparsely metered distribution system, the utility may know:
-feeder/transformer energy supplied;
-measurements from a relatively small subset of consumers;
-some information about consumer premises;
-historical consumption patterns/classes;
+- feeder/transformer energy supplied;
+- measurements from a relatively small subset of consumers;
+- some information about consumer premises;
+- historical consumption patterns/classes;
 but does not know the actual consumption of every customer.
-the  formulation is:
-\[ E_U = E_T - E_M - E_L \]
+
+The formulation is:
+
+[ E_U = E_F - E_M - E_L ]
+
 where:
-\(E_T\) = transformer/feeder energy,
-\(E_M\) = measured customer energy,
-\(E_L\) = estimated technical losses,
-\(E_U\) = energy attributable to unknown/unmetered customers.
-You can then estimate an expected consumption for each unmetered customer:
-\[ w_i=\mathbb E[E_i\mid C_i,X_i] \]
-where \(X_i\) could include:
-customer class,
-historical billing,
-premises characteristics,
-connected load,
-time of year,
-supply availability,
-transformer loading,
-feeder characteristics.
+- $E_F$: feeder supply energy,
+- $E_M$: measured customer energy,
+- $E_L$: estimated technical losses (incorporating both transformer losses and line losses),
+- $E_U$: energy attributable to unknown/unmetered customers.
+
+Then estimate an expected consumption for each unmetered customer:
+
+[ w_i = \mathbb{E}[E_i \mid C_i, X_i] ]
+
+where $X_i$ could include:
+- customer class,
+- historical billing,
+- premises characteristics,
+- connected load,
+- time of year,
+- supply availability
+- feeder characteristics.
+
 Then:
-\[ \boxed{ \hat E_i = E_U \frac{w_i}{\sum_{j\in U}w_j} } \]
+
+$$ \boxed{ \hat{E}_i = E_U \frac{w_i}{\sum_{j\in U}w_j} } $$
+
 with time-adjusted consumer/load-class information.
-Suppose consumer \(i\) belongs to class \(c\), with metered class profile
-\[ \mu_c(t). \]
+
+Suppose consumer $i$ belongs to class $c$, with metered class profile
+
+[ \mu_c(t). ]
+
 For an unmetered consumer, rather than assigning a static class average, estimate:
-\[ \hat E_i = \int_{t_0}^{t_1} \alpha_i(t)\mu_{c_i}(t)\,dt \]
-where \(\alpha_i(t)\) is your time adjustment factor for observed metered-class behaviour;
+
+[ \hat{E}_i = \int_{t_0}^{t_1} \alpha_i(t)\mu_{c_i}(t)\,dt ]
+
+where $\alpha_i(t)$ is your time adjustment factor for observed metered-class behaviour.
+
 Let the actual feeder energy be
-\[ E_F = E_L+E_{NTL}+E_T \]
+
+[ E_F = E_L + E_{NTL} + E_T ]
+
 where:
-\(E_L\): legitimate consumer consumption;
-\(E_{NTL}\): technical network losses;
-\(E_T\): non-technical losses/theft.
+- $E_L$: legitimate consumer consumption;
+- $E_{NTL}$: technical network losses (transformer and line losses);
+- $E_T$: non-technical losses/theft.
+
 Therefore the allocation error is:
-\[ E_F-\hat E_L = \hat E_{loss}+\hat E_T. \]
-we report the baseline CLA error and time adjusted CLA error, and derive transient-assisted CLA error correction factor
+
+[ E_F - \hat{E}_L = \hat{E}_{\mathrm{loss}} + \hat{E}_T. ]
+
+We report the baseline CLA error and time-adjusted CLA error, and derive a transient-assisted CLA error correction factor.
 
 ### System Model
 
@@ -198,7 +218,7 @@ The plant model contains strictly distribution network elements and local source
 
 #### 2. Measurement Architecture
 
-Measurements are obtained from two sensing layers:  smart meters measurement at consumer and feeder edge and transformer edge transient analyzer.
+Measurements are obtained from two sensing layers: smart meters measurement at consumer and feeder edge and transformer edge transient analyzer.
 
 1. Smart-Meter Measurements
 The metering hierarchy is organized as follows:
@@ -220,7 +240,6 @@ The metering hierarchy is organized as follows:
              │                 │
            Consumer          Consumer
             Unit A            Unit B
-                     
 ```
 
 Selected candidate units are instrumented with smart meters to acquire:
@@ -247,54 +266,36 @@ Dynamic Quantities
 
 #### 3. Distribution Network Simulation
 
-The simulation involves first assigning consumer load classes to consumer load circuits, the 3 lv trasnformer models have fixed varied specification, we take energy consumption from the metered consumer load circuits for time dt, we construct dataset 1 which include the assigned classes and the energy consumption of the metered group in the network, we compute baseline cla error and time adjusted cla error, considering non technical losses included in the model. we generated 3 datasets including consumer load circuit switch transient co-events under 3 network conditions, we analyse the observability of these events from which we compute the error correction factor of transformer transients based consumer load prediction on time adjusted cla error. The simulation is performed using OpenDSS and ATP-EMTP.
+The simulation involves first assigning consumer load classes to consumer load circuits. The 3 LV transformer models have fixed varied specifications as detailed in `docs/specs/lv1/lv_transformer.md`, `docs/specs/lv2/lv_transformer.md`, and `docs/specs/lv3/lv_transformer.md`. We take energy consumption from the metered consumer load circuits for time $dt$, and construct Dataset 1 which includes the assigned classes and the energy consumption of the metered group in the network. We compute baseline CLA error and time-adjusted CLA error, considering non-technical losses included in the model. We generated 3 datasets including consumer load circuit switch transient co-events under 3 network conditions, and analyze the observability of these events from which we compute the error correction factor of transformer transients-based consumer load prediction on time-adjusted CLA error. The simulation is performed using OpenDSS and ATP-EMTP.
 
-1. **Dataset 1**: ...
+1. **Dataset 1**: Focuses on Cluster Load Allocation (CLA) energy estimation.
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_feeder_id`, `known_number_of_buses`, `known_number_of_branches`, `gt_total_consumer_energy_kwh`, `gt_metered_consumer_energy_kwh`, `gt_unmetered_consumer_energy_kwh`, `gt_technical_loss_kwh` (transformer loss + line loss), `gt_non_technical_loss_kwh`.
+   - **Estimator Predictions:** `est_baseline_cla_unmetered_energy_kwh`, `est_time_adjusted_cla_unmetered_energy_kwh`.
 
 2. **Dataset 2**: Evaluates what type of event pairs are observable across load switch pairs (`load_load`), line fault pairs (`fault_fault`), and mixed load switch and fault pairs (`load_fault`).
-   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_meter_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`, 
-   - **Observation Features ($M_{\mathrm{meter}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across the 3 phases. Uses a fixed baseline transformer specification and fixed $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ 
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_meter_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`.
+   - **Observation Features ($M_{\mathrm{meter}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across the 3 phases. Uses a fixed baseline transformer specification and fixed $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$.
 
 3. **Dataset 3**: Evaluates how residual magnitude in pair varies with time shift operation ($t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ vs $t_{\mathrm{offset}} > 0.0\,\mathrm{s}$) across load switch pairs, line fault pairs, and mixed load-fault pairs.
-   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_meter_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`,`gt_time_offset_s` 
-   - **Observation Features ($M_{\mathrm{meter}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across the 3 phases. Uses a fixed baseline transformer specification
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_meter_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`, `gt_time_offset_s`.
+   - **Observation Features ($M_{\mathrm{meter}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across the 3 phases. Uses a fixed baseline transformer specification.
 
-4. **Dataset 4**: Evaluates how transformer specification affects the observability of line fault pairs, load switch pairs, and mixed load-fault pairs. Featuring varying transformer specifications:
-| Parameter     
-Regulation  
-Full-load Copper Loss    
-Copper Loss @80% Loading 
-| -------------------- 
-| Percentage Impedance 
-| Resistance           
-| Leakage Reactance    
-| X/R Ratio            
-| Sequence | Resistance | Reactance |
-| -------- | 
-| Positive | 
-| Negative | 
-| Zero     |         
-| ---------------------
-| Excitation Current   
-| Magnetizing Reactance
-| Core-loss Resistance 
+4. **Dataset 4**: Evaluates how transformer specification affects the observability of line fault pairs, load switch pairs, and mixed load-fault pairs. Featuring varying transformer specifications whose physical, sequence, and capability parameters are explicitly specified in `docs/specs/lv1/lv_transformer.md`, `docs/specs/lv2/lv_transformer.md`, and `docs/specs/lv3/lv_transformer.md`.
+   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_meter_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`.
+   - **Observation Features ($M_{\mathrm{meter}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across the 3 phases. Uses fixed $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$.
 
-   - **Ground-Truth Target Variables ($X_R$):** `gt_scenario_id`, `gt_transformer_id`, `gt_transformer_spec_id`, `gt_feeder_id`, `gt_meter_id`, `gt_pair_category`, `gt_event_1_class`, `gt_event_1_type`, `gt_event_2_class`, `gt_event_2_type`, 
-   - **Observation Features ($M_{\mathrm{meter}}$):** Three-phase co-event waveforms (`obs_coevent_v`, `obs_coevent_i`), composed single-event responses (`obs_composed_single_event_v`, `obs_composed_single_event_i`), residual waveforms (`obs_residual_v`, `obs_residual_i`), and scalar residual magnitudes (`residual_voltage_magnitude`, `residual_current_magnitude`) across the 3 phases. Uses fixed $t_{\mathrm{offset}} = 0.0\,\mathrm{s}$ 
+#### 4. Statistical Tests for LV Network Observability Using Transformer Transients
 
+##### Dataset 2 Event Pair Observability Testing
 
-#### 4. Statistical Tests for lv network observable  using trasnformer transients
-
-##### Dataset 2 Event Pair Observability Testing 
-
-Factorial ANOVA analysis (`src/statistics/q1_event_pair_analysis.py`) evaluates event pair observability across load switch pairs (`load_load`), line fault pairs (`fault_fault`), and mixed load-fault pairs (`load_fault`), Evaluates $F_{\mathrm{voltage}}, p_{\mathrm{voltage}}$ and $F_{\mathrm{current}}, p_{\mathrm{current}}$ to test observability differences across pair categories.
+Factorial ANOVA analysis (`src/statistics/q1_event_pair_analysis.py`) evaluates event pair observability across load switch pairs (`load_load`), line fault pairs (`fault_fault`), and mixed load switch and fault pairs (`load_fault`). Evaluates $F_{\mathrm{voltage}}, p_{\mathrm{voltage}}$ and $F_{\mathrm{current}}, p_{\mathrm{current}}$ to test observability differences across pair categories.
 
 ##### Dataset 3 Time Shift Operation Variation Testing
 
-Levene / Brown-Forsythe variance analysis (`src/statistics/q2_time_shift_analysis.py`) evaluates residual magnitude variation under time shift operations ($t_{\mathrm{offset}} = 0$ vs $t_{\mathrm{offset}} > 0$) using Dataset 3 across: Load switch event pairs, Line fault event pairs and load switch and fault pairs
+Levene / Brown-Forsythe variance analysis (`src/statistics/q2_time_shift_analysis.py`) evaluates residual magnitude variation under time shift operations ($t_{\mathrm{offset}} = 0$ vs $t_{\mathrm{offset}} > 0$) using Dataset 3 across: load switch event pairs, line fault event pairs, and load switch and fault pairs.
 
 ##### Dataset 4 Transformer Specification Effect Testing
 
-One-Way ANOVA testing (`src/statistics/q3_transformer_spec_analysis.py`) evaluates how transformer specification variations affect observability across load switch pairs, line fault pairs, and mixed pairs, Measures $F_{\mathrm{spec}}, p_{\mathrm{spec}}$ across transformer specification.
+One-Way ANOVA testing (`src/statistics/q3_transformer_spec_analysis.py`) evaluates how transformer specification variations affect observability across load switch pairs, line fault pairs, and mixed pairs, measuring $F_{\mathrm{spec}}, p_{\mathrm{spec}}$ across transformer specifications.
 
 **Limitations:** The validation establishes the practical limits of boundary-based realization and identifies the sensing architecture required for distributed dynamic state estimation in partially observable distribution networks within the limits of the simulated environment.

@@ -1,6 +1,7 @@
 import os
 import subprocess
 import shutil
+import numpy as np
 from pathlib import Path
 
 class ATPResult:
@@ -13,8 +14,9 @@ class ATPResult:
 
 class ATPRunner:
     """
-    Thin process adapter around the actual ATP-EMTP executable (tpbig/tpgig).
-    Executes the real Windows binary via Wine on Linux runtime without synthetic fallbacks.
+    Thin process adapter around the actual ATP-EMTP executable (tpbig/tpbigm).
+    Executes the real Windows binary via Wine on Linux runtime.
+    Throws a RuntimeError if Wine or tpbigm.exe is not available or if execution fails.
     """
     def __init__(self, atp_executable: str | Path = None, timeout_s: float = 300.0):
         self.timeout_s = timeout_s
@@ -28,13 +30,15 @@ class ATPRunner:
             raise ValueError(f"Expected .ATP case file, got: {case_path}")
 
         atp_dir = Path("atpmingw_2024").resolve()
-        tpbigm = atp_dir / "tpbigm.exe"
-        if not tpbigm.exists():
-            raise FileNotFoundError(f"tpbigm.exe not found under {atp_dir}")
+        tpbigm = atp_dir / "tpbigm.exe" if atp_dir.exists() else None
 
         wine_path = shutil.which("wine")
+
         if wine_path is None:
-            raise RuntimeError("Wine is not installed in the execution environment. Wine is required to run ATP-EMTP binary tpbigm.exe.")
+            raise RuntimeError("Wine is not installed in the environment. ATP-EMTP execution requires Wine.")
+
+        if tpbigm is None or not tpbigm.exists():
+            raise RuntimeError(f"ATP-EMTP executable 'tpbigm.exe' not found at {atp_dir}")
 
         temp_case_name = "TEMP_CASE.ATP"
         temp_case_path = atp_dir / temp_case_name
@@ -67,23 +71,6 @@ class ATPRunner:
                 except Exception:
                     pass
 
-        # Clean up all temporary files created in atpmingw_2024 during this run
-        for tmp_file in atp_dir.glob("*.tmp"):
-            try:
-                tmp_file.unlink()
-            except Exception:
-                pass
-        for bin_file in atp_dir.glob("*.bin"):
-            try:
-                bin_file.unlink()
-            except Exception:
-                pass
-        for fort_file in atp_dir.glob("fort.*"):
-            try:
-                fort_file.unlink()
-            except Exception:
-                pass
-
         if temp_case_path.exists():
             try:
                 temp_case_path.unlink()
@@ -91,12 +78,7 @@ class ATPRunner:
                 pass
 
         if process.returncode != 0:
-            raise RuntimeError(
-                f"ATP-EMTP simulation failed via Wine.\n"
-                f"Return code: {process.returncode}\n"
-                f"stdout:\n{process.stdout}\n"
-                f"stderr:\n{process.stderr}"
-            )
+            raise RuntimeError(f"ATP-EMTP execution failed with return code {process.returncode}:\n{process.stderr}\n{process.stdout}")
 
         return ATPResult(
             case_path=case_path,

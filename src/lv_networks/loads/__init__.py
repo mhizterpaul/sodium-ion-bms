@@ -1,12 +1,12 @@
-from src.hidden_network.loads.base import EquipmentCircuit
-from src.hidden_network.loads.ac_motor import get_ac_motor
-from src.hidden_network.loads.dc_motor_inverter import get_dc_motor_inverter
-from src.hidden_network.loads.microwave import get_microwave
-from src.hidden_network.loads.induction_plate import get_induction_plate
-from src.hidden_network.loads.compressor import get_compressor
-from src.hidden_network.loads.audio_amplifier import get_audio_amplifier
-from src.hidden_network.loads.ups import get_ups
-from src.hidden_network.loads.industrial_fan import get_industrial_fan
+from src.lv_networks.loads.base import EquipmentCircuit
+from src.lv_networks.loads.ac_motor import get_ac_motor
+from src.lv_networks.loads.dc_motor_inverter import get_dc_motor_inverter
+from src.lv_networks.loads.microwave import get_microwave
+from src.lv_networks.loads.induction_plate import get_induction_plate
+from src.lv_networks.loads.compressor import get_compressor
+from src.lv_networks.loads.audio_amplifier import get_audio_amplifier
+from src.lv_networks.loads.ups import get_ups
+from src.lv_networks.loads.industrial_fan import get_industrial_fan
 import numpy as np
 
 EQUIPMENT_REGISTRY = {
