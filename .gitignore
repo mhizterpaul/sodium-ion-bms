@@ -5,22 +5,8 @@ __pycache__/
 *.pyc
 
 # Run and build artifacts
-result.json
 material_cache.json
 final_validation.json
-*.egg-info/
-__mocks__/
-*.lis
-*.dbg
-*.pl4
-*.pl4.bin
-atpmingw_2024/TEMP_CASE*
-atpmingw_2024/*.bin
-atpmingw_2024/*.tmp
-atpmingw_2024/*.lis
-atpmingw_2024/*.dbg
-atpmingw_2024/*.pl4
 *.json
 *.csv
-src/simulation/*.json
-src/simulation/*.csv
+
